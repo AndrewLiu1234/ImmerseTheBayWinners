@@ -189,6 +189,8 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
         public const string RingsGroup = "rings";
         public const string ResultsGroup = "results";
         public const string NeckGroup = "neck";
+        /// <summary>The posed ghost hands (fretting and strumming): not HUD, but the HUD must not cover them.</summary>
+        public const string HandGroup = "hand";
 
         /// <summary>An id for a part: "group:path", the path being the GameObject names below the group's root ("PatternStrip/Slot3/Halo").</summary>
         public static string Id(string group, string path)
@@ -197,12 +199,17 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
         }
 
         /// <summary>
-        /// Whether two parts are compared at all: every HUD part against every other HUD part and against the neck; the neck
-        /// against itself is not this check's business.
+        /// Whether two parts are compared at all: every HUD part (card, rings, results) against every other HUD part and
+        /// against the neck and the ghost hands; the neck and the hands among themselves are not this check's business.
         /// </summary>
         public static bool ShouldCompare(string idA, string idB)
         {
-            return !(Group(idA) == NeckGroup && Group(idB) == NeckGroup);
+            return IsHud(Group(idA)) || IsHud(Group(idB));
+        }
+
+        static bool IsHud(string group)
+        {
+            return group == CardGroup || group == RingsGroup || group == ResultsGroup;
         }
 
         /// <summary>What an overlap between parts <paramref name="idA"/> and <paramref name="idB"/> means, and why.</summary>
@@ -216,6 +223,11 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
             if ((ga == RingsGroup && gb == NeckGroup) || (gb == RingsGroup && ga == NeckGroup))
             {
                 why = "approach rings lie on the fretboard around the fingertips";
+                return OverlapKind.ByDesign;
+            }
+            if ((ga == RingsGroup && gb == HandGroup) || (gb == RingsGroup && ga == HandGroup))
+            {
+                why = "approach rings land on the fingertips the ghost hand reaches for";
                 return OverlapKind.ByDesign;
             }
             if (ga == RingsGroup && gb == RingsGroup)
