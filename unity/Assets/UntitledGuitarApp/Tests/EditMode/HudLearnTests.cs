@@ -1104,6 +1104,35 @@ namespace UntitledGuitarApp.Tests.EditMode
         }
 
         [Test]
+        public void TheMessage_StartsBeforeTheCardSpot_AndGrowsAwayFromTheNeck()
+        {
+            Vector3 eye = LearnHudLayout.TypicalEyeInNeckFrame;
+            Vector3 card = LearnHudLayout.NeckCardLocal(LearnHudLayout.DefaultScaleLengthM);
+            Vector3 forward, up;
+            LearnHudLayout.TryFacing(eye, card, LearnHudLayout.TypicalUpInNeckFrame, out forward, out up);
+            Vector3 right = Vector3.Cross(up, forward);
+            AssertVector(0.4152f, 0.8895f, 0.1907f, right, 2e-3f);     // the fretboard faces the right of the player's view
+
+            Assert.AreEqual(1f, LearnHudLayout.AwayFromNeckSign(right, Vector3.up), "right-handed: messages read left to right, away from the neck");
+            Assert.AreEqual(-1f, LearnHudLayout.AwayFromNeckSign(right, Vector3.down), "a mirrored neck: they grow to the left instead");
+
+            float lead = HudText.SizeForAngularHeight(LearnHudLayout.MessageLeadDegrees, (card - eye).magnitude);
+            Assert.AreEqual(0.0496, lead, 2e-4);
+            Vector3 origin = LearnHudLayout.MessageOrigin(card, right, 1f, lead);
+            AssertVector(0.1420f, 0.0359f, -0.0095f, origin, 5e-4f);
+            Assert.AreEqual(5.98, LearnHudLayout.AngleBetweenDegrees(eye, origin, card), 0.05);
+
+            // The first thing read (the icon) is about 4 degrees from the neck: close to the gaze, clear of the strings.
+            float neckLength = LearnHudLayout.FretDistanceM(LearnHudLayout.DefaultScaleLengthM, 12);
+            float fromNeck = LearnHudLayout.AngleFromNeckDegrees(eye, origin, Vector3.zero, Vector3.right, neckLength);
+            Assert.AreEqual(4.05, fromNeck, 0.05);
+            Assert.Greater(fromNeck, 2.5f);
+
+            // A block of typical width (twice the lead) is centred on the card spot; the brief's example tip is wider and extends beyond it.
+            Assert.AreEqual(12f, 2f * LearnHudLayout.MessageLeadDegrees);
+        }
+
+        [Test]
         public void AngleBetween_KnownAngles()
         {
             Assert.AreEqual(90.0, LearnHudLayout.AngleBetweenDegrees(Vector3.zero, Vector3.right, Vector3.up), 1e-3);

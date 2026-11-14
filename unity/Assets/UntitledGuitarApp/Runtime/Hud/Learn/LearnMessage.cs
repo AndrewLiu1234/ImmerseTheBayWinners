@@ -17,6 +17,8 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
         float _pendingHold = float.PositiveInfinity;
         float _holdLeft = float.PositiveInfinity;
         Transform _content;
+        float _alignX;
+        float _blockWidth;
 
         /// <summary>True when the message is meant to be on screen (it may still be easing in, or waiting for the 3 Hz gate).</summary>
         public bool IsShowing { get { return _wantVisible; } }
@@ -26,6 +28,40 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
 
         /// <summary>The object that holds the message's parts; it is scaled as one for the ease-in.</summary>
         protected Transform Content { get { return _content; } }
+
+        /// <summary>
+        /// Where the block sits relative to this object's origin: 0 = centred on it (the default), +1 = it starts at the
+        /// origin and grows to the viewer's right, -1 = it ends at the origin and grows to the left. The Learn HUD uses
+        /// +-1 so that a message starts a fixed distance from the neck and a longer one grows away from it.
+        /// </summary>
+        public float AlignX
+        {
+            get { return _alignX; }
+            set
+            {
+                float v = value > 0f ? 1f : (value < 0f ? -1f : 0f);
+                if (v == _alignX) return;
+                _alignX = v;
+                EnsureBuilt();
+                ApplyAlignment();
+            }
+        }
+
+        /// <summary>The estimated width of the block as last laid out, metres.</summary>
+        public float BlockWidthMeters { get { return _blockWidth; } }
+
+        /// <summary>Subclasses report the width of the block they have just laid out (centred on Content's origin).</summary>
+        protected void SetBlockWidth(float meters)
+        {
+            if (!(meters >= 0f) || float.IsInfinity(meters)) meters = 0f;
+            _blockWidth = meters;
+            ApplyAlignment();
+        }
+
+        void ApplyAlignment()
+        {
+            if (_content != null) _content.localPosition = new Vector3(_alignX * 0.5f * _blockWidth, 0f, 0f);
+        }
 
         protected sealed override void Build()
         {

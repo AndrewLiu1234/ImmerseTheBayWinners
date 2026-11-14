@@ -116,6 +116,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
             float text = BlockWidthInCaps(_shown1, _shown2) * cap;
             float left = -0.5f * (icon + gap + text);
             float textX = left + icon + gap;
+            SetBlockWidth(icon + gap + text);
             bool two = _shown2.Length > 0;
             float half = two ? 0.5f * LineStepInCaps * cap : 0f;
 

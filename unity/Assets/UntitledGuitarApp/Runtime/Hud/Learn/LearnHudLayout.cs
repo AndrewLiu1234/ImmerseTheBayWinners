@@ -53,6 +53,33 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
             return new Vector3(alongNeckM, heightM, 0f);
         }
 
+        /// <summary>
+        /// The message does not sit centred on the card spot: it starts this many degrees before it, on the neck's side,
+        /// and grows away from the neck. So the icon is always in the same place, a block of typical width (12 degrees) is
+        /// centred on the card spot, and a longer tip extends away from the neck instead of across it.
+        /// </summary>
+        public const float MessageLeadDegrees = 6f;
+
+        /// <summary>
+        /// Which way a message grows so that it grows away from the neck: +1 = toward the card's right (the viewer's
+        /// right), -1 = toward its left. <paramref name="cardRight"/> is the facing card's right axis,
+        /// <paramref name="outOfFretboard"/> the neck frame's +y, both in the same space. For a right-handed player
+        /// looking down the neck the fretboard faces the right of the view, so messages read left to right away from it.
+        /// </summary>
+        public static float AwayFromNeckSign(Vector3 cardRight, Vector3 outOfFretboard)
+        {
+            return Vector3.Dot(cardRight, outOfFretboard) >= 0f ? 1f : -1f;
+        }
+
+        /// <summary>
+        /// The origin of a message block for a card at <paramref name="cardPoint"/>: moved
+        /// <paramref name="leadM"/> metres back toward the neck along the card's right axis (see <see cref="MessageLeadDegrees"/>).
+        /// </summary>
+        public static Vector3 MessageOrigin(Vector3 cardPoint, Vector3 cardRight, float awaySign, float leadM)
+        {
+            return cardPoint - cardRight * (awaySign * leadM);
+        }
+
         // ------------------------------------------------------------------ a typical player (defaults, previews, tests)
 
         /// <summary>

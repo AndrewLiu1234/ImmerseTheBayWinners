@@ -131,6 +131,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
                 float gap = Meters(CleanGapDegrees);
                 float text = LearnText.WidthInCaps(CleanText) * _cleanLabel.Text.CapHeightMeters;
                 float left = -0.5f * (mark + gap + text);
+                SetBlockWidth(mark + gap + text);
                 _mark.SetSize(mark);
                 _mark.transform.localPosition = new Vector3(left + 0.5f * mark, 0f, 0f);
                 _cleanLabel.Transform.localPosition = new Vector3(left + mark + gap, 0f, 0f);
@@ -143,6 +144,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
                 float text = TipLine.BlockWidthInCaps(_shown1, _shown2) * cap;
                 float left = -0.5f * (icon + gap + text);
                 float textX = left + icon + gap;
+                SetBlockWidth(icon + gap + text);
                 float half = _shown2.Length > 0 ? 0.5f * LineStepInCaps * cap : 0f;
                 _mark.SetSize(icon);
                 _mark.transform.localPosition = new Vector3(left + 0.5f * icon, 0f, 0f);

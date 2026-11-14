@@ -259,6 +259,13 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
             if (_built) PlaceCard();
         }
 
+        void SetAlign(float alignX)
+        {
+            Tip.AlignX = alignX;
+            Strum.AlignX = alignX;
+            FingerStep.AlignX = alignX;
+        }
+
         /// <summary>Moves the message onto the neck card spot and turns it to face the eyes. Called every frame; also usable by previews.</summary>
         public void PlaceCard()
         {
@@ -270,17 +277,28 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
                 Vector3 p = _socket.TransformPoint(_cardLocal);
                 Vector3 eye = head != null ? head.position : _socket.TransformPoint(LearnHudLayout.TypicalEyeInNeckFrame);
                 Vector3 upHint = head != null ? head.up : _socket.TransformVector(LearnHudLayout.TypicalUpInNeckFrame);
+                distance = (p - eye).magnitude;
                 Vector3 forward, up;
                 if (LearnHudLayout.TryFacing(eye, p, upHint, out forward, out up))
-                    _card.SetPositionAndRotation(p, Quaternion.LookRotation(forward, up));
+                {
+                    // The message starts a fixed lead before the card spot and grows away from the neck.
+                    Vector3 right = Vector3.Cross(up, forward);
+                    float away = LearnHudLayout.AwayFromNeckSign(right, _socket.TransformVector(Vector3.up));
+                    float lead = HudText.SizeForAngularHeight(LearnHudLayout.MessageLeadDegrees, distance);
+                    _card.SetPositionAndRotation(LearnHudLayout.MessageOrigin(p, right, away, lead), Quaternion.LookRotation(forward, up));
+                    SetAlign(away);
+                }
                 else
+                {
                     _card.position = p;
-                distance = (p - eye).magnitude;
+                    SetAlign(0f);
+                }
             }
             else if (head != null)
             {
                 _card.SetPositionAndRotation(head.TransformPoint(LearnHudLayout.FloatingMessageHeadLocal()), head.rotation);
                 distance = LearnHudLayout.FloatingMessageDistanceM;
+                SetAlign(0f);
             }
             else
             {

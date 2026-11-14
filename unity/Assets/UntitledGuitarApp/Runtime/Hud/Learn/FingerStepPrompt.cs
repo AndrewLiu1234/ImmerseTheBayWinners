@@ -167,6 +167,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
                 LearnText.WidthInCaps(_detailText) * _detail.Text.CapHeightMeters);
             float left = -0.5f * (badge + gap + text);
             float textX = left + badge + gap;
+            SetBlockWidth(badge + gap + text);
 
             var badgeCentre = new Vector3(left + 0.5f * badge, Meters(BadgeY), 0f);
             _badge.transform.localPosition = badgeCentre;

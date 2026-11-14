@@ -314,6 +314,13 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
             if (_active) Place();
         }
 
+        /// <summary>Places the row now. The component does this itself every frame in Play Mode; previews in Edit Mode call it.</summary>
+        public void PlaceNow()
+        {
+            EnsureBuilt();
+            Place();
+        }
+
         /// <summary>Moves the row onto the neck and turns every mark to face the eyes. Called every frame while anything shows.</summary>
         void Place()
         {
