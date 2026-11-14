@@ -80,12 +80,15 @@ namespace UntitledGuitarApp.Runtime
         /// <summary>The operator's modes over this rig (idle / learn / play, DemoKeys); null if it failed to compose, and the
         /// walking skeleton still runs.</summary>
         public DemoDirector Demo { get; private set; }
+        /// <summary>Where the neck lives: head-locked, placed in the world, or aligned to the real guitar (SL8).</summary>
+        public NeckAnchor Anchor { get; private set; }
+        /// <summary>The 4-glance alignment and the one-glance re-anchor (operator keys A and Z, through DemoDirector).</summary>
+        public NeckAligner Aligner { get; private set; }
 
         readonly FingertipDot[] _dots = new FingertipDot[FloatingNeck.MaxDots];
         readonly StringMark[] _marks = new StringMark[6];
         readonly Vector3[] _fingertipTargets = new Vector3[4];
         int _dotCount;
-        bool _neckFollowsHead;
         float _nextStatusAt;
         int _shownSampleRate = -1;
         int _statusFps = -1, _statusRate = -1, _statusImuHz = -1;
@@ -196,8 +199,12 @@ namespace UntitledGuitarApp.Runtime
             }
             Neck.SetDots(_dots, _dotCount);
             Neck.SetStringMarks(_marks);
-            _neckFollowsHead = string.Equals(flags.anchorMode, "headLocked", StringComparison.Ordinal);
-            Neck.PlaceFloating(Rig.Head, _neckFollowsHead);
+            // Where the neck lives (SL8): NeckAnchor follows the head whenever anchorMode is headLocked OR the head is not
+            // tracked (the review's P0: a world-placed neck vanished below the view when tracking dropped), places it once in
+            // the world while tracked, and holds the aligned pose after a successful NeckAligner run (operator key A).
+            Anchor = NeckAnchor.Create(transform, Neck, Rig.Head, HeadPose);
+            Aligner = NeckAligner.Create(transform, Rig.Head, Neck, HeadPose, Anchor);
+            Aligner.Reticle = Reticle;
 
             // Left hand for a right-handed player; for a left-handed player the neck's mirrored socket mirrors the hand too.
             FrettingHand = CapsuleHand.Create(Neck.Socket, true);
@@ -271,8 +278,8 @@ namespace UntitledGuitarApp.Runtime
         /// <summary>The current heading becomes "forward" (logs imu_recenter) and the floating neck is placed in front again.</summary>
         public void RecenterView()
         {
-            if (HeadPose != null) HeadPose.Recenter();
-            if (Neck != null && Rig != null) Neck.PlaceFloating(Rig.Head, _neckFollowsHead);
+            if (Anchor != null) Anchor.Recenter();   // recenters the IMU heading and keeps an alignment on the real guitar
+            else if (HeadPose != null) HeadPose.Recenter();
         }
 
         /// <summary>Two lines on the Mac-screen spectator (the operator's demo line first when the modes are composed),
