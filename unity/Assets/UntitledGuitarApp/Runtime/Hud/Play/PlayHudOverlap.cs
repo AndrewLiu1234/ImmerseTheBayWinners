@@ -93,11 +93,15 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
         {
             var mask = new PixelMask(width, height);
             if (pixels == null) return mask;
-            int n = Mathf.Min(pixels.Length, width * height);
-            for (int i = 0; i < n; i++)
+            int rows = Mathf.Min(mask.Height, pixels.Length / mask.Width);
+            for (int y = 0; y < rows; y++)
             {
-                Color32 p = pixels[i];
-                if (p.r > threshold || p.g > threshold || p.b > threshold) mask.Set(i % width, i / width);
+                int row = y * mask.Width;
+                for (int x = 0; x < mask.Width; x++)
+                {
+                    Color32 p = pixels[row + x];
+                    if (p.r > threshold || p.g > threshold || p.b > threshold) mask.Set(x, y);
+                }
             }
             return mask;
         }
