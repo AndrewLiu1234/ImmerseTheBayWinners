@@ -4,7 +4,7 @@ using UntitledGuitarApp.Core.Theory;
 namespace UntitledGuitarApp.Core.Audio
 {
     /// <summary>What the tuner needle shows for one frame. All fields are finite.</summary>
-    public readonly struct TunerReading
+    public readonly struct TunerState
     {
         public readonly PitchStatus Status;
         /// <summary>Detected f0, Hz (0 without pitch).</summary>
@@ -26,7 +26,7 @@ namespace UntitledGuitarApp.Core.Audio
 
         public bool HasPitch => Status == PitchStatus.Pitched;
 
-        public TunerReading(PitchStatus status, double hz, int stringNumber, int targetMidi, double targetHz,
+        public TunerState(PitchStatus status, double hz, int stringNumber, int targetMidi, double targetHz,
                             double cents, double rawCents, bool inTune, float confidence, float rms)
         {
             Status = status; Hz = hz; String = stringNumber; TargetMidi = targetMidi; TargetHz = targetHz;
@@ -61,7 +61,7 @@ namespace UntitledGuitarApp.Core.Audio
 
         /// <param name="nowSec">Caller's monotonic clock, seconds (timestamp of the window's end).</param>
         /// <param name="targetString">1 = high E … 6 = low E to tune a chosen string; 0 = auto (nearest open string).</param>
-        public TunerReading Process(float[] samples, int offset, int count, double nowSec, int targetString = 0)
+        public TunerState Process(float[] samples, int offset, int count, double nowSec, int targetString = 0)
         {
             if (targetString != 0) Tuning.CheckString(targetString);
             var p = _tracker.Process(samples, offset, count);
@@ -71,7 +71,7 @@ namespace UntitledGuitarApp.Core.Audio
                 if (_haveSmoothed && !(nowSec - _lastPitchSec <= _cfg.TunerHoldSec)) _haveSmoothed = false;
                 int tm = targetString != 0 ? Tuning.StandardMidi(targetString) : 0;
                 double th = targetString != 0 ? Midi.ToHz(tm) : 0.0;
-                return new TunerReading(p.Status, 0.0, targetString, tm, th, 0.0, 0.0, false, p.Confidence, p.Rms);
+                return new TunerState(p.Status, 0.0, targetString, tm, th, 0.0, 0.0, false, p.Confidence, p.Rms);
             }
 
             int s = targetString != 0 ? targetString : NearestString(p.Hz);
@@ -93,7 +93,7 @@ namespace UntitledGuitarApp.Core.Audio
             _haveSmoothed = true; _smoothedString = s; _lastPitchSec = nowSec;
 
             bool inTune = Math.Abs(_smoothedCents) <= _cfg.TunerInTuneCents;
-            return new TunerReading(PitchStatus.Pitched, hz, s, midi, targetHz, _smoothedCents, raw, inTune, p.Confidence, p.Rms);
+            return new TunerState(PitchStatus.Pitched, hz, s, midi, targetHz, _smoothedCents, raw, inTune, p.Confidence, p.Rms);
         }
 
         /// <summary>Open string (1–6) closest in cents to <paramref name="hz"/>.</summary>

@@ -48,7 +48,7 @@ public class PatternJudgeTests
         Assert.Equal("B", c.Slots[0].Symbol);
         Assert.Equal(6, c.Slots[0].String);            // G chord
         Assert.Equal(3, c.Slots[1].String);
-        PatternSlot? onD = null;
+        PatternClockSlot? onD = null;
         foreach (var s in c.Slots) if (s.Symbol == "B" && s.ChordIndex == 1) { onD = s; break; }
         Assert.True(onD.HasValue);
         Assert.Equal(4, onD.Value.String);             // D chord bass = string 4
