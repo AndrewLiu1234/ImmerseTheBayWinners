@@ -301,6 +301,94 @@ namespace UntitledGuitarApp.Tests.EditMode
             Assert.IsTrue(float.IsNaN(t[3].x));
         }
 
+        // The relation the composed preview checks in the engine, here in plain geometry: the floating neck exactly as Bootstrap
+        // places it (NeckPlacement.Floating, FloatingPlacement.Default, Core's default neck), seen by the LEFT eye. Every learn
+        // mark is tested against every neck X / O mark by the angle between their centres (overlap = closer than half their
+        // two sizes). The OLD layout (learn row 30 mm beyond the nut, beside the neck's own X / O) must collide; the docked
+        // column must give zero collisions, for G (O marks) and C (an X that stays), with and without largeText.
+        static int CountCollisions(string chordName, bool docked, bool largeText, out int pairs, out int withNeck)
+        {
+            NeckLayout layout = CoreNeckLayout.Create(CoreNeckLayout.DefaultGeometry);
+            FloatingPlacement placement = FloatingPlacement.Default.Clamped();
+            NeckPose pose = NeckPlacement.Floating(placement, false);
+            Vector3 eye = new Vector3(-0.0315f, 0f, 0f);                         // left eye, head space
+            Vector3 eyeNeckMm = pose.InverseTransformPoint(eye) / NeckMath.MetresPerMm;
+            NeckSizes sizes = NeckStyle.Resolve(layout, placement.distanceM, placement.scale, false);   // the neck ignores largeText for X / O
+            var slots = new Vector3[6];
+            Vector3 along, across;
+            LearnNeckColumn.SlotCentres(sizes, layout.stringHeightMm, true, eyeNeckMm, slots, out along, out across);
+            float scale = largeText ? 1.35f : 1f;
+
+            LearnChord chord = LearnChords.Get(chordName);
+            var neckMarks = new NeckMark[6];
+            var verdicts = new LearnMark[6];
+            for (int s = 1; s <= 6; s++) verdicts[s - 1] = chord.IsSounding(s) ? LearnMark.Correct : LearnMark.None;
+            if (docked) LearnNeckColumn.ColumnMarksDuringPluck(chord, verdicts, neckMarks);
+            else LearnNeckColumn.ChordMarks(chord, neckMarks);
+
+            var learnAt = new Vector3[6];
+            float learnDeg;
+            if (docked)
+            {
+                for (int s = 1; s <= 6; s++) learnAt[s - 1] = pose.TransformPoint(slots[s - 1]);
+                float pitchDeg = LearnHudLayout.AngleBetweenDegrees(eye, learnAt[0], learnAt[1]);
+                learnDeg = Mathf.Min(NeckStyle.MarkDeg * scale, StringMarks.DockedFill * pitchDeg);
+            }
+            else
+            {
+                Vector3 nut = pose.TransformPoint(NeckMath.LocalMetres(0f, layout.stringHeightMm, 0f));
+                Vector3 centre, row;
+                LearnHudLayout.TryMarkRow(eye, nut, pose.rotation * Vector3.right, pose.rotation * Vector3.forward, pose.rotation * Vector3.up,
+                    LearnHudLayout.MarkBeyondNutM, out centre, out row);
+                float pitch = LearnHudLayout.SignedMeters(LearnHudLayout.MarkPitchDegrees * scale, (centre - eye).magnitude);
+                for (int s = 1; s <= 6; s++) learnAt[s - 1] = LearnHudLayout.MarkSlot(centre, row, s, pitch);
+                learnDeg = LearnHudLayout.MarkDegrees * scale;
+            }
+
+            int collisions = 0;
+            pairs = 0;
+            withNeck = 0;
+            for (int s = 1; s <= 6; s++)
+            {
+                if (verdicts[s - 1] == LearnMark.None) continue;
+                for (int t = 1; t <= 6; t++)
+                {
+                    if (neckMarks[t - 1] != NeckMark.None)
+                    {
+                        pairs++;
+                        float apart = LearnHudLayout.AngleBetweenDegrees(eye, learnAt[s - 1], pose.TransformPoint(slots[t - 1]));
+                        if (apart < 0.5f * (learnDeg + NeckStyle.MarkDeg))
+                        {
+                            collisions++;
+                            withNeck++;
+                        }
+                    }
+                    if (t > s && verdicts[t - 1] != LearnMark.None)
+                    {
+                        pairs++;
+                        if (LearnHudLayout.AngleBetweenDegrees(eye, learnAt[s - 1], learnAt[t - 1]) < learnDeg) collisions++;
+                    }
+                }
+            }
+            return collisions;
+        }
+
+        [Test]
+        public void OldLearnRowCollidesWithTheNecksXO_TheDockedColumnNeverDoes()
+        {
+            int pairs, withNeck;
+            CountCollisions("G", false, false, out pairs, out withNeck);
+            Assert.Greater(withNeck, 0, "the checker must fire on the old two-row layout: a learn mark on a neck O");
+            foreach (string chord in new[] { "G", "C", "D", "Em", "Am" })
+            {
+                foreach (bool large in new[] { false, true })
+                {
+                    Assert.AreEqual(0, CountCollisions(chord, true, large, out pairs, out withNeck), chord + (large ? " largeText" : "") + ": one mark per string");
+                    Assert.Greater(pairs, 0, chord + ": the check compared something");
+                }
+            }
+        }
+
         // ------------------------------------------------------------------ the SIMULATED dev run
 
         [Test]
