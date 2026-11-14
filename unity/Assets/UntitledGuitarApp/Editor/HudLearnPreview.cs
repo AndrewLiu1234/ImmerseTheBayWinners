@@ -36,6 +36,7 @@
 // advances the widgets itself (LearnWidget.Tick) and renders each state twice: the first render lets the font fill its
 // texture, then every size is applied again (HudText measures its real glyphs), then the frame that is saved is rendered.
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Text;
@@ -227,6 +228,7 @@ namespace UntitledGuitarApp.Editor
                 report.AppendLine("--- " + name);
                 problems += DescribePixels(pixels, verticalFov, report);
                 problems += DescribeContent(rig, report);
+                problems += CheckOverlaps(rig, report);
 
                 for (int i = 0; i < pixels.Length; i++) pixels[i].a = 255;
                 WritePng(Path.Combine(folder, name + "-black.png"), pixels, texture);
@@ -518,6 +520,144 @@ namespace UntitledGuitarApp.Editor
                 problems++;
             }
             return problems;
+        }
+
+        // ------------------------------------------------------------------ overlap check
+        //
+        // Every visible HUD part (texts and shapes, not the reference neck) becomes the quadrilateral that its own bounds box
+        // (Renderer.localBounds for a text, the mesh bounds for a shape) covers in the saved frame, projected through the eye
+        // camera's own matrices. Two parts whose quadrilaterals overlap by more than OverlapTolerancePx (separating-axis
+        // test, so rotated parts are judged by their real outline, not by a screen-aligned box) are flagged with !!, except
+        // pairs that overlap by design: tuner dial parts among themselves (the needle crosses the track), the finger number
+        // in its ring, and a string mark with that string's own number (they cross-fade in one place).
+
+        const float OverlapTolerancePx = 1.5f;
+
+        sealed class ScreenPart
+        {
+            public string Name;
+            public string Label;
+            public Transform Parent;
+            public bool Dial;
+            public readonly Vector2[] Quad = new Vector2[4];
+        }
+
+        static int CheckOverlaps(Rig rig, StringBuilder report)
+        {
+            var parts = new List<ScreenPart>();
+            HudText[] texts = rig.Root.GetComponentsInChildren<HudText>(true);
+            for (int i = 0; i < texts.Length; i++)
+            {
+                HudText text = texts[i];
+                if (!text.Visible || text.Text.Length == 0) continue;
+                var renderer = text.GetComponent<MeshRenderer>();
+                if (renderer == null) continue;
+                AddScreenPart(parts, rig.Camera, text.transform, renderer.localBounds, false, "text \"" + text.Text + "\" [" + text.name + "]");
+            }
+            HudShape[] shapes = rig.Root.GetComponentsInChildren<HudShape>(true);
+            for (int i = 0; i < shapes.Length; i++)
+            {
+                HudShape shape = shapes[i];
+                if (!shape.Visible || shape.Opacity <= 0f || shape.Glyph == LearnGlyph.Line) continue;
+                var filter = shape.GetComponent<MeshFilter>();
+                if (filter == null || filter.sharedMesh == null) continue;
+                AddScreenPart(parts, rig.Camera, shape.transform, filter.sharedMesh.bounds, !LearnGlyphs.FitsUnitBox(shape.Glyph),
+                    "shape " + shape.Glyph + " [" + shape.name + "]");
+            }
+
+            float pixelsPerDegree = EyeHeight / rig.Camera.fieldOfView;
+            int problems = 0;
+            for (int i = 0; i < parts.Count; i++)
+            {
+                for (int j = i + 1; j < parts.Count; j++)
+                {
+                    ScreenPart a = parts[i];
+                    ScreenPart b = parts[j];
+                    if (OverlapByDesign(a, b)) continue;
+                    float depth = OverlapDepthPx(a.Quad, b.Quad);
+                    if (depth <= OverlapTolerancePx) continue;
+                    report.AppendLine("  !! OVERLAP: " + a.Label + " and " + b.Label + " (" + F(depth / pixelsPerDegree) + " deg deep)");
+                    problems++;
+                }
+            }
+            if (problems == 0) report.AppendLine("  overlap check: " + parts.Count + " visible parts, no two overlap");
+            return problems;
+        }
+
+        static void AddScreenPart(List<ScreenPart> parts, Camera camera, Transform t, Bounds local, bool dial, string label)
+        {
+            var part = new ScreenPart { Name = t.name, Label = label, Parent = t.parent, Dial = dial };
+            Vector3 min = local.min;
+            Vector3 max = local.max;
+            float z = local.center.z;
+            if (!ToEyePixels(camera, t.TransformPoint(new Vector3(min.x, min.y, z)), out part.Quad[0])) return;
+            if (!ToEyePixels(camera, t.TransformPoint(new Vector3(max.x, min.y, z)), out part.Quad[1])) return;
+            if (!ToEyePixels(camera, t.TransformPoint(new Vector3(max.x, max.y, z)), out part.Quad[2])) return;
+            if (!ToEyePixels(camera, t.TransformPoint(new Vector3(min.x, max.y, z)), out part.Quad[3])) return;
+            parts.Add(part);
+        }
+
+        // A world point in pixels of the saved eye frame (origin bottom left), through the camera's own view and projection
+        // matrices, so the answer does not depend on the editor's screen size. False for a point behind the eye.
+        static bool ToEyePixels(Camera camera, Vector3 world, out Vector2 pixel)
+        {
+            Vector4 clip = camera.projectionMatrix * camera.worldToCameraMatrix * new Vector4(world.x, world.y, world.z, 1f);
+            pixel = Vector2.zero;
+            if (!(clip.w > 1e-6f)) return false;
+            pixel = new Vector2((clip.x / clip.w * 0.5f + 0.5f) * EyeWidth, (clip.y / clip.w * 0.5f + 0.5f) * EyeHeight);
+            return true;
+        }
+
+        static bool OverlapByDesign(ScreenPart a, ScreenPart b)
+        {
+            if (a.Dial && b.Dial) return true;
+            if (IsPair(a.Name, b.Name, "FingerRing", "FingerNumber")) return true;
+            return a.Parent == b.Parent && IsPair(a.Name, b.Name, "Mark", "Number");
+        }
+
+        static bool IsPair(string a, string b, string first, string second)
+        {
+            return (a == first && b == second) || (a == second && b == first);
+        }
+
+        /// <summary>
+        /// How deep two convex quadrilaterals overlap, in pixels: the smallest overlap of their shadows over the edge
+        /// normals of both (separating-axis test). 0 or less = they do not overlap. Pure.
+        /// </summary>
+        public static float OverlapDepthPx(Vector2[] a, Vector2[] b)
+        {
+            float depth = float.MaxValue;
+            for (int pass = 0; pass < 2; pass++)
+            {
+                Vector2[] polygon = pass == 0 ? a : b;
+                for (int i = 0; i < polygon.Length; i++)
+                {
+                    Vector2 edge = polygon[(i + 1) % polygon.Length] - polygon[i];
+                    var axis = new Vector2(-edge.y, edge.x);
+                    float length = axis.magnitude;
+                    if (!(length > 1e-6f)) continue;
+                    axis /= length;
+                    float minA, maxA, minB, maxB;
+                    Shadow(a, axis, out minA, out maxA);
+                    Shadow(b, axis, out minB, out maxB);
+                    float overlap = Mathf.Min(maxA, maxB) - Mathf.Max(minA, minB);
+                    if (overlap <= 0f) return overlap;
+                    if (overlap < depth) depth = overlap;
+                }
+            }
+            return depth == float.MaxValue ? 0f : depth;
+        }
+
+        static void Shadow(Vector2[] polygon, Vector2 axis, out float min, out float max)
+        {
+            min = float.MaxValue;
+            max = float.MinValue;
+            for (int i = 0; i < polygon.Length; i++)
+            {
+                float d = Vector2.Dot(polygon[i], axis);
+                if (d < min) min = d;
+                if (d > max) max = d;
+            }
         }
 
         static int CountChar(string s, char c)
