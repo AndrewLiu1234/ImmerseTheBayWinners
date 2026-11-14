@@ -59,6 +59,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
         int _span;
         int _lastToChange = int.MinValue;
         int _shownCount = -1;
+        int _maxVisible = MaxDots;
         bool _visible = true;
 
         // tempo estimate (only used while BeatsPerSecond is 0)
@@ -71,6 +72,22 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
 
         /// <summary>The tempo in beats per second (bpm * tempo preset / 60). Optional; 0 = estimate it. Only used to cap the pulse rate.</summary>
         public float BeatsPerSecond { get; set; }
+
+        /// <summary>
+        /// Most dots drawn (1..<see cref="MaxDots"/>, default <see cref="MaxDots"/>): the card lowers it when the row would
+        /// leave the view. A longer wait keeps the first dot current until this many beats are left.
+        /// </summary>
+        public int MaxVisible
+        {
+            get { return _maxVisible; }
+            set
+            {
+                int v = Mathf.Clamp(value, 1, MaxDots);
+                if (v == _maxVisible) return;
+                _maxVisible = v;
+                _shownCount = -1;
+            }
+        }
 
         /// <summary>How many beats the current countdown started with (the number of dots, before the <see cref="MaxDots"/> cap).</summary>
         public int Span { get { return _span; } }
@@ -160,7 +177,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
 
             UpdatePulseRate(beatsPerBar, inBar, beatInBar);
 
-            int shown = Mathf.Min(_span, MaxDots);
+            int shown = Mathf.Min(_span, _maxVisible);
             int current = CurrentIndex(shown, beatsToChange);
             bool pulseNow = BeatPulses(beatInBar, beatsPerBar, _pulseEvery, _barCounter);
             int nextInBar = (beatInBar + 1) % beatsPerBar;

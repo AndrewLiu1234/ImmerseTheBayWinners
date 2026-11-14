@@ -15,7 +15,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
     ///
     /// The numbers and the encouraging line come from Core (scoring, tips). If no line is given, a plain one is chosen from
     /// the score (<see cref="DefaultEncouragement"/>); the wording belongs to the music-teacher agent and may be replaced.
-    /// The object's origin is the centre of the card. Main thread only. Faces +Z.
+    /// The object's origin is straight ahead of the head; the rows sit above it (see TitleRowDeg). Main thread only. Faces +Z.
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class ResultsCard : MonoBehaviour
@@ -29,19 +29,30 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
         /// <summary>Beyond this many milliseconds the word "a little" is dropped.</summary>
         public const float ClearlyOffMs = 150f;
 
-        public const float TitleRowDeg = 5.6f;
+        // Rows (degrees above the card's centre, which sits straight ahead of the head). The whole card is ABOVE the floating
+        // neck (zone map, Sat 12:25: strings from el -2.4 down; comfortable up to el +11.4); the session also hides or dims
+        // the ghost hands and the neck's dots while it shows. With large text the rows spread DOWN from the title, which
+        // stays at the top: the card then reaches over the (hidden) neck instead of out of the view.
+        public const float TitleRowDeg = 10.45f;
         public const float TitleCapDeg = 1.5f;
-        public const float ScoreRowDeg = 2.2f;
+        public const float ScoreRowDeg = 7.8f;
         public const float ScoreCapDeg = 3.2f;
-        public const float LabelRowDeg = -0.9f;
+        public const float LabelRowDeg = 5.15f;
         public const float LabelCapDeg = 1.4f;
-        public const float MarksRowDeg = -3.1f;
+        public const float MarksRowDeg = 3.4f;
         public const float MarkPitchDeg = 1.25f;
         public const float MarkDeg = 0.8f;
-        public const float TimingRowDeg = -5.3f;
+        public const float TimingRowDeg = 1.85f;
         public const float TimingCapDeg = 1.4f;
-        public const float LineRowDeg = -8.2f;
+        public const float LineRowDeg = -0.3f;
         public const float LineCapDeg = 1.7f;
+
+        /// <summary>Where a row goes for a text scale: rows spread down from the title row, which stays put.</summary>
+        public static float RowFor(float rowDeg, float textScale)
+        {
+            float s = textScale > 0f && !float.IsNaN(textScale) ? textScale : 1f;
+            return TitleRowDeg - (TitleRowDeg - rowDeg) * s;
+        }
 
         /// <summary>Lines are shrunk (never below the minimum text size) to fit this width.</summary>
         public const float MaxWidthDeg = 36f;
@@ -130,7 +141,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
             int filled = FilledMarks(hit, total);
             float pitch = PlayHudLayout.Size(MarkPitchDeg * scale, d);
             float size = PlayHudLayout.Size(MarkDeg * scale, d);
-            float y = PlayHudLayout.Offset(MarksRowDeg * scale, d);
+            float y = PlayHudLayout.Offset(RowFor(MarksRowDeg, scale), d);
             float x0 = -0.5f * (marks - 1) * pitch;
             for (int i = 0; i < MaxMarks; i++)
             {
@@ -168,7 +179,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
             text.SetText(words);
             float fitted = PlayHudLayout.FitCapDegrees(HudTextMetrics.WidthEm(words), capDeg * scale, MaxWidthDeg,
                 HudText.MinTextDegrees, HudTextMetrics.CapPerEm);
-            text.transform.localPosition = new Vector3(0f, PlayHudLayout.Offset(rowDeg * scale, d), 0f);
+            text.transform.localPosition = new Vector3(0f, PlayHudLayout.Offset(RowFor(rowDeg, scale), d), 0f);
             text.SetAngularHeight(fitted, world);
         }
 

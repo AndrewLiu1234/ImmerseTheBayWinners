@@ -243,6 +243,20 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
             AdvanceWait(deltaSeconds);
         }
 
+        /// <summary>
+        /// Shows or hides the whole card (for example while the results card is up). Everything it holds is kept; a hidden
+        /// card does not run (its LateUpdate stops) and picks up the neck and the head again when shown.
+        /// </summary>
+        public void SetVisible(bool visible)
+        {
+            if (gameObject.activeSelf == visible) return;
+            gameObject.SetActive(visible);
+            if (visible) UpdatePose();
+        }
+
+        /// <summary>False after SetVisible(false).</summary>
+        public bool IsVisible { get { return gameObject.activeSelf; } }
+
         /// <summary>Recomputes the card's world pose from the neck socket and the head. Cheap; no allocation.</summary>
         public void UpdatePose()
         {
@@ -321,12 +335,13 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
                     _pauseRight.SetColor(InfoColor, eased);
                 }
                 // The cue slides up a fraction of its height as it appears: an eased entrance instead of a pop.
-                float capM = PlayHudLayout.Size(PlayHudLayout.TextDeg(PlayHudLayout.WaitCueCapDeg, _large), PlayHudLayout.DesignDistanceM);
+                float capM = _waitCapM;
                 _waitGroup.localPosition = new Vector3(_waitGroup.localPosition.x, _waitRowY - (1f - eased) * 0.35f * capM, 0f);
             }
         }
 
         float _waitRowY;
+        float _waitCapM;
 
         void ApplyVisibility()
         {
@@ -347,32 +362,38 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
         {
             float d = PlayHudLayout.DesignDistanceM;
             float world = WorldDistance();
-            float scale = HudText.TextScale(_large);
-            float left = PlayHudLayout.Offset(PlayHudLayout.ColumnLeftDeg, d);
+            PlayHudLayout.CardBlocks b = PlayHudLayout.Blocks(HudText.TextScale(_large));
+            float left = PlayHudLayout.Offset(b.ColumnLeft, d);
 
             _chordPivot.localScale = Vector3.one;
-            _chordPivot.localPosition = new Vector3(left, PlayHudLayout.Offset(PlayHudLayout.ChordRowDeg * scale, d), 0f);
-            _chord.SetAngularHeight(Mathf.Max(PlayHudLayout.ChordCapDeg * scale, HudText.ChordNameMinDegrees), world);
+            _chordPivot.localPosition = new Vector3(left, PlayHudLayout.Offset(b.ChordRow, d), 0f);
+            _chord.SetAngularHeight(b.ChordCap, world);
 
-            float nextLeft = left + PlayHudLayout.Offset((PlayHudLayout.NextBlockLeftDeg - PlayHudLayout.ColumnLeftDeg) * scale, d);
-            _nextWord.transform.localPosition = new Vector3(nextLeft, PlayHudLayout.Offset(PlayHudLayout.NextWordRowDeg * scale, d), 0f);
-            _nextWord.SetAngularHeight(PlayHudLayout.TextDeg(PlayHudLayout.NextWordCapDeg, _large), world);
-            _nextChord.transform.localPosition = new Vector3(nextLeft, PlayHudLayout.Offset(PlayHudLayout.NextChordRowDeg * scale, d), 0f);
-            _nextChord.SetAngularHeight(PlayHudLayout.TextDeg(PlayHudLayout.NextChordCapDeg, _large), world);
+            float nextLeft = PlayHudLayout.Offset(b.NextLeft, d);
+            _nextWord.transform.localPosition = new Vector3(nextLeft, PlayHudLayout.Offset(b.NextWordRow, d), 0f);
+            _nextWord.SetAngularHeight(b.NextWordCap, world);
+            _nextChord.transform.localPosition = new Vector3(nextLeft, PlayHudLayout.Offset(b.NextChordRow, d), 0f);
+            _nextChord.SetAngularHeight(b.NextChordCap, world);
 
-            float dotsY = PlayHudLayout.Offset(PlayHudLayout.DotsRowDeg * scale, d);
-            float firstDot = left + PlayHudLayout.Size(PlayHudLayout.DotCurrentDeg * scale, d) * 0.7f;
-            _beats.transform.localPosition = new Vector3(firstDot, dotsY, 0f);
+            // The beat dots count down to the next chord, so they sit under it (only as many as end inside the view).
+            _beats.transform.localPosition = new Vector3(PlayHudLayout.Offset(b.DotsFirstX, d), PlayHudLayout.Offset(b.DotsRow, d), 0f);
+            _beats.MaxVisible = b.DotsMaxVisible;
 
-            _pattern.transform.localPosition = new Vector3(left, PlayHudLayout.Offset(PlayHudLayout.PatternRowDeg * scale, d), 0f);
-            _lyrics.transform.localPosition = new Vector3(left, PlayHudLayout.Offset(PlayHudLayout.LyricRowDeg * scale, d), 0f);
-            _countIn.transform.localPosition = new Vector3(
-                left + PlayHudLayout.Offset((PlayHudLayout.CountInXDeg - PlayHudLayout.ColumnLeftDeg) * scale, d),
-                PlayHudLayout.Offset(PlayHudLayout.CountInRowDeg * scale, d), 0f);
+            // The pattern strip grows up from its lowest ink, which stays above the strings, between the two hands.
+            _pattern.MaxWidthDeg = b.PatternMaxWidth;
+            _pattern.AnchorBottom = true;
+            _pattern.transform.localPosition = new Vector3(left, PlayHudLayout.Offset(b.PatternBottom, d), 0f);
 
-            // Wait cue: a pause mark (two upright bars) and "strum G", on the dots row.
-            float cueDeg = PlayHudLayout.TextDeg(PlayHudLayout.WaitCueCapDeg, _large);
-            float capM = PlayHudLayout.Size(cueDeg, d);
+            // One lyric line above the chord name (the next line does not fit on the floating neck's view).
+            _lyrics.ShowNextLine = false;
+            _lyrics.transform.localPosition = new Vector3(left, PlayHudLayout.Offset(b.LyricRow, d), 0f);
+            // Large text: the lyric line no longer fits above the chord name inside the view; it is optional (PRD 6), so it yields.
+            if (_lyrics.gameObject.activeSelf != b.LyricFits) _lyrics.gameObject.SetActive(b.LyricFits);
+            _countIn.transform.localPosition = new Vector3(PlayHudLayout.Offset(b.CountInX, d), PlayHudLayout.Offset(b.CountInRow, d), 0f);
+
+            // Wait cue: a pause mark (two upright bars) and "strum G" in the "next" block, which makes way for it.
+            float capM = PlayHudLayout.Size(b.WaitCap, d);
+            _waitCapM = capM;
             if (_pauseLeft == null)
             {
                 _pauseLeft = HudShape.CreateBar(_waitGroup, "PauseLeft", capM * 0.26f, capM);
@@ -383,9 +404,10 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
             _pauseLeft.SetPosition(capM * 0.13f, 0f);
             _pauseRight.SetPosition(capM * 0.60f, 0f);
             _waitText.transform.localPosition = new Vector3(capM * 1.25f, 0f, 0f);
-            _waitText.SetAngularHeight(cueDeg, world);
-            _waitRowY = dotsY;
-            _waitGroup.localPosition = new Vector3(left, dotsY, 0f);
+            _waitText.SetAngularHeight(b.WaitCap, world);
+            float waitY = PlayHudLayout.Offset(b.WaitRow, d);
+            _waitRowY = waitY;
+            _waitGroup.localPosition = new Vector3(nextLeft, waitY, 0f);
 
             _shownWaitLevel = -1f;
             ApplyVisibility();

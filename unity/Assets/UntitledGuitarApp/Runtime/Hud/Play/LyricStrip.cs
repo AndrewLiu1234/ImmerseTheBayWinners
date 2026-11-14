@@ -225,6 +225,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
         float _markerY;
         float _caretY;
         float _tickInsetM;
+        bool _showNext = true;
 
         /// <summary>Beats in a bar (3 or 4): the first tick of each bar of a chords-only line is drawn larger. Default 4.</summary>
         public int BeatsPerBar
@@ -237,6 +238,21 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
                 _beatsPerBar = v;
                 for (int i = 0; i < MaxTicks; i++) _tickSize[i] = -1f;
                 ApplyProgress();
+            }
+        }
+
+        /// <summary>
+        /// Whether the next line is shown under the current one (default true). The neck card turns it off: on the floating
+        /// neck only one line fits above the chord name (zone map, Sat 12:25).
+        /// </summary>
+        public bool ShowNextLine
+        {
+            get { return _showNext; }
+            set
+            {
+                if (value == _showNext) return;
+                _showNext = value;
+                Relayout();
             }
         }
 
@@ -355,7 +371,18 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
                 LayoutSequenceLine(d, world, scale, capPerEm);
             }
 
-            LayoutNextLine(d, world, scale, capPerEm, -PlayHudLayout.Offset(nextDrop * scale, d));
+            if (_showNext)
+            {
+                LayoutNextLine(d, world, scale, capPerEm, -PlayHudLayout.Offset(nextDrop * scale, d));
+            }
+            else
+            {
+                _nextLyric.Visible = false;
+                for (int i = 0; i < MaxChords; i++)
+                {
+                    if (_nextChords[i] != null) _nextChords[i].Visible = false;
+                }
+            }
             ApplyProgress();
         }
 

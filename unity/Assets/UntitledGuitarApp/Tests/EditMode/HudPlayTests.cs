@@ -767,57 +767,169 @@ namespace UntitledGuitarApp.Tests.EditMode
             Assert.AreEqual(1.5f * HudText.LargeTextScale, PlayHudLayout.TextDeg(1.5f, true), 1e-5);
         }
 
-        [Test]
-        public void Layout_RowsAreStackedWithoutOverlap_AndTheColumnFitsTheView()
+        // ---- The card's blocks against each other (pure; no font): boxes in degrees relative to the anchor, ink extents.
+
+        const float CapPerEm = 0.716f;
+        const float DescenderOfCap = 434f / 1467f;     // Arial: descender 434/2048 em, cap height 1467/2048 em
+
+        static void PatternTop(PlayHudLayout.CardBlocks b, float scale, int slots, bool picking, out float top, out float right)
         {
-            // Bottom to top: cursor lane, strip, dots, chord, next lyric line, caret, lyric line, marker, chord names.
-            float laneBottom = PlayHudLayout.PatternRowDeg - PlayHudLayout.PatternLaneDropDeg - PlayHudLayout.PatternCaretDeg * 0.5f;
-            float stripTop = PlayHudLayout.PatternRowDeg + PlayHudLayout.PatternGlyphDeg * 0.5f * (1f + PatternStrip.HitGain);
-            float dotsBottom = PlayHudLayout.DotsRowDeg - PlayHudLayout.DotCurrentDeg * 0.5f * (1f + BeatDots.PulseGain) * BeatDots.DownbeatGain;
-            float dotsTop = PlayHudLayout.DotsRowDeg + PlayHudLayout.DotCurrentDeg * 0.5f * (1f + BeatDots.PulseGain) * BeatDots.DownbeatGain;
-            float chordBottom = PlayHudLayout.ChordRowDeg - PlayHudLayout.ChordCapDeg * 0.5f * (1f + NeckHudCard.WaitBreathGain);
-            float chordTop = PlayHudLayout.ChordRowDeg + PlayHudLayout.ChordCapDeg * 0.5f * (1f + NeckHudCard.WaitBreathGain);
-            float nextLineBottom = PlayHudLayout.LyricRowDeg - PlayHudLayout.LyricNextDropDeg - PlayHudLayout.LyricNextCapDeg * 0.8f;
-            float nextLineTop = PlayHudLayout.LyricRowDeg - PlayHudLayout.LyricNextDropDeg + PlayHudLayout.LyricNextCapDeg * 0.5f;
-            float caretRow = PlayHudLayout.LyricRowDeg - PlayHudLayout.LyricCaretDropDeg;
-            float lineBottom = PlayHudLayout.LyricRowDeg - PlayHudLayout.LyricLineCapDeg * 0.5f;
-            float lineTop = PlayHudLayout.LyricRowDeg + PlayHudLayout.LyricLineCapDeg * 0.5f;
-            float markerRow = PlayHudLayout.LyricRowDeg + PlayHudLayout.LyricMarkerRiseDeg;
-            float chordNamesBottom = PlayHudLayout.LyricRowDeg + PlayHudLayout.LyricChordRiseDeg - PlayHudLayout.LyricChordCapDeg * 0.5f;
-            float chordNamesTop = PlayHudLayout.LyricRowDeg + PlayHudLayout.LyricChordRiseDeg + PlayHudLayout.LyricChordCapDeg * 0.5f;
-
-            Assert.Less(stripTop, dotsBottom);
-            Assert.Less(dotsTop, chordBottom);
-            Assert.Less(chordTop, nextLineBottom);
-            Assert.Less(nextLineTop, caretRow - PlayHudLayout.LyricCaretDeg * 0.5f);
-            Assert.Less(caretRow + PlayHudLayout.LyricCaretDeg * 0.5f, lineBottom);
-            Assert.Less(lineTop, markerRow - PlayHudLayout.LyricMarkerHeightDeg * 0.5f);
-            Assert.Less(markerRow + PlayHudLayout.LyricMarkerHeightDeg * 0.5f, chordNamesBottom);
-
-            Assert.Less(chordNamesTop - laneBottom, PlayHudLayout.ViewHeightDeg);            // the whole column fits one 26.9 degree eye
-            Assert.LessOrEqual(PlayHudLayout.ColumnMaxWidthDeg, PlayHudLayout.ViewWidthDeg * 0.5f);
+            float lane, row, height;
+            PatternStrip.ExtentDeg(slots, picking, picking, scale, b.PatternMaxWidth, out lane, out row, out height);
+            top = b.PatternBottom + height;
+            right = b.ColumnLeft + slots * PlayHudLayout.PatternPitch(slots, PlayHudLayout.PatternPitchDeg * scale, b.PatternMaxWidth, PlayHudLayout.PatternMinPitchDeg);
         }
 
-        // Ink, not cap boxes: "Happy" and "birthday" hang 'p' and 'y' below the line. Arial's descender is 434/2048 em and its
-        // cap height 1467/2048 em, so a descender reaches 0.296 cap heights below the baseline; lowercase ascenders (b, d, h)
-        // stand as tall as the capitals. The caret that glides under the words must clear both the descenders above it and
-        // the ascenders of the next line below it. (The old spacing put the caret 0.24 degrees into the descenders.)
+        [Test]
+        public void Layout_BlocksDoNotOverlap_AtBothTextSizes()
+        {
+            foreach (bool large in new[] { false, true })
+            {
+                float s = HudText.TextScale(large);
+                PlayHudLayout.CardBlocks b = PlayHudLayout.Blocks(s);
+                string at = large ? " (large text)" : " (normal text)";
+                float maxDot = PlayHudLayout.DotCurrentDeg * s * (1f + BeatDots.PulseGain) * BeatDots.DownbeatGain;
+                float chordRight = b.ColumnLeft + PlayHudLayout.WidestChordEm * b.ChordCap / CapPerEm;
+                float nextBottom = b.NextChordRow - b.NextChordCap * 0.5f;
+                float nextTop = b.NextWordRow + b.NextWordCap * 0.5f;
+
+                // The pattern strip (6- and 8-slot songs, strum and picking) stays under the chord name and left of the "next" block.
+                foreach (int slots in new[] { 6, 8 })
+                {
+                    foreach (bool picking in new[] { false, true })
+                    {
+                        float top, right;
+                        PatternTop(b, s, slots, picking, out top, out right);
+                        Assert.Less(top, PlayHudLayout.ChordBottomDeg, "pattern under the chord name" + at);
+                        Assert.LessOrEqual(right, b.ColumnLeft + b.PatternMaxWidth + 1e-3f, "pattern inside its width" + at);
+                    }
+                }
+                // Chord name | next block; the dots under the next block; the count-in digit right of the chord name.
+                Assert.Less(chordRight, b.NextLeft, "next block right of the widest chord name" + at);
+                Assert.Less(b.DotsRow + 0.5f * maxDot, nextBottom, "dots under the next chord" + at);
+                Assert.GreaterOrEqual(b.DotsFirstX - 0.5f * maxDot, b.NextLeft - 1e-3f, "dots start under the next block" + at);
+                Assert.Less(chordRight, b.CountInX - PlayHudLayout.DigitHalfEm * b.CountInCap / CapPerEm, "count-in digit right of the chord" + at);
+                // The wait cue sits in the next block's place (which makes way for it) and ends inside the zone.
+                Assert.LessOrEqual(b.NextLeft + PlayHudLayout.WaitCueWidestEm * b.WaitCap / CapPerEm, PlayHudLayout.ZoneRightDeg + 0.7f, "wait cue width" + at);
+                Assert.Greater(b.WaitRow - b.WaitCap * 0.5f, b.DotsRow - 0.5f * maxDot, "wait cue above the dots row" + at);
+                // The lyric strip's lowest ink (its caret) clears the chord name, the next block and the count-in digit.
+                float lyricBottom = b.LyricRow - (PlayHudLayout.LyricCaretDropDeg + PlayHudLayout.LyricCaretDeg * 0.5f) * s;
+                Assert.Greater(lyricBottom, b.ChordTop, "lyric strip above the chord name" + at);
+                Assert.Greater(lyricBottom, nextTop, "lyric strip above the next block" + at);
+                Assert.Greater(lyricBottom, b.CountInRow + b.CountInCap * 0.5f, "lyric strip above the count-in" + at);
+                Assert.AreEqual(b.LyricTop <= PlayHudLayout.ZoneTopDeg + 1e-3f, b.LyricFits);
+            }
+            // Normal text keeps the lyric line; large text cannot fit it above the chord name, so it yields (it is optional).
+            Assert.IsTrue(PlayHudLayout.Blocks(1f).LyricFits);
+            Assert.IsFalse(PlayHudLayout.Blocks(HudText.LargeTextScale).LyricFits);
+        }
+
+        // Ink, not cap boxes: "Happy" and "birthday" hang 'p' and 'y' below the line; lowercase ascenders (b, d, h) stand as
+        // tall as the capitals. The caret that glides under the words must clear the descenders above it, and the next line
+        // (shown by a standalone LyricStrip) must clear the caret. (The old spacing put the caret 0.24 deg inside the descenders.)
         [Test]
         public void Layout_LyricCaretClearsTheDescendersAbove_AndTheNextLineBelow()
         {
-            const float descenderOfCap = 434f / 1467f;
             const float clearanceDeg = 0.08f;                                                    // ~3 glasses pixels
-            float descenderBottom = PlayHudLayout.LyricRowDeg - PlayHudLayout.LyricLineCapDeg * (0.5f + descenderOfCap);
-            float caretRow = PlayHudLayout.LyricRowDeg - PlayHudLayout.LyricCaretDropDeg;
+            float row = 0f;                                                                      // relative to the strip's origin
+            float descenderBottom = row - PlayHudLayout.LyricLineCapDeg * (0.5f + DescenderOfCap);
+            float caretRow = row - PlayHudLayout.LyricCaretDropDeg;
             float caretTop = caretRow + PlayHudLayout.LyricCaretDeg * 0.5f;
             float caretBottom = caretRow - PlayHudLayout.LyricCaretDeg * 0.5f;
-            float nextInkTop = PlayHudLayout.LyricRowDeg - PlayHudLayout.LyricNextDropDeg + PlayHudLayout.LyricNextCapDeg * 0.5f;
+            float nextInkTop = row - PlayHudLayout.LyricNextDropDeg + PlayHudLayout.LyricNextCapDeg * 0.5f;
             Assert.Less(caretTop + clearanceDeg, descenderBottom);
             Assert.Less(nextInkTop + clearanceDeg, caretBottom);
-            // ...and the next line's own descenders stay clear of the big chord name below it (it may breathe while waiting).
-            float nextDescenderBottom = PlayHudLayout.LyricRowDeg - PlayHudLayout.LyricNextDropDeg - PlayHudLayout.LyricNextCapDeg * (0.5f + descenderOfCap);
-            float chordTop = PlayHudLayout.ChordRowDeg + PlayHudLayout.ChordCapDeg * 0.5f * (1f + NeckHudCard.WaitBreathGain);
-            Assert.Less(chordTop + clearanceDeg, nextDescenderBottom);
+            // Marker and chord names above the words: words' tops < marker < chord names.
+            Assert.Less(row + PlayHudLayout.LyricLineCapDeg * 0.5f, PlayHudLayout.LyricMarkerRiseDeg - PlayHudLayout.LyricMarkerHeightDeg * 0.5f);
+            Assert.Less(PlayHudLayout.LyricMarkerRiseDeg + PlayHudLayout.LyricMarkerHeightDeg * 0.5f,
+                PlayHudLayout.LyricChordRiseDeg - PlayHudLayout.LyricChordCapDeg * 0.5f);
+        }
+
+        // ---- The card in the floating neck's view (zone map, Sat 12:25, left eye, measured on the 11:38 player frame).
+        // Taken: fretting hand az -10..-2 up to el +5.3; strings' top el -2.36 (ink of the neck lines in the 12:24 preview);
+        // strumming hand az +8..+14, el -1..-7. Comfortable: az +-21, el +-11.4.
+
+        const float HandRightAz = -2f, HandTopEl = 5.3f, StringsTopEl = -2.36f;
+        const float StrumLeftAz = 8f, StrumRightAz = 14f, StrumTopEl = -1f;
+        const float ComfortAz = 21f, ComfortEl = 11.4f, Clear = 0.5f;
+
+        // Where the card's anchor appears to the left eye for the default floating neck, from the pure placement maths
+        // (NeckPlacement.Floating's pose, written out; PlayHudLayout.AnchorWorld). The 12:24 preview measured (0.611, 2.150).
+        static Vector2 FloatingAnchorInLeftEye()
+        {
+            float az = -14f * Mathf.Deg2Rad, el = -4f * Mathf.Deg2Rad, tilt = 25f * Mathf.Deg2Rad, scale = 1.2f, distance = 0.9f;
+            var nut = new Vector3(Mathf.Sin(az) * Mathf.Cos(el), Mathf.Sin(el), Mathf.Cos(az) * Mathf.Cos(el)) * distance;
+            Vector3 neckX = new Vector3(1f, 0f, 0f) * scale;
+            Vector3 neckY = new Vector3(0f, Mathf.Sin(tilt), -Mathf.Cos(tilt)) * scale;
+            Vector3 anchor = PlayHudLayout.AnchorWorld(nut, neckX, neckY, Vector3.zero, Vector3.up,
+                PlayHudLayout.FretDistanceMm(PlayHudLayout.DefaultScaleLengthMm, PlayHudLayout.DefaultAnchorFret), PlayHudLayout.DefaultLiftMm);
+            Vector3 fromEye = anchor - new Vector3(-0.0315f, 0f, 0f);                           // left eye: half of a 63 mm IPD
+            return new Vector2(Mathf.Atan(fromEye.x / fromEye.z) * Mathf.Rad2Deg, Mathf.Atan(fromEye.y / fromEye.z) * Mathf.Rad2Deg);
+        }
+
+        [Test]
+        public void Layout_FitsTheFloatingNecksZoneMap_ClearOfBothHandsAndTheStrings()
+        {
+            Vector2 a = FloatingAnchorInLeftEye();
+            Assert.AreEqual(0.611f, a.x, 0.05f);                                                // the 12:24 render
+            Assert.AreEqual(2.150f, a.y, 0.05f);
+
+            foreach (bool large in new[] { false, true })
+            {
+                float s = HudText.TextScale(large);
+                PlayHudLayout.CardBlocks b = PlayHudLayout.Blocks(s);
+                string at = large ? " (large text)" : " (normal text)";
+                float maxDot = PlayHudLayout.DotCurrentDeg * s * (1f + BeatDots.PulseGain) * BeatDots.DownbeatGain;
+
+                // Every block starts right of the fretting hand.
+                Assert.GreaterOrEqual(a.x + b.ColumnLeft, HandRightAz + Clear, "column clear of the fretting hand" + at);
+                // The pattern strip: above the strings, between the hands.
+                Assert.GreaterOrEqual(a.y + b.PatternBottom, StringsTopEl + Clear - 0.02f, "pattern above the strings" + at);
+                foreach (int slots in new[] { 6, 8 })
+                {
+                    float top, right;
+                    PatternTop(b, s, slots, true, out top, out right);
+                    Assert.LessOrEqual(a.x + right, StrumLeftAz - Clear + 0.02f, "pattern left of the strumming hand" + at);
+                }
+                // The dots (under the next block, above the strumming hand where they share its width).
+                float dotsLeft = a.x + b.DotsFirstX - 0.5f * maxDot;
+                float dotsRight = a.x + b.DotsFirstX + (b.DotsMaxVisible - 1) * PlayHudLayout.DotPitchDeg * s + 0.5f * maxDot;
+                if (dotsRight > StrumLeftAz && dotsLeft < StrumRightAz)
+                    Assert.GreaterOrEqual(a.y + b.DotsRow - 0.5f * maxDot, StrumTopEl + Clear - 0.05f, "dots above the strumming hand" + at);
+                Assert.LessOrEqual(dotsRight, ComfortAz, "dots inside the view" + at);
+                // The chord block and the count-in inside the comfortable zone.
+                Assert.LessOrEqual(a.y + b.ChordTop, ComfortEl, "chord name inside" + at);
+                Assert.LessOrEqual(a.x + b.NextLeft + PlayHudLayout.WidestChordEm * b.NextChordCap / CapPerEm, ComfortAz, "next chord inside" + at);
+                Assert.LessOrEqual(a.x + b.CountInX + PlayHudLayout.DigitHalfEm * b.CountInCap / CapPerEm, ComfortAz, "count-in inside" + at);
+                // The lyric line, when shown, inside the zone; its widest line ends inside the view.
+                if (b.LyricFits)
+                {
+                    Assert.LessOrEqual(a.y + b.LyricTop, ComfortEl + 0.01f, "lyric strip inside" + at);
+                    Assert.LessOrEqual(a.x + b.ColumnLeft + PlayHudLayout.ColumnMaxWidthDeg, ComfortAz, "lyric width inside" + at);
+                }
+            }
+        }
+
+        [Test]
+        public void Results_RowsDoNotTouch_AndTheCardSitsAboveTheFloatingNeck()
+        {
+            // Rows top to bottom with their ink (descenders where the words have them: "chord changes clean", "timing: ...",
+            // "Play it once more."), at normal text size, straight ahead of the head (the card's centre).
+            float[] rows = { ResultsCard.TitleRowDeg, ResultsCard.ScoreRowDeg, ResultsCard.LabelRowDeg, ResultsCard.MarksRowDeg, ResultsCard.TimingRowDeg, ResultsCard.LineRowDeg };
+            float[] caps = { ResultsCard.TitleCapDeg, ResultsCard.ScoreCapDeg, ResultsCard.LabelCapDeg, ResultsCard.MarkDeg, ResultsCard.TimingCapDeg, ResultsCard.LineCapDeg };
+            bool[] descends = { false, false, true, false, true, true };
+            for (int i = 0; i + 1 < rows.Length; i++)
+            {
+                float bottom = rows[i] - caps[i] * (0.5f + (descends[i] ? DescenderOfCap : 0f));
+                float nextTop = rows[i + 1] + caps[i + 1] * 0.5f;
+                Assert.Greater(bottom, nextTop + 0.1f, "row " + i + " clears row " + (i + 1));
+            }
+            Assert.LessOrEqual(ResultsCard.TitleRowDeg + ResultsCard.TitleCapDeg * 0.5f, ComfortEl);
+            float lowest = ResultsCard.LineRowDeg - ResultsCard.LineCapDeg * (0.5f + DescenderOfCap);
+            Assert.GreaterOrEqual(lowest, StringsTopEl + Clear, "the whole card above the strings");
+            // Large text spreads the rows down from the title, which stays where it is.
+            Assert.AreEqual(ResultsCard.TitleRowDeg, ResultsCard.RowFor(ResultsCard.TitleRowDeg, HudText.LargeTextScale), 1e-5);
+            Assert.Less(ResultsCard.RowFor(ResultsCard.LineRowDeg, HudText.LargeTextScale), ResultsCard.LineRowDeg);
         }
 
         [Test]

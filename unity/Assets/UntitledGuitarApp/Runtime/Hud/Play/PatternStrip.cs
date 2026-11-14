@@ -40,8 +40,10 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
     /// slot). Each cell lights once a bar, so nothing here flashes faster than 3 Hz. When the cursor leaves the last cell
     /// it fades out to the right while it fades in from the left, landing on the first cell exactly on the bar line.
     ///
-    /// The object's origin is the left end of the strip, at the middle of the cell row; cells run to the right, the cursor
-    /// lane is underneath. Main thread only. Faces +Z.
+    /// The object's origin is the left end of the strip, at the middle of the cell row (or, with <see cref="AnchorBottom"/>,
+    /// at the strip's lowest ink, so the strip grows upward from a line it must not cross); cells run to the right, the
+    /// cursor lane is underneath and clears the cells' lowest ink (arrows, digits and the bass bar, swollen). Main thread
+    /// only. Faces +Z.
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class PatternStrip : MonoBehaviour
@@ -57,6 +59,11 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
 
         /// <summary>Slots after a slot's moment in which its cell relaxes.</summary>
         public const float GlowFall = 1f;
+
+        // The bar that marks the bass string sits this many digit cap heights below the digit's middle; its bottom is at
+        // drop + half its height (0.08).
+        const float BassBarDropOfCap = 0.82f;
+        const float BassBarBottomOfCap = 0.9f;
 
         const float RestDotOfGlyph = 0.2f;
         const float TickOfGlyph = 0.1f;
@@ -96,6 +103,11 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
         float _pitchM;
         float _glyphM;
         float _laneY;
+        float _rowY;
+        float _topM;
+        float _bottomM;
+        float _maxWidthDeg = PlayHudLayout.ColumnMaxWidthDeg;
+        bool _anchorBottom;
         float _slotPosition;
         bool _hasCursor;
 
@@ -120,6 +132,37 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
 
         /// <summary>Width of the strip in metres (local): slots * pitch.</summary>
         public float WidthMeters { get { return _count * _pitchM; } }
+
+        /// <summary>Widest the strip may be, degrees; the cell pitch is squeezed to fit (never below the minimum pitch).</summary>
+        public float MaxWidthDeg
+        {
+            get { return _maxWidthDeg; }
+            set
+            {
+                float v = value > 0f && !float.IsNaN(value) ? value : PlayHudLayout.ColumnMaxWidthDeg;
+                if (Mathf.Abs(v - _maxWidthDeg) < 1e-4f) return;
+                _maxWidthDeg = v;
+                Rebuild();
+            }
+        }
+
+        /// <summary>True: the origin is the strip's lowest ink (the bottom of the cursor lane), so it never reaches below it.</summary>
+        public bool AnchorBottom
+        {
+            get { return _anchorBottom; }
+            set
+            {
+                if (value == _anchorBottom) return;
+                _anchorBottom = value;
+                Rebuild();
+            }
+        }
+
+        /// <summary>Highest ink of the strip (a cell at the peak of its swell), metres above the origin.</summary>
+        public float TopMeters { get { return _topM; } }
+
+        /// <summary>Lowest ink of the strip (the bottom of the cursor lane), metres relative to the origin (0 with AnchorBottom).</summary>
+        public float BottomMeters { get { return _bottomM; } }
 
         /// <summary>Creates the strip under <paramref name="parent"/> (may be null) for a viewer <paramref name="viewingDistanceM"/> metres away.</summary>
         public static PatternStrip Create(Transform parent, float viewingDistanceM)
@@ -227,13 +270,29 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
         {
             float scale = HudText.TextScale(_large);
             float pitchDeg = PlayHudLayout.PatternPitch(_count, PlayHudLayout.PatternPitchDeg * scale,
-                PlayHudLayout.ColumnMaxWidthDeg, PlayHudLayout.PatternMinPitchDeg);
+                _maxWidthDeg, PlayHudLayout.PatternMinPitchDeg);
             float squeeze = pitchDeg / (PlayHudLayout.PatternPitchDeg * scale);
             _pitchM = PlayHudLayout.Size(pitchDeg, _distanceM);
             _glyphM = PlayHudLayout.Size(PlayHudLayout.PatternGlyphDeg * scale * squeeze, _distanceM);
-            _laneY = -PlayHudLayout.Size(PlayHudLayout.PatternLaneDropDeg * scale * squeeze, _distanceM);
             float caretM = PlayHudLayout.Size(PlayHudLayout.PatternCaretDeg * scale * squeeze, _distanceM);
             float digitDeg = Mathf.Max(PlayHudLayout.PatternDigitCapDeg * scale * squeeze, HudText.MinTextDegrees);
+            float digitM = PlayHudLayout.Size(digitDeg, _distanceM);
+
+            // The lane clears the cells' lowest ink at the peak of their swell: arrows, digits and the bass bar under a digit.
+            bool anyText = false, anyBass = false;
+            for (int i = 0; i < _count; i++)
+            {
+                PatternSlotKind k = _cells[i].Kind;
+                if (k == PatternSlotKind.Bass) anyBass = true;
+                if (k != PatternSlotKind.Down && k != PatternSlotKind.Up && k != PatternSlotKind.Rest) anyText = true;
+            }
+            float laneDropDeg, rowAboveBottomDeg, topAboveBottomDeg;
+            ExtentDeg(_count, anyText, anyBass, scale, _maxWidthDeg, out laneDropDeg, out rowAboveBottomDeg, out topAboveBottomDeg);
+            _laneY = -PlayHudLayout.Size(laneDropDeg, _distanceM);
+            float rowAboveBottom = PlayHudLayout.Size(rowAboveBottomDeg, _distanceM);
+            _rowY = _anchorBottom ? rowAboveBottom : 0f;
+            _bottomM = _rowY - rowAboveBottom;
+            _topM = _bottomM + PlayHudLayout.Size(topAboveBottomDeg, _distanceM);
 
             for (int i = 0; i < MaxSlots; i++)
             {
@@ -248,7 +307,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
                 }
 
                 float x = CellCenter(i, _pitchM);
-                cell.Root.localPosition = new Vector3(x, 0f, 0f);
+                cell.Root.localPosition = new Vector3(x, _rowY, 0f);
                 cell.Root.localScale = Vector3.one;
 
                 bool arrow = cell.Kind == PatternSlotKind.Down || cell.Kind == PatternSlotKind.Up;
@@ -290,9 +349,8 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
                 bool bass = cell.Kind == PatternSlotKind.Bass;
                 if (bass && cell.BassBar == null)
                 {
-                    float capM = PlayHudLayout.Size(digitDeg, _distanceM);
-                    cell.BassBar = HudShape.CreateBar(cell.Root, "BassBar", capM * 0.8f, capM * 0.16f);
-                    cell.BassBar.SetPosition(0f, -capM * 0.82f);
+                    cell.BassBar = HudShape.CreateBar(cell.Root, "BassBar", digitM * 0.8f, digitM * 0.16f);
+                    cell.BassBar.SetPosition(0f, -digitM * BassBarDropOfCap);
                     cell.BassBar.SetColor(GlyphColor, 0.9f);
                 }
                 if (cell.BassBar != null) cell.BassBar.Visible = bass;
@@ -301,7 +359,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
                 cell.Tick.Visible = onBeat;
                 if (onBeat)
                 {
-                    cell.Tick.SetPosition(x, _laneY);
+                    cell.Tick.SetPosition(x, _rowY + _laneY);
                     cell.Tick.SetSize(_glyphM * TickOfGlyph * (i == 0 ? 1.6f : 1f));
                 }
             }
@@ -325,14 +383,14 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
             float wrap = WrapBlend(u, _count);
 
             _caret.Visible = true;
-            _caret.SetPosition(CursorX(u, _pitchM), _laneY);
+            _caret.SetPosition(CursorX(u, _pitchM), _rowY + _laneY);
             _caret.SetColor(CaretColor, 1f - wrap);
 
             bool wrapping = wrap > 0f;
             _caretWrap.Visible = wrapping;
             if (wrapping)
             {
-                _caretWrap.SetPosition(CursorX(u - _count, _pitchM), _laneY);
+                _caretWrap.SetPosition(CursorX(u - _count, _pitchM), _rowY + _laneY);
                 _caretWrap.SetColor(CaretColor, wrap);
             }
 
@@ -393,6 +451,36 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
                 if (c == 'U') return PatternSlotKind.Up;
             }
             return PatternSlotKind.Other;
+        }
+
+        /// <summary>
+        /// The strip's vertical extent in degrees, for <paramref name="slots"/> cells at a text scale, squeezed into
+        /// <paramref name="maxWidthDeg"/>: how far the cursor lane's centre is below the cell row
+        /// (<paramref name="laneDropDeg"/>), how far the cell row is above the strip's lowest ink (the bottom of the lane,
+        /// <paramref name="rowAboveBottomDeg"/>) and how far its highest ink (a cell at the peak of its swell) is above that
+        /// (<paramref name="topAboveBottomDeg"/>). Text cells (digits) and the bar under a bass digit reach lower than arrows.
+        /// </summary>
+        public static void ExtentDeg(int slots, bool anyText, bool anyBass, float textScale, float maxWidthDeg,
+            out float laneDropDeg, out float rowAboveBottomDeg, out float topAboveBottomDeg)
+        {
+            float scale = textScale > 0f && !float.IsNaN(textScale) ? textScale : 1f;
+            float pitchDeg = PlayHudLayout.PatternPitch(slots, PlayHudLayout.PatternPitchDeg * scale, maxWidthDeg, PlayHudLayout.PatternMinPitchDeg);
+            float squeeze = pitchDeg / (PlayHudLayout.PatternPitchDeg * scale);
+            float glyph = PlayHudLayout.PatternGlyphDeg * scale * squeeze;
+            float caret = PlayHudLayout.PatternCaretDeg * scale * squeeze;
+            float digit = Mathf.Max(PlayHudLayout.PatternDigitCapDeg * scale * squeeze, HudText.MinTextDegrees);
+            float swell = 1f + HitGain;
+            float cellTop = glyph * 0.5f * swell;
+            float cellBottom = cellTop;
+            if (anyText)
+            {
+                cellTop = Mathf.Max(cellTop, digit * 0.5f * swell);
+                cellBottom = Mathf.Max(cellBottom, digit * (anyBass ? BassBarBottomOfCap : 0.5f) * swell);
+            }
+            laneDropDeg = Mathf.Max(PlayHudLayout.PatternLaneDropDeg * scale * squeeze,
+                cellBottom + PlayHudLayout.PatternLaneGapDeg * scale * squeeze + caret * 0.5f);
+            rowAboveBottomDeg = laneDropDeg + caret * 0.5f;
+            topAboveBottomDeg = rowAboveBottomDeg + cellTop;
         }
 
         /// <summary>The string number 1..6 of a picking slot, or 0 if the slot is not one.</summary>
