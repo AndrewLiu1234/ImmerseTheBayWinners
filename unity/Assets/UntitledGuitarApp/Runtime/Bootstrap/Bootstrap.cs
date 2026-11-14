@@ -3,6 +3,7 @@ using UnityEngine;
 using UntitledGuitarApp.Runtime.Audio;
 using UntitledGuitarApp.Runtime.Flags;
 using UntitledGuitarApp.Runtime.Gaze;
+using UntitledGuitarApp.Runtime.Head;
 using UntitledGuitarApp.Runtime.Hud;
 using UntitledGuitarApp.Runtime.Logging;
 using UntitledGuitarApp.Runtime.Render;
@@ -14,9 +15,12 @@ namespace UntitledGuitarApp.Runtime
     /// The only object in Scenes/Main.unity. Everything else is created from code here, so nobody ever hand-edits scene
     /// YAML (unity/CLAUDE.md: "one Bootstrap object; everything else spawns from code/prefabs"). Editor/SceneBuilder.cs
     /// makes the scene. Composition order: flags and the session recorder, the stereo rig (its Head is the wearer's head),
-    /// the spectator view on the Mac screen, the head-locked HUD (chord label, mic meter, SIMULATED badge), audio capture
-    /// (mic, or WAV replay when flags say audioSource = wav), and gaze-dwell input with its reticle.
-    /// Not wired yet (their modules are still being built): IMU head pose, the floating neck, the ghost hands.
+    /// IMU head pose driving that head (head-locked when packets stop), the spectator view on the Mac screen, the
+    /// head-locked HUD (chord label, mic meter, SIMULATED badge), audio capture (mic, or WAV replay when flags say
+    /// audioSource = wav), and gaze-dwell input with its reticle. Keys: R recenters the IMU heading (Space is gaze confirm).
+    /// In the editor, menu UGA > Editor Sim Rig on the Head gives mouse-look; it writes the head's world rotation after the
+    /// IMU (execution order 10000 vs -100), so it simply wins while attached.
+    /// Not wired yet (their modules are still being built): the floating neck, the ghost hands.
     /// Smoke run of a built player (no window, quits by itself, writes Player.log):
     ///   build/UntitledGuitarApp.app/Contents/MacOS/"Untitled Guitar App" -batchmode -nographics -ugaSmokeSeconds 5 -logFile build/smoke.log
     /// </summary>
@@ -38,6 +42,7 @@ namespace UntitledGuitarApp.Runtime
         public StereoRig Rig { get; private set; }
         /// <summary>The wearer's head. Head pose (IMU, or EditorSimRig in the editor) rotates it; HUD widgets hang under it.</summary>
         public Transform Head { get { return Rig != null ? Rig.Head : null; } }
+        public ImuHeadPose HeadPose { get; private set; }
         public SpectatorCam Spectator { get; private set; }
         public ChordLabel Chords { get; private set; }
         public MicMeter Meter { get; private set; }
@@ -48,8 +53,8 @@ namespace UntitledGuitarApp.Runtime
 
         float _nextStatusAt;
         int _shownSampleRate = -1;
-        int _statusFps = -1, _statusRate = -1;
-        bool _statusCapturing, _statusReplay, _statusStereo;
+        int _statusFps = -1, _statusRate = -1, _statusImuHz = -1;
+        bool _statusCapturing, _statusReplay, _statusStereo, _statusTracking;
         string _statusDevice = "";
         float _smokeQuitAt = -1f;
         bool _composed;
@@ -89,6 +94,13 @@ namespace UntitledGuitarApp.Runtime
             Rig = StereoRig.Create(transform);
             Rig.Head.gameObject.AddComponent<AudioListener>();   // the rig adds none, and Unity warns every frame without one
 
+            // IMU over UDP from tools/imu-bridge (127.0.0.1:47800). Head-locked (identity) when packets stop for imu.staleMs
+            // or when flags say anchorMode = headLocked; tracking resumes by itself when packets return.
+            var headPoseObject = new GameObject("ImuHeadPose");
+            headPoseObject.transform.SetParent(transform, false);
+            HeadPose = headPoseObject.AddComponent<ImuHeadPose>();
+            HeadPose.Target = Rig.Head;
+
             Spectator = SpectatorCam.Create(null);
             Spectator.Head = Rig.Head;
 
@@ -120,6 +132,10 @@ namespace UntitledGuitarApp.Runtime
         void Update()
         {
             FlagStore.Poll();
+            if (HeadPose != null && Input.GetKeyDown(KeyCode.R))
+            {
+                HeadPose.Recenter();   // the current heading becomes "forward" (logs imu_recenter)
+            }
             if (Meter != null && Mic != null)
             {
                 Meter.SetLevel(Mic.LevelRms, Mic.LevelPeak);
@@ -154,14 +170,18 @@ namespace UntitledGuitarApp.Runtime
             bool replay = Mic != null && Mic.IsReplay;
             string device = Mic != null ? Mic.DeviceName : "";
             bool stereo = Rig.IsStereo;
+            bool tracking = HeadPose != null && HeadPose.State == HeadTrackingState.Tracking;
+            int imuHz = HeadPose != null ? Mathf.RoundToInt(HeadPose.PacketRateHz) : 0;
             if (fps == _statusFps && rate == _statusRate && capturing == _statusCapturing && replay == _statusReplay &&
-                stereo == _statusStereo && string.Equals(device, _statusDevice, StringComparison.Ordinal))
+                stereo == _statusStereo && tracking == _statusTracking && imuHz == _statusImuHz &&
+                string.Equals(device, _statusDevice, StringComparison.Ordinal))
                 return;
             _statusFps = fps; _statusRate = rate; _statusCapturing = capturing; _statusReplay = replay;
-            _statusStereo = stereo; _statusDevice = device;
+            _statusStereo = stereo; _statusDevice = device; _statusTracking = tracking; _statusImuHz = imuHz;
             string audio = replay ? "WAV replay (simulated)" : capturing ? "mic: " + device : "mic: not capturing";
+            string imu = tracking ? "IMU " + imuHz + " Hz" : "IMU off: head-locked";
             Spectator.SetStatus(audio + "  " + (rate / 1000f).ToString("0.#") + " kHz",
-                                (stereo ? "stereo" : "2D") + " on display " + (Rig.TargetDisplay + 1) + "  " + fps + " fps");
+                                (stereo ? "stereo" : "2D") + " on display " + (Rig.TargetDisplay + 1) + "  " + fps + " fps  " + imu);
         }
 
         void ReadSmokeArgument()
