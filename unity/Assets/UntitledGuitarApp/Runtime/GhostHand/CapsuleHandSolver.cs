@@ -193,8 +193,50 @@ namespace UntitledGuitarApp.Runtime.GhostHand
         /// <summary>Per finger: how far (metres) the fingertip ends from where it was asked to be. 0 = on the target.</summary>
         public readonly float[] reachError = new float[FingerCount];
 
+        /// <summary>Steps of the palm fit (see FitPalm). 0 = keep the nominal posture: cheaper, but fingertips can miss by a centimetre.</summary>
+        public int fitIterations = 14;
+
+        // ---- the palm fit: 6 unknowns, damped least squares, fixed work, no allocation ----
+        const int ParamCount = 6;               // knuckle-centre offset along u, n, t (metres); rotation vector along u, n, t (radians)
+        const int PerFinger = 6;                // residuals per finger: reach error x y z, swing, first-joint comfort, second-joint comfort
+        const int ResidualCount = 4 * PerFinger + 3 + ParamCount;
+        const double ReachWeight = 100.0;       // per metre: 1 mm off a target outweighs every comfort term together
+        const double ThumbWeight = 15.0;        // the thumb behind the neck matters less than the fretting fingers
+        const double SwingWeight = 0.06;        // per radian of sideways swing
+        const double McpWeight = 0.03, PipWeight = 0.03;
+        const double McpComfort = 0.95, PipComfort = 1.25;      // the curl a fretting finger likes (radians)
+        const double PositionWeight = 1.0;      // per metre away from the nominal knuckle position
+        const double RotationWeight = 0.05;     // per radian away from the nominal palm rotation
+        const double MaxShift = 0.06, MaxTurn = 0.8;
+        const double FitTolerance = 0.0005;     // a fit whose worst fingertip is within 0.5 mm needs no second start
+
+        // other starting points tried (in this order) only when the first fit leaves a fingertip off its target
+        static readonly double[][] Restarts =
+        {
+            new[] { 0.0, 0.0, 0.0, 0.0, 0.30, 0.0 },
+            new[] { 0.0, 0.0, 0.0, 0.0, -0.30, 0.0 },
+            new[] { 0.0, 0.012, 0.0, 0.0, 0.0, 0.0 },
+            new[] { 0.0, -0.010, -0.010, 0.0, 0.0, 0.0 },
+            new[] { 0.0, 0.0, 0.0, 0.25, 0.0, 0.0 },
+            new[] { 0.0, 0.0, 0.0, -0.25, 0.0, 0.0 },
+        };
+
+        readonly double[] m_x = new double[ParamCount];
+        readonly double[] m_xTry = new double[ParamCount];
+        readonly double[] m_xBest = new double[ParamCount];
+        readonly double[] m_res = new double[ResidualCount];
+        readonly double[] m_resTry = new double[ResidualCount];
+        readonly double[] m_jac = new double[ResidualCount * ParamCount];
+        readonly double[] m_a = new double[ParamCount * ParamCount];
+        readonly double[] m_l = new double[ParamCount * ParamCount];
+        readonly double[] m_g = new double[ParamCount];
+        readonly double[] m_d = new double[ParamCount];
+
         readonly Vector3[] m_centre = new Vector3[FingerCount];     // fingertip-centre targets, parent space
         Vector3 m_u = Vector3.right, m_n = Vector3.up, m_t = Vector3.forward;
+        Vector3 m_knuckleNominal, m_knuckleMean, m_thumbTarget;
+        Quaternion m_rotNominal = Quaternion.identity;
+        float m_handSign = 1f, m_s = 1f;
 
         public CapsuleHandSolver(bool leftHand)
         {
@@ -221,8 +263,8 @@ namespace UntitledGuitarApp.Runtime.GhostHand
                 n = alt - u * Vector3.Dot(alt, u);
             }
             n = CapsuleHandMath.SafeNormalize(n, Vector3.up);
-            float handSign = (leftHand ? 1f : -1f) * (flipPalmSide ? -1f : 1f);
-            m_u = u; m_n = n; m_t = Vector3.Cross(u, n) * handSign;
+            m_handSign = (leftHand ? 1f : -1f) * (flipPalmSide ? -1f : 1f);
+            m_u = u; m_n = n; m_t = Vector3.Cross(u, n) * m_handSign;
         }
 
         /// <summary>
@@ -234,6 +276,7 @@ namespace UntitledGuitarApp.Runtime.GhostHand
         {
             UpdateNeckFrame();
             float s = Mathf.Max(scale, 0.05f);
+            m_s = s;
             Vector3 u = m_u, n = m_n, t = m_t;
 
             // ---- which fingers are used, and where their fingertip centres go ----
@@ -260,12 +303,13 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             }
             else centroid = restCentroid + n * TipLift(1);
 
-            // ---- the palm: nominal fretting posture ----
+            // ---- the nominal fretting posture: the palm stands beside the neck, the knuckles above the board ----
             float phi = palmTiltDegrees * Mathf.Deg2Rad;
             float cp = Mathf.Cos(phi), sp = Mathf.Sin(phi);
             Vector3 axisZ = n * cp - t * sp;            // wrist -> knuckles: up out of the board, leaning toward the bass side
             Vector3 axisY = t * cp + n * sp;            // back of the hand: away from the neck
             Vector3 axisX = Vector3.Cross(axisY, axisZ);
+            m_rotNominal = CapsuleHandMath.BasisToQuaternion(axisX, axisY, axisZ);
 
             Vector3 kUsed = Vector3.zero, kAll = Vector3.zero;
             for (int i = 0; i < ThumbIndex; i++)
@@ -273,34 +317,215 @@ namespace UntitledGuitarApp.Runtime.GhostHand
                 kAll += dims.chains[i].knuckle * 0.25f;
                 if (used[i]) kUsed += dims.chains[i].knuckle;
             }
-            Vector3 kMean = usedCount > 0 ? kUsed / usedCount : kAll;
-            Vector3 knuckleCentre = centroid + t * (palmSideOffset * s) + n * (palmHeight * s);
-            Vector3 palmPosition = knuckleCentre - (axisX * kMean.x + axisY * kMean.y + axisZ * kMean.z) * s;
+            m_knuckleMean = usedCount > 0 ? kUsed / usedCount : kAll;
+            m_knuckleNominal = centroid + t * (palmSideOffset * s) + n * (palmHeight * s);
 
+            // the thumb: behind the neck, roughly opposite the first two fingers
+            m_thumbTarget = u * (Vector3.Dot(centroid, u) + thumbAlongNeck) + t * thumbAcrossNeck - n * (neckDepth + TipLift(ThumbIndex));
+
+            // ---- fit the palm so that every used fingertip reaches its target ----
+            for (int j = 0; j < ParamCount; j++) m_xBest[j] = 0.0;
+            if (usedCount > 0 && fitIterations > 0) FitPalm();
+
+            Vector3 palmPosition;
+            Quaternion palmRotation;
+            PoseFromParams(m_xBest, out palmPosition, out palmRotation, out axisX, out axisY, out axisZ);
             pose.palmPosition = palmPosition;
-            pose.palmRotation = CapsuleHandMath.BasisToQuaternion(axisX, axisY, axisZ);
+            pose.palmRotation = palmRotation;
             pose.tip0 = pose.tip1 = pose.tip2 = pose.tip3 = pose.tip4 = Vector3.zero;
 
-            // ---- the fingers ----
+            // ---- the fingers and the thumb: each pose stores the point its fingertip actually reaches ----
             FingerIkResult r;
-            for (int i = 0; i < ThumbIndex; i++)
+            for (int i = 0; i < FingerCount; i++)
             {
-                if (!used[i]) { pose.SetTip(i, dims.hoverTip[i]); continue; }
-                Vector3 local = ToPalm(m_centre[i] - palmPosition, axisX, axisY, axisZ) / s;
+                if (i < ThumbIndex && !used[i]) { pose.SetTip(i, dims.hoverTip[i]); continue; }
+                Vector3 goal = i == ThumbIndex ? m_thumbTarget : m_centre[i];
+                Vector3 local = ToPalm(goal - palmPosition, axisX, axisY, axisZ) / s;
                 FingerIk.Solve(dims.chains[i], local, out r);
                 pose.SetTip(i, r.tip);
                 reachError[i] = r.error * s;
             }
+        }
 
-            // ---- the thumb: behind the neck, roughly opposite the first two fingers ----
+        // The palm pose for a parameter vector: the knuckle centre moves by (x0, x1, x2) along (u, n, t) and the palm turns
+        // about the knuckle centre by the rotation vector (x3, x4, x5) along (u, n, t). The rotation vector is multiplied
+        // by the hand sign so that a left hand and its mirror image have the SAME parameters.
+        void PoseFromParams(double[] x, out Vector3 palmPosition, out Quaternion rotation, out Vector3 axisX, out Vector3 axisY, out Vector3 axisZ)
+        {
+            Vector3 turn = (m_u * (float)x[3] + m_n * (float)x[4] + m_t * (float)x[5]) * m_handSign;
+            rotation = CapsuleHandMath.Normalized(CapsuleHandMath.FromRotationVector(turn) * m_rotNominal);
+            axisX = rotation * Vector3.right;
+            axisY = rotation * Vector3.up;
+            axisZ = rotation * Vector3.forward;
+            Vector3 knuckleCentre = m_knuckleNominal + m_u * (float)x[0] + m_n * (float)x[1] + m_t * (float)x[2];
+            palmPosition = knuckleCentre - (axisX * m_knuckleMean.x + axisY * m_knuckleMean.y + axisZ * m_knuckleMean.z) * m_s;
+        }
+
+        // Residuals of a parameter vector (what the fit makes small) and their sum of squares.
+        double Evaluate(double[] x, double[] res)
+        {
+            Vector3 p, aX, aY, aZ;
+            Quaternion q;
+            PoseFromParams(x, out p, out q, out aX, out aY, out aZ);
+            FingerIkResult r;
+            int k = 0;
+            for (int i = 0; i < ThumbIndex; i++)
             {
-                float along = Vector3.Dot(centroid, u) + thumbAlongNeck;
-                Vector3 behind = u * along + t * thumbAcrossNeck - n * (neckDepth + TipLift(ThumbIndex));
-                Vector3 local = ToPalm(behind - palmPosition, axisX, axisY, axisZ) / s;
-                FingerIk.Solve(dims.chains[ThumbIndex], local, out r);
-                pose.SetTip(ThumbIndex, r.tip);
-                reachError[ThumbIndex] = r.error * s;
+                if (!used[i])
+                {
+                    for (int j = 0; j < PerFinger; j++) res[k++] = 0.0;
+                    continue;
+                }
+                Vector3 local = ToPalm(m_centre[i] - p, aX, aY, aZ) / m_s;
+                FingerIk.Solve(dims.chains[i], local, out r);
+                Vector3 e = (r.tip - local) * m_s;
+                res[k++] = ReachWeight * e.x; res[k++] = ReachWeight * e.y; res[k++] = ReachWeight * e.z;
+                res[k++] = SwingWeight * r.swing;
+                res[k++] = McpWeight * (r.mcp - McpComfort);
+                res[k++] = PipWeight * (r.pipFlexion - PipComfort);
             }
+            {
+                Vector3 local = ToPalm(m_thumbTarget - p, aX, aY, aZ) / m_s;
+                FingerIk.Solve(dims.chains[ThumbIndex], local, out r);
+                Vector3 e = (r.tip - local) * m_s;
+                res[k++] = ThumbWeight * e.x; res[k++] = ThumbWeight * e.y; res[k++] = ThumbWeight * e.z;
+            }
+            for (int j = 0; j < ParamCount; j++) res[k++] = (j < 3 ? PositionWeight : RotationWeight) * x[j];
+
+            double cost = 0.0;
+            for (int m = 0; m < ResidualCount; m++) cost += res[m] * res[m];
+            return cost;
+        }
+
+        // The worst reach error (metres) among the used fingers, read from a residual vector.
+        double WorstReach(double[] res)
+        {
+            double worst = 0.0;
+            for (int i = 0; i < ThumbIndex; i++)
+            {
+                int k = i * PerFinger;
+                double e2 = res[k] * res[k] + res[k + 1] * res[k + 1] + res[k + 2] * res[k + 2];
+                if (e2 > worst) worst = e2;
+            }
+            return System.Math.Sqrt(worst) / ReachWeight;
+        }
+
+        // Fit the palm: start from the nominal posture; if a fingertip still misses, try the other starting points and keep
+        // the fit with the smallest worst miss (then the smallest cost). Leaves the winner in m_xBest.
+        void FitPalm()
+        {
+            for (int j = 0; j < ParamCount; j++) m_x[j] = 0.0;
+            double bestCost = Minimise();
+            double bestWorst = WorstReach(m_res);
+            for (int j = 0; j < ParamCount; j++) m_xBest[j] = m_x[j];
+
+            for (int s = 0; s < Restarts.Length && bestWorst > FitTolerance; s++)
+            {
+                for (int j = 0; j < ParamCount; j++) m_x[j] = Restarts[s][j];
+                double cost = Minimise();
+                double worst = WorstReach(m_res);
+                bool better = worst < bestWorst - 1e-5 || (worst <= bestWorst + 1e-5 && cost < bestCost);
+                if (!better) continue;
+                bestCost = cost; bestWorst = worst;
+                for (int j = 0; j < ParamCount; j++) m_xBest[j] = m_x[j];
+            }
+        }
+
+        // Levenberg-Marquardt from m_x; on return m_x holds the best parameters found and m_res their residuals.
+        double Minimise()
+        {
+            double cost = Evaluate(m_x, m_res);
+            double lambda = 1e-2;
+            for (int it = 0; it < fitIterations; it++)
+            {
+                // Jacobian by forward differences
+                for (int j = 0; j < ParamCount; j++)
+                {
+                    double h = j < 3 ? 2e-4 : 2e-3;
+                    for (int q = 0; q < ParamCount; q++) m_xTry[q] = m_x[q];
+                    m_xTry[j] += h;
+                    Evaluate(m_xTry, m_resTry);
+                    for (int m = 0; m < ResidualCount; m++) m_jac[m * ParamCount + j] = (m_resTry[m] - m_res[m]) / h;
+                }
+                // normal equations: A = J^T J, g = J^T r
+                for (int a = 0; a < ParamCount; a++)
+                {
+                    double ga = 0.0;
+                    for (int m = 0; m < ResidualCount; m++) ga += m_jac[m * ParamCount + a] * m_res[m];
+                    m_g[a] = ga;
+                    for (int b = a; b < ParamCount; b++)
+                    {
+                        double sum = 0.0;
+                        for (int m = 0; m < ResidualCount; m++) sum += m_jac[m * ParamCount + a] * m_jac[m * ParamCount + b];
+                        m_a[a * ParamCount + b] = sum;
+                        m_a[b * ParamCount + a] = sum;
+                    }
+                }
+
+                bool improved = false;
+                for (int attempt = 0; attempt < 4 && !improved; attempt++)
+                {
+                    if (SolveDamped(lambda))
+                    {
+                        for (int j = 0; j < ParamCount; j++)
+                        {
+                            double limit = j < 3 ? MaxShift : MaxTurn;
+                            double v = m_x[j] + m_d[j];
+                            m_xTry[j] = v < -limit ? -limit : (v > limit ? limit : v);
+                        }
+                        double tryCost = Evaluate(m_xTry, m_resTry);
+                        if (tryCost < cost)
+                        {
+                            for (int j = 0; j < ParamCount; j++) m_x[j] = m_xTry[j];
+                            for (int m = 0; m < ResidualCount; m++) m_res[m] = m_resTry[m];
+                            cost = tryCost;
+                            lambda = System.Math.Max(lambda * 0.3, 1e-7);
+                            improved = true;
+                            break;
+                        }
+                    }
+                    lambda = System.Math.Min(lambda * 6.0, 1e7);
+                }
+                if (!improved) break;       // no downhill step left: converged
+            }
+            return cost;
+        }
+
+        // Solve (A + lambda * diag(A) + tiny) d = -g by Cholesky. False if the matrix is not positive definite.
+        bool SolveDamped(double lambda)
+        {
+            const int n = ParamCount;
+            for (int i = 0; i < n; i++)
+            {
+                for (int j = 0; j <= i; j++)
+                {
+                    double sum = m_a[i * n + j];
+                    if (i == j) sum += lambda * m_a[i * n + i] + 1e-12;
+                    for (int k = 0; k < j; k++) sum -= m_l[i * n + k] * m_l[j * n + k];
+                    if (i == j)
+                    {
+                        if (!(sum > 1e-300)) return false;
+                        m_l[i * n + i] = System.Math.Sqrt(sum);
+                    }
+                    else m_l[i * n + j] = sum / m_l[j * n + j];
+                }
+            }
+            // forward substitution L y = -g, then back substitution L^T d = y
+            for (int i = 0; i < n; i++)
+            {
+                double sum = -m_g[i];
+                for (int k = 0; k < i; k++) sum -= m_l[i * n + k] * m_d[k];
+                m_d[i] = sum / m_l[i * n + i];
+            }
+            for (int i = n - 1; i >= 0; i--)
+            {
+                double sum = m_d[i];
+                for (int k = i + 1; k < n; k++) sum -= m_l[k * n + i] * m_d[k];
+                m_d[i] = sum / m_l[i * n + i];
+            }
+            for (int i = 0; i < n; i++)
+                if (double.IsNaN(m_d[i]) || double.IsInfinity(m_d[i])) return false;
+            return true;
         }
 
         /// <summary>The pose of a free hand (the strumming hand, or a hand another script places): the wrist exactly where you

@@ -15,7 +15,7 @@
 //   With dip = k * pip the fingertip, expressed in the swung plane, is  tip = Rot(mcp) * w(pip)  where
 //       w(pip) = ( l1 + l2 cos(pip) + l3 cos((1+k) pip) ,  l2 sin(pip) + l3 sin((1+k) pip) ).
 //   |w| does not depend on mcp, and it decreases monotonically for 0 <= pip <= pi/(1+k) (every derivative term is a negative
-//   sine). So: reach |target| -> pip (one monotone scalar inversion, a fixed 60-step bisection, no iteration tolerance to
+//   sine). So: reach |target| -> pip (one monotone scalar inversion, a fixed 36-step bisection, no iteration tolerance to
 //   tune), then direction -> mcp = atan2(target) - atan2(w). The sideways offset of the target gives the swing: tan(swing) =
 //   (offset along side) / (offset along forward). Every step is deterministic and takes a fixed amount of work.
 //
@@ -237,7 +237,7 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             {
                 double lo = 0.0, hi = p.M;              // |w| is above r at lo and below r at hi
                 double r2 = r * r;
-                for (int i = 0; i < 60; i++)
+                for (int i = 0; i < 36; i++)            // 36 halvings of at most 1.75 rad: far below float resolution
                 {
                     double mid = 0.5 * (lo + hi);
                     W(p, mid, out wx, out wy);
