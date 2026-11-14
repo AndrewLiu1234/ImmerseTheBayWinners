@@ -10,7 +10,9 @@
 // For each state it writes <name>-black.png (exactly the frame the glasses get: black is what they do not show) and
 // <name>-grey.png (the same light added to a mid-grey background, in linear light, the way an additive display adds to
 // the room), plus preview-report.txt with numbers a reviewer can check without looking: lit pixels, whether anything
-// touches the frame edge, and every text's size in degrees and whether its size was really measured.
+// touches the frame edge, every text's size in degrees and whether its size was really measured, and whether any two HUD
+// parts overlap in the frame (see CheckOverlaps; added after a run whose report was clean while the tuner's words sat on
+// its note name).
 //
 // The camera is one eye at the head centre: 1920x1080, 52 degree diagonal field of view (26.9 vertical). Neck states use
 // a seated right-handed player's typical eye position (LearnHudLayout.TypicalEyeInNeckFrame) looking at fret 2, and draw
@@ -31,10 +33,17 @@
 //  * ScriptReference/RenderTextureReadWrite.html: "When using Gamma color space, no conversions are done of any kind ... When
 //    Linear color space is used, then by default non-HDR render textures are considered to contain sRGB data". So the bytes
 //    read back are display (sRGB) values in both colour spaces.
+//  * ScriptReference/Camera-worldToCameraMatrix.html: "Matrix that transforms from world to camera space ... Note that camera
+//    space matches OpenGL convention: camera's forward is the negative Z axis." Camera-projectionMatrix.html: the camera's
+//    projection ("projection matrix passed to shaders can be modified depending on platform", so the GPU variant is NOT used
+//    here). Together they put a point in clip space, with w > 0 in front of the camera.
+//  * ScriptReference/Renderer-localBounds.html: "the axis-aligned bounding box fully enclosing the object in local space".
+//    Mesh-bounds.html: "the axis-aligned bounding box of the mesh in its local space (that is, not affected by the transform)".
 //
-// UNVERIFIED: nobody has run this yet (offline compile only). In Edit Mode Update / LateUpdate do not run, so this script
-// advances the widgets itself (LearnWidget.Tick) and renders each state twice: the first render lets the font fill its
-// texture, then every size is applied again (HudText measures its real glyphs), then the frame that is saved is rendered.
+// RUN: in batch mode on Metal by the coordinator on 2026-11-14 (16 PNGs; that run predates the overlap check). In Edit Mode
+// Update / LateUpdate do not run, so this script advances the widgets itself (LearnWidget.Tick) and renders each state
+// twice: the first render lets the font fill its texture, then every size is applied again (HudText measures its real
+// glyphs), then the frame that is saved is rendered.
 using System;
 using System.Collections.Generic;
 using System.Globalization;
