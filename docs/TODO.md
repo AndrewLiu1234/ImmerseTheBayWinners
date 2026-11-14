@@ -27,11 +27,11 @@ ticks only the boxes their half proves; Person 1 sets `done` after the device ch
 **Fallback if blocked:** 2D mode (same image to both eyes)
 **Max time:** 3h, by Sat 10:00 — escalate at 2h.
 
-## SL8 — IMU + real-neck alignment (MUST, gate G1 at Sat 11:00)   [track: XR+CORE] [owner: Person 1 · Person 2 (NeckSolver)] [status: todo] [depends: SL0]
+## SL8 — IMU + real-neck alignment (MUST, gate G1 at Sat 11:00)   [track: XR+CORE] [owner: Person 1 · Person 2 (NeckSolver)] [status: doing] [depends: SL0]
 **User-visible outcome:** 4 glances put the virtual neck on your real neck, and it stays there as you turn your head.
 **Owned paths:** Person 1: `tools/imu-bridge/**`, `Runtime/{Head,Neck}/**` · Person 2: `Core/Geometry/**`, `core-tests/Geometry/**`
 **Acceptance (automated):**
-- [ ] NeckSolver recovers a synthetic neck pose from 4 rays with residual < 5 mm (no noise) and reports residual with noise
+- [x] NeckSolver recovers a synthetic neck pose from 4 rays with residual < 5 mm (no noise) and reports residual with noise — Person 2: core-tests/Geometry/NeckSolverTests.cs (0.000 mm clean; RMS 1–2 mm at 0.5°), L1
 - [ ] Bridge packet-parser tests use bytes copied from `docs/apis/glasses/imu-protocol.md`
 **Acceptance (device):**
 - [ ] residual ≤15 mm at alignment; nut within 2 cm for 60 s with ±30° head turns; re-anchor ≤3 s
