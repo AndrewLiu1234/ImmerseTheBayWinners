@@ -47,8 +47,11 @@ namespace UntitledGuitarApp.Runtime.Audio
         /// <summary>True while audio is flowing. False when permission was denied, no device is available, or the watchdog is restarting.</summary>
         public bool IsCapturing { get { CaptureSession s = _session; return s != null && s.IsCapturing; } }
 
-        /// <summary>True when the input is the WAV replay (flag audioSource = "wav").</summary>
+        /// <summary>True when the input is the WAV replay (flag audioSource = "wav" AND the file loaded). This, not the flag, is what the SIMULATED INPUT badge must show.</summary>
         public bool IsReplay { get { CaptureSession s = _session; return s != null && s.IsReplay; } }
+
+        /// <summary>True when audioSource = "wav" but the replay file could not be used, so the microphone is the input instead (IsReplay is false).</summary>
+        public bool ReplayFallback { get { CaptureSession s = _session; return s != null && s.ReplayFallback; } }
 
         /// <summary>Counts every start, restart and failure of the stream. When it changes the samples have a gap (and maybe a new rate): reset DSP state. Any thread.</summary>
         public int Epoch { get { CaptureSession s = _session; return s != null ? s.Epoch : 0; } }

@@ -1,14 +1,178 @@
 // HardeningTests.cs: EditMode tests for the demo-hardening fixes (Sat 2026-11-14).
 //   MonitorLayoutTests   the maths behind "UGA/Glasses Game View" on macOS (NSScreen lines -> editor screen space -> the glasses)
+//   ReplayFixtureTests   the shipped WAV-replay file (header, length, level) and every wavReplayFile the flag files name exists
 // No Play Mode, no device, no network, no sleeping.
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Runtime.CompilerServices;
+using System.Text.RegularExpressions;
 using NUnit.Framework;
+using UntitledGuitarApp.Runtime.Audio;
 using UntitledGuitarApp.Runtime.Render;
 
 namespace UntitledGuitarApp.Tests.EditMode
 {
+    internal static class HardeningPaths
+    {
+        /// <summary>
+        /// unity/Assets. Found from this source file's own path first (absolute when compiled offline; "Assets/..." relative to
+        /// the project folder, Unity's working directory, when Unity compiles it), else from Application.dataPath (Editor only).
+        /// </summary>
+        public static string AssetsDir([CallerFilePath] string thisFile = "")
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(thisFile))
+                {
+                    string dir = Path.GetDirectoryName(Path.GetFullPath(thisFile));          // .../Assets/UntitledGuitarApp/Tests/EditMode
+                    string assets = Path.GetFullPath(Path.Combine(dir, "..", "..", ".."));
+                    if (Directory.Exists(Path.Combine(assets, "StreamingAssets"))) return assets;
+                }
+            }
+            catch (Exception) { }
+            return EngineAssetsDir();
+        }
+
+        // Separate and not inlined, so the offline runner's JIT never meets this engine call unless the path above failed.
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static string EngineAssetsDir() { return UnityEngine.Application.dataPath; }
+
+        public static string StreamingAssets { get { return Path.Combine(AssetsDir(), "StreamingAssets"); } }
+
+        /// <summary>The repository root (unity/Assets is two folders down).</summary>
+        public static string RepoRoot { get { return Path.GetFullPath(Path.Combine(AssetsDir(), "..", "..")); } }
+    }
+
+    [TestFixture]
+    public class ReplayFixtureTests
+    {
+        const string ShippedFile = "fixtures-demo/learn-g.wav";
+
+        static readonly Regex WavReplayFileField = new Regex("\"wavReplayFile\"\\s*:\\s*\"([^\"]*)\"", RegexOptions.CultureInvariant);
+
+        /// <summary>The flag files that ship or can be switched to: StreamingAssets/flags.default.json and tools/flags/*.json.</summary>
+        static List<string> FlagFiles()
+        {
+            List<string> files = new List<string>();
+            files.Add(Path.Combine(HardeningPaths.StreamingAssets, "flags.default.json"));
+            string profiles = Path.Combine(Path.Combine(HardeningPaths.RepoRoot, "tools"), "flags");
+            Assert.IsTrue(Directory.Exists(profiles), "expected the flag profiles in " + profiles);
+            foreach (string f in Directory.GetFiles(profiles, "*.json"))
+            {
+                if (Path.GetFileName(f).StartsWith("secrets", StringComparison.OrdinalIgnoreCase)) continue;   // never read secrets
+                files.Add(f);
+            }
+            files.Sort(StringComparer.Ordinal);
+            return files;
+        }
+
+        /// <summary>
+        /// Every problem with the replay files the given flag files name (read as TEXT, independent of the flag loader): a name
+        /// that is missing under <paramref name="streamingAssets"/> or does not decode. <paramref name="named"/> counts the names.
+        /// </summary>
+        static List<string> ReplayProblems(IEnumerable<string> flagFiles, string streamingAssets, out int named)
+        {
+            List<string> problems = new List<string>();
+            named = 0;
+            foreach (string file in flagFiles)
+            {
+                if (!File.Exists(file)) { problems.Add(file + ": flag file missing"); continue; }
+                string json = File.ReadAllText(file);
+                foreach (Match m in WavReplayFileField.Matches(json))
+                {
+                    named++;
+                    string rel = m.Groups[1].Value;
+                    if (rel.Length == 0) { problems.Add(file + ": wavReplayFile is empty"); continue; }
+                    string path = Path.Combine(streamingAssets, rel);
+                    if (!File.Exists(path)) { problems.Add(file + ": names \"" + rel + "\", which is not in " + streamingAssets); continue; }
+                    WavData d; string err;
+                    if (!WavReader.TryReadFile(path, out d, out err)) problems.Add(file + ": \"" + rel + "\" does not decode: " + err);
+                }
+            }
+            return problems;
+        }
+
+        [Test]
+        public void EveryWavReplayFileNamedByTheFlagFiles_ExistsInStreamingAssets_AndDecodes()
+        {
+            List<string> files = FlagFiles();
+            Assert.GreaterOrEqual(files.Count, 5, "flags.default.json + the four profiles");
+            int named;
+            List<string> problems = ReplayProblems(files, HardeningPaths.StreamingAssets, out named);
+            Assert.GreaterOrEqual(named, 5, "every flag file names a replay file (otherwise this check proves nothing)");
+            Assert.IsEmpty(problems, string.Join("\n", problems.ToArray()));
+        }
+
+        // The checker must be seen to fire: a flag file naming a file that does not exist, and one that is not a WAV.
+        [Test]
+        public void TheReplayFileCheck_ReportsAMissingAndABrokenFile()
+        {
+            string dir = Path.Combine(Path.GetTempPath(), "uga-replay-check-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                Directory.CreateDirectory(Path.Combine(dir, "fixtures-demo"));
+                File.WriteAllText(Path.Combine(Path.Combine(dir, "fixtures-demo"), "broken.wav"), "not a wav");
+                string flags = Path.Combine(dir, "flags.json");
+                File.WriteAllText(flags, "{ \"audioSource\": \"wav\", \"wavReplayFile\": \"fixtures-demo/missing.wav\" }\n"
+                    + "{ \"wavReplayFile\" : \"fixtures-demo/broken.wav\" }");
+                int named;
+                List<string> problems = ReplayProblems(new[] { flags }, dir, out named);
+                Assert.AreEqual(2, named);
+                Assert.AreEqual(2, problems.Count, string.Join("\n", problems.ToArray()));
+                StringAssert.Contains("missing.wav", problems[0]);
+                StringAssert.Contains("does not decode", problems[1]);
+            }
+            finally
+            {
+                try { Directory.Delete(dir, true); } catch (Exception) { }
+            }
+        }
+
+        [Test]
+        public void TheShippedReplayFile_Is48kMono16BitPcm_TenSeconds_AtAGentleLevel()
+        {
+            string path = Path.Combine(HardeningPaths.StreamingAssets, ShippedFile);
+            Assert.IsTrue(File.Exists(path), path + " must ship (art/audio/make_learn_g.py writes it)");
+            byte[] b = File.ReadAllBytes(path);
+            // Header as art/audio/make_learn_g.py writes it (Python's wave module: RIFF, fmt (16 bytes), data), read by hand.
+            Assert.AreEqual("RIFF", System.Text.Encoding.ASCII.GetString(b, 0, 4));
+            Assert.AreEqual("WAVE", System.Text.Encoding.ASCII.GetString(b, 8, 4));
+            Assert.AreEqual("fmt ", System.Text.Encoding.ASCII.GetString(b, 12, 4));
+            Assert.AreEqual(16, BitConverter.ToInt32(b, 16), "plain PCM fmt chunk");
+            Assert.AreEqual(1, BitConverter.ToInt16(b, 20), "format 1 = integer PCM");
+            Assert.AreEqual(1, BitConverter.ToInt16(b, 22), "mono");
+            Assert.AreEqual(48000, BitConverter.ToInt32(b, 24), "48 kHz");
+            Assert.AreEqual(96000, BitConverter.ToInt32(b, 28), "byte rate");
+            Assert.AreEqual(2, BitConverter.ToInt16(b, 32), "block align");
+            Assert.AreEqual(16, BitConverter.ToInt16(b, 34), "16-bit");
+            Assert.AreEqual("data", System.Text.Encoding.ASCII.GetString(b, 36, 4));
+            Assert.AreEqual(b.Length - 44, BitConverter.ToInt32(b, 40), "data size = the rest of the file");
+
+            WavData d; string err;
+            Assert.IsTrue(WavReader.TryReadFile(path, out d, out err), err);
+            Assert.AreEqual(48000, d.SampleRate);
+            Assert.AreEqual(1, d.SourceChannels);
+            Assert.AreEqual(16, d.SourceBitsPerSample);
+            Assert.AreEqual(10.0, d.DurationSec, 0.5, "about 10 s");
+
+            double sum = 0, peak = 0;
+            foreach (float v in d.Samples) { sum += v * (double)v; if (Math.Abs(v) > peak) peak = Math.Abs(v); }
+            double rmsDb = 10.0 * Math.Log10(sum / d.Samples.Length);
+            Assert.That(peak, Is.InRange(0.1, 0.5), "gentle: peak between -20 and -6 dBFS, never clipped");
+            Assert.That(rmsDb, Is.InRange(-40.0, -20.0), "RMS over the whole file");
+
+            // A strum every ~2 s: no 2-second window is (nearly) silent after the first strum at 0.3 s.
+            int win = 2 * d.SampleRate;
+            for (int start = (int)(0.3 * d.SampleRate); start + win <= d.Samples.Length; start += win)
+            {
+                double s = 0;
+                for (int i = start; i < start + win; i++) s += d.Samples[i] * (double)d.Samples[i];
+                double db = 10.0 * Math.Log10(s / win + 1e-20);
+                Assert.Greater(db, -45.0, "window starting at " + (start / (double)d.SampleRate) + " s is silent");
+            }
+        }
+    }
     [TestFixture]
     public class MonitorLayoutTests
     {

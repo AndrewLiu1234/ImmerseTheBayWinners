@@ -40,6 +40,9 @@ namespace UntitledGuitarApp.Runtime.Audio
     ///
     /// Source: <c>FlagStore.Current.audioSource == "wav"</c> replays <c>wavReplayFile</c> (relative to StreamingAssets) through
     /// the same ring buffer, so downstream code reads one source whatever the flag says; anything else uses the microphone.
+    /// When the replay file is empty, missing or unreadable, the session falls back to the MICROPHONE (one warning
+    /// "mic.wav_fallback" per file name) so audio still flows: then <see cref="IsReplay"/> is false and
+    /// <see cref="ReplayFallback"/> is true. The SIMULATED INPUT badge must therefore read <see cref="IsReplay"/>, not the flag.
     /// Microphone: the first device whose name contains <c>audio.device</c> (case-insensitive), else the default device;
     /// a 10 s looping clip at 48 kHz (clamped to what the device reports); <see cref="SampleRate"/> is what the clip really got.
     ///
@@ -86,6 +89,8 @@ namespace UntitledGuitarApp.Runtime.Audio
         string _micDevice;              // name handed to Microphone.* (null = default device)
         bool _micRunning;               // Microphone.Start succeeded and End has not been called
         WavReplaySource _replay;
+        bool _replayFallback;           // the flags ask for the WAV, it could not be used, the microphone runs instead
+        string _replayFallbackWarnedFor; // file name the fallback warning was given for (once per name)
         bool _cfgWav;
         string _cfgDevice = "";
         string _cfgWavFile = "";
@@ -132,6 +137,8 @@ namespace UntitledGuitarApp.Runtime.Audio
         public bool IsCapturing { get { return _state == State.Running; } }
         /// <summary>True when the input is the WAV replay: the HUD must show SIMULATED INPUT.</summary>
         public bool IsReplay { get { return _replay != null; } }
+        /// <summary>True when the flags ask for the WAV replay but it could not be used, so the microphone is the input (no SIMULATED INPUT).</summary>
+        public bool ReplayFallback { get { return _replayFallback; } }
         /// <summary>Name of the device in use, <see cref="DefaultDeviceLabel"/>, "wav:&lt;file&gt;" in replay mode, or "" when nothing is capturing.</summary>
         public string DeviceName { get { return _deviceName; } }
         /// <summary>Smoothed RMS, linear 0..1.</summary>
@@ -174,6 +181,7 @@ namespace UntitledGuitarApp.Runtime.Audio
             _zeroRunFrames = 0;
             _warnedSilent = false;
             _warnedPumpError = false;
+            _replayFallback = false;
             if (_cfgWav) StartReplay(nowSec); else StartMic(nowSec);
             _epoch = _epoch + 1;    // after the ring and rate are published, so a reader that sees the new epoch also sees the new rate
         }
@@ -227,8 +235,9 @@ namespace UntitledGuitarApp.Runtime.Audio
             bool wav = f != null && string.Equals(f.audioSource, "wav", StringComparison.OrdinalIgnoreCase);
             string device = (f != null && f.audio != null && f.audio.device != null) ? f.audio.device : "";
             string file = (f != null && f.wavReplayFile != null) ? f.wavReplayFile : "";
+            bool micInUse = !wav || _replayFallback;
             bool changed = wav != _cfgWav
-                || (!wav && !string.Equals(device, _cfgDevice, StringComparison.Ordinal))
+                || (micInUse && !string.Equals(device, _cfgDevice, StringComparison.Ordinal))
                 || (wav && !string.Equals(file, _cfgWavFile, StringComparison.Ordinal));
             if (!changed) return;
             UGALog.Event("mic.reconfigure", "source", wav ? "wav" : "mic", "device", device, "file", file);
@@ -297,22 +306,41 @@ namespace UntitledGuitarApp.Runtime.Audio
 
         void StartReplay(double nowSec)
         {
+            WavData data = null;
+            string error = null;
             if (_cfgWavFile.Length == 0)
             {
-                Fail("mic.wav", "audioSource is \"wav\" but wavReplayFile is empty. Capture is off; it retries when the app regains focus");
-                return;
+                error = "wavReplayFile is empty";
             }
-            string path = Path.Combine(_streamingAssetsPath, _cfgWavFile);
-            WavData data;
-            string error;
-            bool ok;
-            try { ok = _wavLoader(path, out data, out error); }
-            catch (Exception e) { data = null; error = e.GetType().Name + ": " + e.Message; ok = false; }
-            if (!ok || data == null)
+            else
             {
-                Fail("mic.wav", "audioSource is \"wav\" but the replay file could not be used: " + error + ". Capture is off; it retries when the app regains focus");
+                string path = Path.Combine(_streamingAssetsPath, _cfgWavFile);
+                bool ok;
+                try { ok = _wavLoader(path, out data, out error); }
+                catch (Exception e) { data = null; error = e.GetType().Name + ": " + e.Message; ok = false; }
+                if (!ok) data = null;
+                else if (data != null && (data.Samples.Length == 0 || data.SampleRate <= 0))
+                {
+                    error = "the file holds no playable audio (" + data.Samples.Length + " samples at " + data.SampleRate + " Hz): " + path;
+                    data = null;
+                }
+                if (data == null && string.IsNullOrEmpty(error)) error = "the loader returned no audio for " + path;
+            }
+            if (data == null)
+            {
+                // The replay is the "safe" demo profile: never leave the demo silent. Use the microphone and say so once per
+                // file name (the watchdog and focus retries come back here and try the file again, quietly).
+                _replayFallback = true;
+                if (!string.Equals(_replayFallbackWarnedFor, _cfgWavFile, StringComparison.Ordinal))
+                {
+                    _replayFallbackWarnedFor = _cfgWavFile;
+                    Warn("mic.wav_fallback", "audioSource is \"wav\" but the replay file could not be used: " + error
+                        + ". Using the MICROPHONE instead (IsReplay = false, so no SIMULATED INPUT badge should show)");
+                }
+                StartMic(nowSec);
                 return;
             }
+            _replayFallbackWarnedFor = null;
             _replay = new WavReplaySource(data);
             EnsureRing(data.SampleRate);
             _replay.Advance(nowSec);                              // anchors the replay clock
