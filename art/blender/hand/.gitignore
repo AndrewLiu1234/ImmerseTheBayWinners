@@ -1,0 +1,5 @@
+# Generated on every rebuild (see README.md); the committed outputs are ghost_hands.blend and renders/.
+build/
+*.blend1
+*.blend2
+*.blend@
