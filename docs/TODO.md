@@ -14,24 +14,24 @@ ticks only the boxes their half proves; Person 1 sets `done` after the device ch
 - [ ] Person 2, Sat 07:00: verify green · `./scripts/get-datasets.sh` · Stage 2 with `architect` (prompt P1) · review at 08:30
 - [ ] Person 1: Blender neck mock-up + hand rig (`GHOST_HANDS.md` §7) · measure the guitar (scale length, nut width, nut→soundhole)
 
-## SL0 — Walking skeleton + plumbing   [track: XR+CORE] [owner: Person 1 · Person 2] [status: todo] [depends: —]
+## SL0 — Walking skeleton + plumbing   [track: XR+CORE] [owner: Person 1 · Person 2] [status: doing] [depends: —]
 **User-visible outcome:** the glasses show a stereo floating neck with the G fingertip dots and chord name; a mic meter moves; the Mac screen shows the spectator view.
 **Owned paths:** Person 1: `Runtime/{Bootstrap,Render,Neck/FloatingNeck,Hud,Audio/MicCapture,Spectator,Flags,Logging}`, `Editor/{GlassesGameView,EditorSimRig,BuildScript}`, `Scenes/Main.unity` · Person 2: `Core/Theory/**`, `core-tests/Theory/**`
 **Contracts used:** `IAudioSource`, `ChordShape`, `FretboardGeometry`
 **Acceptance (automated):**
-- [ ] ChordLibrary has G, C, D, Em, Am exactly as Appendix B2 (frets, fingers, MIDI)
-- [ ] FretboardGeometry matches Appendix B4 within 0.1 mm; flags parsing EditMode test; Unity console clean
+- [x] ChordLibrary has G, C, D, Em, Am exactly as Appendix B2 (frets, fingers, MIDI) — Person 2: core-tests/Theory/ChordLibraryTests.cs, L1
+- [ ] FretboardGeometry matches Appendix B4 within 0.1 mm; flags parsing EditMode test; Unity console clean — Person 2 half done: FretboardGeometryTests.cs (L1); flags + console = Person 1
 **Acceptance (device, human-checked):**
 - [ ] SBS on display 2 at ≥60 fps; both eyes fuse; mic meter moves when you strum
 **Out of scope:** alignment, audio verdicts, ghost hands
 **Fallback if blocked:** 2D mode (same image to both eyes)
 **Max time:** 3h, by Sat 10:00 — escalate at 2h.
 
-## SL8 — IMU + real-neck alignment (MUST, gate G1 at Sat 11:00)   [track: XR+CORE] [owner: Person 1 · Person 2 (NeckSolver)] [status: todo] [depends: SL0]
+## SL8 — IMU + real-neck alignment (MUST, gate G1 at Sat 11:00)   [track: XR+CORE] [owner: Person 1 · Person 2 (NeckSolver)] [status: doing] [depends: SL0]
 **User-visible outcome:** 4 glances put the virtual neck on your real neck, and it stays there as you turn your head.
 **Owned paths:** Person 1: `tools/imu-bridge/**`, `Runtime/{Head,Neck}/**` · Person 2: `Core/Geometry/**`, `core-tests/Geometry/**`
 **Acceptance (automated):**
-- [ ] NeckSolver recovers a synthetic neck pose from 4 rays with residual < 5 mm (no noise) and reports residual with noise
+- [x] NeckSolver recovers a synthetic neck pose from 4 rays with residual < 5 mm (no noise) and reports residual with noise — Person 2: core-tests/Geometry/NeckSolverTests.cs (0.000 mm clean; RMS 1–2 mm at 0.5°), L1
 - [ ] Bridge packet-parser tests use bytes copied from `docs/apis/glasses/imu-protocol.md`
 **Acceptance (device):**
 - [ ] residual ≤15 mm at alignment; nut within 2 cm for 60 s with ±30° head turns; re-anchor ≤3 s
@@ -51,9 +51,9 @@ ticks only the boxes their half proves; Person 1 sets `done` after the device ch
 **Fallback if blocked:** procedural capsule hand posed by IK from the dots. Never dots only.
 **Max time:** 3h in Unity + Blender time.
 
-## SL1 — Tuner   [track: CORE+XR] [owner: Person 2 (YIN) · Person 1 (needle UI)] [status: todo] [depends: SL0]
+## SL1 — Tuner   [track: CORE+XR] [owner: Person 2 (YIN) · Person 1 (needle UI)] [status: doing] [depends: SL0]
 **User-visible outcome:** tune each string with a needle.
-**Acceptance (automated):** - [ ] YIN within ±3 cents on synthetic E2–E4 and within ±10 cents on recorded open strings
+**Acceptance (automated):** - [ ] YIN within ±3 cents on synthetic E2–E4 ✓ (Person 2: max 0.069 c, core-tests/Audio/YinPitchTrackerTests.cs, L1) and within ±10 cents on recorded open strings (open: no recordings yet; TunerRecordedEvalTests ready)
 **Acceptance (device):** - [ ] matches a clip-on or phone tuner within 10 cents
 **Max time:** 2.5h.
 
@@ -69,18 +69,18 @@ ticks only the boxes their half proves; Person 1 sets `done` after the device ch
 **Acceptance (device):** - [ ] 5 chords × 4 strums: at least 18 of 20 judged right
 **Max time:** 3h.
 
-## SL5 — Songs + play-along (+ setup and library)   [track: CORE+XR] [owner: Person 2 (Core) · Person 1 (HUD)] [status: todo] [depends: SL3]
+## SL5 — Songs + play-along (+ setup and library)   [track: CORE+XR] [owner: Person 2 (Core) · Person 1 (HUD)] [status: doing] [depends: SL3]
 **User-visible outcome:** pick a song, pick a tempo, play along with wait mode; lyrics shown above-chord style when the song has them.
 **Owned paths:** Person 2: `Core/Songs/**`, `Core/Practice/PlayAlongSession*`, `StreamingAssets/songs/**` · Person 1: neck HUD, lyric strip, library, approach rings
 **Acceptance (automated):**
-- [ ] AllSongsValid passes for the 3 songs (incl. `chords-only` rules and the 3/4 pickup in Happy Birthday)
-- [ ] timeline tests at every tempo preset; wait mode incl. the escape hatch; best-onset scoring
+- [x] AllSongsValid passes for the 3 songs (incl. `chords-only` rules and the 3/4 pickup in Happy Birthday) — Person 2: core-tests/Songs/SongTests.cs, L1
+- [x] timeline tests at every tempo preset; wait mode incl. the escape hatch; best-onset scoring — Person 2: core-tests/Songs/SongTimelineTests.cs + core-tests/Practice/PlayAlongSessionTests.cs, L1
 **Acceptance (device):** - [ ] Happy Birthday at 75% with wait mode completes with both ghost hands animating
 **Max time:** 3h. (Core part can start right after SL0.)
 
-## SL6 — Patterns and timing   [track: CORE+XR] [owner: Person 2 · Person 1] [status: todo] [depends: SL5]
+## SL6 — Patterns and timing   [track: CORE+XR] [owner: Person 2 · Person 1] [status: doing] [depends: SL5]
 **User-visible outcome:** strum arrows and the picking strip with a cursor, in sync with the strumming hand; timing feedback.
-**Acceptance (automated):** - [ ] onset F1 ≥ 0.9 on synthetic audio · timing math tests
+**Acceptance (automated):** - [ ] onset F1 ≥ 0.9 on synthetic audio (open: SpectralFluxOnset, after SL1) · timing math tests ✓ Person 2: core-tests/Practice/PatternJudgeTests.cs, L1
 **Acceptance (device):** - [ ] the pattern strip and the strumming hand agree; feedback makes sense
 **Max time:** 2.5h.
 
@@ -95,8 +95,11 @@ ticks only the boxes their half proves; Person 1 sets `done` after the device ch
 - [ ] Sat afternoon: eval set recorded through the app and frozen; a human writes the baseline JSON in `AUDIO_BASELINE.md`
 **Max time:** spread across Fri night + Sat.
 
-## SL7 — Change drill (SHOULD)   [track: CORE+XR] [owner: Person 2] [status: todo] [depends: SL3]
+## SL7 — Change drill (SHOULD)   [track: CORE+XR] [owner: Person 2] [status: doing] [depends: SL3]
 **User-visible outcome:** a G↔C and Am↔G clean-change counter. **Max time:** 1.5h.
+- [x] Core: ChangeDrillSession (clean = target heard ≤3 s after previous; best rate per 60 s; late-change tip after 2 slow) — core-tests/Practice/ChangeDrillSessionTests.cs, L1 · counter UI = Person 1 · needs SL3 strum check for real input
 
-## SL10 — AI coach (COULD)   [track: CORE] [owner: Person 2] [status: todo] [depends: SL5]
+## SL10 — AI coach (COULD)   [track: CORE] [owner: Person 2] [status: doing] [depends: SL5]
 **User-visible outcome:** a coach card after a run (≤3 s, or a rule-based fallback). **Max time:** 2h.
+- [x] Core: CoachInput, RuleBasedCoach, CoachPrompt, CoachResponseParser — core-tests/Coach/CoachTests.cs, L1
+- [ ] Runtime (Person 1): HTTP call only when flag `coach` ≠ "off", model `CoachPrompt.ModelId`, 3 s timeout, key from env var, fallback to RuleBasedCoach; card on the HUD
