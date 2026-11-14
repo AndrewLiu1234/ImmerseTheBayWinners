@@ -1,6 +1,7 @@
 using System;
 using NUnit.Framework;
 using UnityEngine;
+using UntitledGuitarApp.Runtime.Flags;
 using UntitledGuitarApp.Runtime.Render;
 
 namespace UntitledGuitarApp.Tests.EditMode
@@ -325,6 +326,218 @@ namespace UntitledGuitarApp.Tests.EditMode
             Assert.Throws<ArgumentOutOfRangeException>(() => StereoMath.EyeProjection(52f, Aspect, 0f, 20f, 63f, StereoEye.Left, 0f));
             Assert.Throws<ArgumentOutOfRangeException>(() => StereoMath.EyeProjection(52f, Aspect, 1f, 1f, 63f, StereoEye.Left, 0f));
             Assert.Throws<ArgumentOutOfRangeException>(() => StereoMath.EyeProjection(52f, Aspect, 0.1f, 20f, 63f, StereoEye.Left, -0.5f));
+        }
+    }
+
+    /// <summary>
+    /// Edit Mode tests of the StereoRig component (no Play Mode: StereoRig.Create builds and applies everything itself, because Awake
+    /// does not run in Edit Mode). Checks hierarchy, eye positions, viewports, display index, 2D fallback, clear settings and that the
+    /// camera matrices are the ones StereoMath computes. Lives in this file because the slice owns only this test file.
+    /// </summary>
+    public class StereoRigEditModeTests
+    {
+        GameObject _root;
+        StereoRig _rig;
+
+        [SetUp]
+        public void SetUp()
+        {
+            _root = new GameObject("StereoRigTestRoot");
+            _rig = StereoRig.Create(_root.transform);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            if (_root != null)
+                UnityEngine.Object.DestroyImmediate(_root);
+            _root = null;
+            _rig = null;
+        }
+
+        static RenderFlags Flags(bool stereo, int display, float ipdMm, bool swapEyes, float convergenceM)
+        {
+            RenderFlags f = new RenderFlags();
+            f.stereo = stereo;
+            f.glassesDisplay = display;
+            f.ipdMm = ipdMm;
+            f.swapEyes = swapEyes;
+            f.convergenceM = convergenceM;
+            return f;
+        }
+
+        static void AssertMatrixEqual(Matrix4x4 expected, Matrix4x4 actual, string what)
+        {
+            for (int row = 0; row < 4; row++)
+                for (int col = 0; col < 4; col++)
+                    Assert.AreEqual(expected[row, col], actual[row, col], 1e-5f * (1f + Mathf.Abs(expected[row, col])), what + " [" + row + "," + col + "]");
+        }
+
+        [Test]
+        public void Create_BuildsHeadAndTwoEyeCameras_UnderTheGivenParent()
+        {
+            Assert.AreSame(_root.transform, _rig.transform.parent);
+            Assert.IsNotNull(_rig.Head);
+            Assert.AreSame(_rig.transform, _rig.Head.parent);
+            Assert.AreEqual("Head", _rig.Head.name);
+            Assert.IsNotNull(_rig.LeftEye);
+            Assert.IsNotNull(_rig.RightEye);
+            Assert.AreSame(_rig.Head, _rig.LeftEye.transform.parent);
+            Assert.AreSame(_rig.Head, _rig.RightEye.transform.parent);
+            Assert.AreEqual("LeftEye", _rig.LeftEye.name);
+            Assert.AreEqual("RightEye", _rig.RightEye.name);
+            Assert.AreEqual(2, _rig.Head.childCount);
+        }
+
+        [Test]
+        public void Stereo_PutsTheEyesAtMinusAndPlusHalfIpd_AndGivesEachEyeItsHalfOfTheDisplay()
+        {
+            _rig.Apply(Flags(true, 1, 63f, false, 0f));
+
+            Assert.IsTrue(_rig.IsStereo);
+            Assert.AreEqual(-0.0315f, _rig.LeftEye.transform.localPosition.x, 1e-6f);
+            Assert.AreEqual(+0.0315f, _rig.RightEye.transform.localPosition.x, 1e-6f);
+            Assert.AreEqual(0f, _rig.LeftEye.transform.localPosition.y, 0f);
+            Assert.AreEqual(0f, _rig.LeftEye.transform.localPosition.z, 0f);
+            Assert.AreEqual(new Rect(0f, 0f, 0.5f, 1f), _rig.LeftEye.rect);
+            Assert.AreEqual(new Rect(0.5f, 0f, 0.5f, 1f), _rig.RightEye.rect);
+            Assert.IsTrue(_rig.LeftEye.enabled);
+            Assert.IsTrue(_rig.RightEye.enabled);
+        }
+
+        [Test]
+        public void GlassesDisplayFlag_BecomesTheTargetDisplayOfBothEyes()
+        {
+            foreach (int display in new[] { 0, 1, 3 })
+            {
+                _rig.Apply(Flags(true, display, 63f, false, 0f));
+                Assert.AreEqual(display, _rig.TargetDisplay);
+                Assert.AreEqual(display, _rig.LeftEye.targetDisplay, "left, display " + display);
+                Assert.AreEqual(display, _rig.RightEye.targetDisplay, "right, display " + display);
+            }
+        }
+
+        [Test]
+        public void SwapEyes_SwapsTheHalves_NotThePositions()
+        {
+            _rig.Apply(Flags(true, 1, 63f, true, 0f));
+
+            Assert.AreEqual(new Rect(0.5f, 0f, 0.5f, 1f), _rig.LeftEye.rect, "left camera draws the right half");
+            Assert.AreEqual(new Rect(0f, 0f, 0.5f, 1f), _rig.RightEye.rect, "right camera draws the left half");
+            Assert.AreEqual(-0.0315f, _rig.LeftEye.transform.localPosition.x, 1e-6f, "the left camera stays on the left");
+            Assert.AreEqual(+0.0315f, _rig.RightEye.transform.localPosition.x, 1e-6f);
+        }
+
+        [Test]
+        public void TwoDFallback_UsesOneCentredFullViewportCamera()
+        {
+            _rig.Apply(Flags(false, 1, 63f, true, 1f));
+
+            Assert.IsFalse(_rig.IsStereo);
+            Assert.IsTrue(_rig.LeftEye.enabled, "the left camera is the single camera");
+            Assert.IsFalse(_rig.RightEye.enabled);
+            Assert.AreEqual(new Rect(0f, 0f, 1f, 1f), _rig.LeftEye.rect);
+            Assert.AreEqual(0f, _rig.LeftEye.transform.localPosition.x, 0f, "centred on the head");
+            Assert.AreEqual(1, _rig.LeftEye.targetDisplay);
+
+            // 52 deg diagonal at 16:9, symmetric frustum, whatever the convergence flag says.
+            Matrix4x4 expected = Matrix4x4.Perspective(StereoMath.VerticalFovDeg(52f, 1920f / 1080f), 1920f / 1080f, 0.1f, 20f);
+            AssertMatrixEqual(expected, _rig.LeftEye.projectionMatrix, "2D projection");
+        }
+
+        [Test]
+        public void EyeCameras_UseTheProjectionsFromStereoMath()
+        {
+            _rig.Apply(Flags(true, 1, 63f, false, 0f));
+            AssertMatrixEqual(StereoMath.EyeProjection(52f, 1920f / 1080f, 0.1f, 20f, 63f, StereoEye.Left, 0f), _rig.LeftEye.projectionMatrix, "parallel, left");
+            AssertMatrixEqual(StereoMath.EyeProjection(52f, 1920f / 1080f, 0.1f, 20f, 63f, StereoEye.Right, 0f), _rig.RightEye.projectionMatrix, "parallel, right");
+
+            _rig.Apply(Flags(true, 1, 63f, false, 1.5f));
+            AssertMatrixEqual(StereoMath.EyeProjection(52f, 1920f / 1080f, 0.1f, 20f, 63f, StereoEye.Left, 1.5f), _rig.LeftEye.projectionMatrix, "converged, left");
+            AssertMatrixEqual(StereoMath.EyeProjection(52f, 1920f / 1080f, 0.1f, 20f, 63f, StereoEye.Right, 1.5f), _rig.RightEye.projectionMatrix, "converged, right");
+            Assert.Greater(_rig.LeftEye.projectionMatrix.m02, 0f);
+            Assert.Less(_rig.RightEye.projectionMatrix.m02, 0f);
+        }
+
+        [Test]
+        public void ClearsToSolidBlack_NoSkybox_NoHdr_NoRenderTexture()
+        {
+            _rig.Apply(Flags(true, 1, 63f, false, 0f));
+            foreach (Camera cam in new[] { _rig.LeftEye, _rig.RightEye })
+            {
+                Assert.AreEqual(CameraClearFlags.SolidColor, cam.clearFlags, cam.name);
+                Assert.AreEqual(0f, cam.backgroundColor.r + cam.backgroundColor.g + cam.backgroundColor.b, 0f, cam.name + " background is black");
+                Assert.IsFalse(cam.allowHDR, cam.name);
+                Assert.IsNull(cam.targetTexture, cam.name);
+                Assert.IsFalse(cam.orthographic, cam.name);
+            }
+        }
+
+        [Test]
+        public void DebugEyeColors_TintTheEyesRedAndBlue_AndBackToBlack()
+        {
+            _rig.DebugEyeColors = true;
+            Assert.Greater(_rig.LeftEye.backgroundColor.r, 0.2f);
+            Assert.AreEqual(0f, _rig.LeftEye.backgroundColor.b, 0f);
+            Assert.Greater(_rig.RightEye.backgroundColor.b, 0.2f);
+            Assert.AreEqual(0f, _rig.RightEye.backgroundColor.r, 0f);
+
+            _rig.Apply(Flags(true, 1, 63f, false, 0f));             // re-applying keeps the tint
+            Assert.Greater(_rig.LeftEye.backgroundColor.r, 0.2f);
+
+            _rig.DebugEyeColors = false;
+            Assert.AreEqual(0f, _rig.LeftEye.backgroundColor.r, 0f);
+            Assert.AreEqual(0f, _rig.RightEye.backgroundColor.b, 0f);
+        }
+
+        [Test]
+        public void Apply_Again_UpdatesInPlace_WithoutAddingObjects()
+        {
+            _rig.Apply(Flags(true, 1, 63f, false, 0f));
+            _rig.Apply(Flags(true, 1, 70f, false, 0f));
+
+            Assert.AreEqual(2, _rig.Head.childCount);
+            Assert.AreEqual(1, _rig.transform.childCount);
+            Assert.AreEqual(-0.035f, _rig.LeftEye.transform.localPosition.x, 1e-6f);
+            Assert.AreEqual(+0.035f, _rig.RightEye.transform.localPosition.x, 1e-6f);
+        }
+
+        [Test]
+        public void OutOfRangeFlags_AreClamped_NotThrown()
+        {
+            RenderFlags bad = new RenderFlags();
+            bad.ipdMm = -5f;
+            bad.fovDiagonalDeg = 0f;
+            bad.nearM = -1f;
+            bad.farM = 0f;
+            bad.convergenceM = float.NaN;
+            bad.glassesDisplay = 99;
+            bad.eyeWidth = 0;
+            bad.eyeHeight = 0;
+
+            Assert.DoesNotThrow(() => _rig.Apply(bad));
+
+            Assert.AreEqual(7, _rig.TargetDisplay, "Camera.targetDisplay supports at most 8 displays");
+            Assert.AreEqual(7, _rig.LeftEye.targetDisplay);
+            foreach (Camera cam in new[] { _rig.LeftEye, _rig.RightEye })
+            {
+                Matrix4x4 m = cam.projectionMatrix;
+                for (int row = 0; row < 4; row++)
+                    for (int col = 0; col < 4; col++)
+                        Assert.IsFalse(float.IsNaN(m[row, col]) || float.IsInfinity(m[row, col]), cam.name + " [" + row + "," + col + "]");
+                Assert.Greater(cam.farClipPlane, cam.nearClipPlane);
+                Assert.Greater(cam.nearClipPlane, 0f);
+            }
+        }
+
+        [Test]
+        public void Describe_NamesTheModeAndTheDisplay()
+        {
+            _rig.Apply(Flags(true, 1, 63f, false, 0f));
+            StringAssert.Contains("SBS", _rig.Describe());
+            StringAssert.Contains("display index 1", _rig.Describe());
+            _rig.Apply(Flags(false, 1, 63f, false, 0f));
+            StringAssert.Contains("2D", _rig.Describe());
         }
     }
 }
