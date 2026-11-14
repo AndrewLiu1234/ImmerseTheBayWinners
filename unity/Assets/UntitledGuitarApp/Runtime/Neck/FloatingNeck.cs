@@ -108,6 +108,11 @@ namespace UntitledGuitarApp.Runtime.Neck
         Transform _viewer;
         NeckMode _mode = NeckMode.Floating;
         NeckPose _floatingPose;
+        // A world-anchored floating neck remembers the head pose it was placed from, so a later re-place (a flag change, new
+        // placement values) keeps it where it is instead of jumping in front of wherever the head points at that moment.
+        bool _hasWorldAnchor;
+        Vector3 _worldAnchorPosition;
+        Quaternion _worldAnchorRotation = Quaternion.identity;
 
         NeckLayout _layout;
         NeckSizes _sizes;
@@ -331,15 +336,24 @@ namespace UntitledGuitarApp.Runtime.Neck
             get { return _activeFinger; }
         }
 
-        /// <summary>Where the floating neck hangs. Setting it re-places a floating neck.</summary>
+        /// <summary>
+        /// Where the floating neck hangs. Setting it re-places a floating neck: a head-attached one in head space, a world-anchored
+        /// one relative to the head pose it was placed from (it does not jump to where the head points now).
+        /// </summary>
         public FloatingPlacement Floating
         {
             get { return _floating; }
             set
             {
                 _floating = value.Clamped();
-                if (_initialized && _placed && _mode == NeckMode.Floating) PlaceFloating(_viewer, _followHead);
+                if (_initialized && _placed && _mode == NeckMode.Floating) Replace();
             }
+        }
+
+        /// <summary>True while the floating neck is attached to the head (head-locked); false when world-anchored or aligned.</summary>
+        public bool FollowsHead
+        {
+            get { return _mode == NeckMode.Floating && _attachedToHead; }
         }
 
         /// <summary>
@@ -485,6 +499,7 @@ namespace UntitledGuitarApp.Runtime.Neck
 
             NeckPose pose = NeckPlacement.Floating(_floating, _options.leftHanded);
             _floatingPose = pose;
+            _hasWorldAnchor = false;
             if (head != null && followHead)
             {
                 if (transform.parent != head) transform.SetParent(head, false);
@@ -495,10 +510,10 @@ namespace UntitledGuitarApp.Runtime.Neck
             else if (head != null)
             {
                 ReturnHome();
-                Vector3 worldPosition;
-                Quaternion worldRotation;
-                NeckPlacement.ToWorld(head.position, head.rotation, pose, out worldPosition, out worldRotation);
-                transform.SetPositionAndRotation(worldPosition, worldRotation);
+                _hasWorldAnchor = true;
+                _worldAnchorPosition = head.position;
+                _worldAnchorRotation = head.rotation;
+                PlaceAtWorldAnchor(pose);
             }
             else
             {
@@ -508,6 +523,15 @@ namespace UntitledGuitarApp.Runtime.Neck
             }
             transform.localScale = pose.scale;
             FollowViewer();
+        }
+
+        // A world-anchored floating neck: the placement in front of the head pose it was placed from.
+        void PlaceAtWorldAnchor(NeckPose pose)
+        {
+            Vector3 worldPosition;
+            Quaternion worldRotation;
+            NeckPlacement.ToWorld(_worldAnchorPosition, _worldAnchorRotation, pose, out worldPosition, out worldRotation);
+            transform.SetPositionAndRotation(worldPosition, worldRotation);
         }
 
         /// <summary>
@@ -560,11 +584,23 @@ namespace UntitledGuitarApp.Runtime.Neck
             Replace();
         }
 
-        // Puts the neck where it already is again, after something that changes the pose (handedness, placement values).
+        // Puts the neck where it already is again, after something that changes the pose (handedness, placement values). It never
+        // re-places from the head's CURRENT pose: a head-attached neck is re-placed in head space, a world-anchored one from the
+        // head pose it was placed from (so a flag change while the wearer looks down does not throw it out of view), an aligned
+        // one keeps its world pose; only the placement maths, the scale and the mirroring are re-applied.
         void Replace()
         {
             if (!_placed) return;
-            if (_mode == NeckMode.Floating)
+            if (_mode == NeckMode.Floating && _hasWorldAnchor && !_attachedToHead)
+            {
+                RebuildIfStyleChanged();
+                NeckPose pose = NeckPlacement.Floating(_floating, _options.leftHanded);
+                _floatingPose = pose;
+                PlaceAtWorldAnchor(pose);
+                transform.localScale = pose.scale;
+                FollowViewer();
+            }
+            else if (_mode == NeckMode.Floating)
             {
                 PlaceFloating(_viewer, _followHead);
             }
