@@ -1,0 +1,5 @@
+{ "profile": "judge", "anchorMode": "headLocked", "audioSource": "mic", "wavReplayFile": "fixtures-demo/learn-g.wav",
+  "audio": { "device": "MacBook", "noiseGateDb": 15, "pluckCentsTol": 55, "strumMinMargin": 0.1, "latencyOffsetMs": 0 },
+  "ghost": { "color": "#4FC3F7", "fill": 0.25, "fingerColors": false, "fadeAfterSuccess": 0.5 },
+  "waitModeDefault": true, "tempoPresets": [0.5, 0.75], "leftHanded": false, "chords": ["Em"], "largeText": true,
+  "spectator": "hostScreen", "debugOverlay": false, "coach": "off" }

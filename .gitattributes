@@ -1,0 +1,14 @@
+* text=auto eol=lf
+*.cs     text diff=csharp
+*.unity  merge=unityyamlmerge eol=lf
+*.prefab merge=unityyamlmerge eol=lf
+*.asset  merge=unityyamlmerge eol=lf
+*.meta   eol=lf
+*.wav    binary
+*.blend  binary
+*.fbx    binary
+*.png    binary
+*.psd    binary
+# append-only logs: both people can add lines without conflicts
+docs/STATUS.md    merge=union
+docs/DECISIONS.md merge=union

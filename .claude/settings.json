@@ -1,0 +1,96 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./scripts/verify.sh *)",
+      "Bash(scripts/verify.sh *)",
+      "Bash(./scripts/audio-eval.sh *)",
+      "Bash(scripts/audio-eval.sh *)",
+      "Bash(./scripts/diff-hash.sh *)",
+      "Bash(./scripts/logs.sh *)",
+      "Bash(./scripts/pull-session.sh *)",
+      "Bash(./scripts/use-flags.sh *)",
+      "Bash(./scripts/imu-bridge.sh *)",
+      "Bash(dotnet build *)",
+      "Bash(dotnet test *)",
+      "Bash(dotnet restore *)",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git switch *)",
+      "Bash(git worktree list *)",
+      "Bash(jq *)",
+      "Bash(open build/*)",
+      "mcp__unityMCP__read_console",
+      "mcp__unityMCP__refresh_unity",
+      "mcp__unityMCP__run_tests",
+      "mcp__unityMCP__get_test_job",
+      "mcp__unityMCP__find_gameobjects",
+      "mcp__unityMCP__validate_script",
+      "mcp__unityMCP__unity_docs",
+      "mcp__unityMCP__unity_reflect",
+      "mcp__unityMCP__manage_editor",
+      "mcp__unityMCP__manage_scene",
+      "mcp__unityMCP__manage_gameobject",
+      "mcp__unityMCP__manage_components",
+      "mcp__unityMCP__manage_prefabs",
+      "mcp__unityMCP__manage_material"
+    ],
+    "ask": [
+      "Bash(./scripts/build-mac.sh *)",
+      "Bash(./scripts/get-datasets.sh *)",
+      "Bash(./scripts/init-unity.sh *)",
+      "Bash(git push *)",
+      "Bash(git merge *)",
+      "Bash(git rebase *)",
+      "mcp__unityMCP__manage_build",
+      "mcp__unityMCP__manage_packages",
+      "mcp__unityMCP__execute_menu_item",
+      "mcp__unityMCP__execute_code",
+      "mcp__unityMCP__batch_execute",
+      "mcp__unityMCP__manage_asset",
+      "mcp__unityMCP__manage_scriptable_object"
+    ],
+    "deny": [
+      "Bash(git push --force *)",
+      "Bash(git push -f *)",
+      "Bash(git reset --hard *)",
+      "Bash(git clean *)",
+      "Bash(rm -rf *)",
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Edit(/unity/ProjectSettings/**)",
+      "mcp__unityMCP__create_script",
+      "mcp__unityMCP__manage_script",
+      "mcp__unityMCP__script_apply_edits",
+      "mcp__unityMCP__apply_text_edits",
+      "mcp__unityMCP__delete_script"
+    ]
+  },
+  "env": {
+    "CLAUDE_CODE_SUBAGENT_MODEL": "sonnet"
+  },
+  "worktree": { "baseRef": "head" },
+  "hooks": {
+    "SessionStart": [
+      { "matcher": "startup|resume|clear|compact",
+        "hooks": [ { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session-context.sh" } ] }
+    ],
+    "PreToolUse": [
+      { "matcher": "Edit|Write",
+        "hooks": [ { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/protect-files.sh" } ] }
+    ],
+    "PostToolUse": [
+      { "matcher": "Edit|Write",
+        "hooks": [ { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post-edit-check.sh" } ] }
+    ],
+    "Stop": [
+      { "hooks": [ { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/stop-gate.sh" } ] }
+    ],
+    "SubagentStop": [
+      { "matcher": "slice-builder|dsp-engineer",
+        "hooks": [ { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/stop-gate.sh" } ] }
+    ]
+  }
+}

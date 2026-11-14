@@ -1,0 +1,108 @@
+{
+  "schema": 1,
+  "id": "happy-birthday",
+  "title": "Happy Birthday to You",
+  "license": "public-domain",
+  "source": "https://abc7.com/happy-birthday-song-licensing-agreement-public-domain-copyright/1403454/",
+  "key": "G",
+  "tempoBpm": 90,
+  "timeSignature": [
+    3,
+    4
+  ],
+  "pickupBeats": 1,
+  "strum": {
+    "subdivision": 6,
+    "slots": [
+      "D",
+      "-",
+      "D",
+      "-",
+      "D",
+      "-"
+    ]
+  },
+  "pick": {
+    "subdivision": 6,
+    "slots": [
+      "B",
+      "3",
+      "2",
+      "1",
+      "2",
+      "3"
+    ]
+  },
+  "sections": [
+    {
+      "name": "Song",
+      "lines": [
+        {
+          "lyric": "Happy birthday to you",
+          "chords": [
+            {
+              "chord": "G",
+              "beats": 4,
+              "at": 0
+            },
+            {
+              "chord": "D",
+              "beats": 2,
+              "at": 18
+            }
+          ]
+        },
+        {
+          "lyric": "Happy birthday to you",
+          "chords": [
+            {
+              "chord": "D",
+              "beats": 4,
+              "at": 0
+            },
+            {
+              "chord": "G",
+              "beats": 2,
+              "at": 18
+            }
+          ]
+        },
+        {
+          "lyric": "Happy birthday dear friend",
+          "chords": [
+            {
+              "chord": "G",
+              "beats": 4,
+              "at": 0
+            },
+            {
+              "chord": "C",
+              "beats": 2,
+              "at": 20
+            }
+          ]
+        },
+        {
+          "lyric": "Happy birthday to you",
+          "chords": [
+            {
+              "chord": "G",
+              "beats": 3,
+              "at": 0
+            },
+            {
+              "chord": "D",
+              "beats": 1,
+              "at": 15
+            },
+            {
+              "chord": "G",
+              "beats": 3,
+              "at": 18
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

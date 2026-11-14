@@ -1,0 +1,33 @@
+# Unity
+unity/[Ll]ibrary/
+unity/[Tt]emp/
+unity/[Oo]bj/
+unity/[Bb]uild/
+unity/[Bb]uilds/
+unity/[Ll]ogs/
+unity/[Uu]ser[Ss]ettings/
+unity/*.csproj
+unity/*.sln
+unity/.vs/
+unity/.idea/
+# dotnet
+core-build/bin/
+core-build/obj/
+core-tests/bin/
+core-tests/obj/
+# outputs
+build/
+logs/
+data/
+# Claude Code
+.claude/worktrees/
+.claude/.last-green-verify
+.claude/settings.local.json
+CLAUDE.local.md
+.mcp.json
+# secrets
+.env
+.env.*
+tools/flags/secrets*.json
+# macOS
+.DS_Store

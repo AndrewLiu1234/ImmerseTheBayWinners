@@ -1,0 +1,223 @@
+{
+  "schema": 1,
+  "id": "riptide-loop",
+  "title": "Riptide (chord loop)",
+  "artist": "Vance Joy",
+  "license": "chords-only",
+  "credit": "Riptide by Vance Joy (2013). Chord progression only: no lyrics, melody, tab or recording.",
+  "notes": "The recording uses capo 1. We practice without a capo, so we sound a half step lower than the record.",
+  "key": "Am",
+  "tempoBpm": 100,
+  "timeSignature": [
+    4,
+    4
+  ],
+  "strum": {
+    "subdivision": 8,
+    "slots": [
+      "D",
+      "-",
+      "D",
+      "U",
+      "-",
+      "U",
+      "D",
+      "U"
+    ]
+  },
+  "pick": {
+    "subdivision": 8,
+    "slots": [
+      "B",
+      "3",
+      "2",
+      "3",
+      "1",
+      "3",
+      "2",
+      "3"
+    ]
+  },
+  "sections": [
+    {
+      "name": "Intro",
+      "lines": [
+        {
+          "lyric": "",
+          "chords": [
+            {
+              "chord": "Am",
+              "beats": 2
+            },
+            {
+              "chord": "G",
+              "beats": 2
+            },
+            {
+              "chord": "C",
+              "beats": 4
+            }
+          ]
+        },
+        {
+          "lyric": "",
+          "chords": [
+            {
+              "chord": "Am",
+              "beats": 2
+            },
+            {
+              "chord": "G",
+              "beats": 2
+            },
+            {
+              "chord": "C",
+              "beats": 4
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Loop",
+      "lines": [
+        {
+          "lyric": "",
+          "chords": [
+            {
+              "chord": "Am",
+              "beats": 2
+            },
+            {
+              "chord": "G",
+              "beats": 2
+            },
+            {
+              "chord": "C",
+              "beats": 4
+            }
+          ]
+        },
+        {
+          "lyric": "",
+          "chords": [
+            {
+              "chord": "Am",
+              "beats": 2
+            },
+            {
+              "chord": "G",
+              "beats": 2
+            },
+            {
+              "chord": "C",
+              "beats": 4
+            }
+          ]
+        },
+        {
+          "lyric": "",
+          "chords": [
+            {
+              "chord": "Am",
+              "beats": 2
+            },
+            {
+              "chord": "G",
+              "beats": 2
+            },
+            {
+              "chord": "C",
+              "beats": 4
+            }
+          ]
+        },
+        {
+          "lyric": "",
+          "chords": [
+            {
+              "chord": "Am",
+              "beats": 2
+            },
+            {
+              "chord": "G",
+              "beats": 2
+            },
+            {
+              "chord": "C",
+              "beats": 4
+            }
+          ]
+        },
+        {
+          "lyric": "",
+          "chords": [
+            {
+              "chord": "Am",
+              "beats": 2
+            },
+            {
+              "chord": "G",
+              "beats": 2
+            },
+            {
+              "chord": "C",
+              "beats": 4
+            }
+          ]
+        },
+        {
+          "lyric": "",
+          "chords": [
+            {
+              "chord": "Am",
+              "beats": 2
+            },
+            {
+              "chord": "G",
+              "beats": 2
+            },
+            {
+              "chord": "C",
+              "beats": 4
+            }
+          ]
+        },
+        {
+          "lyric": "",
+          "chords": [
+            {
+              "chord": "Am",
+              "beats": 2
+            },
+            {
+              "chord": "G",
+              "beats": 2
+            },
+            {
+              "chord": "C",
+              "beats": 4
+            }
+          ]
+        },
+        {
+          "lyric": "",
+          "chords": [
+            {
+              "chord": "Am",
+              "beats": 2
+            },
+            {
+              "chord": "G",
+              "beats": 2
+            },
+            {
+              "chord": "C",
+              "beats": 4
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

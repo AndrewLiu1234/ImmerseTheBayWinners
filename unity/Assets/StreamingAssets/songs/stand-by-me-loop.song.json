@@ -1,0 +1,107 @@
+{
+  "schema": 1,
+  "id": "stand-by-me-loop",
+  "title": "Stand By Me (chord loop)",
+  "artist": "Ben E. King",
+  "license": "chords-only",
+  "credit": "Stand By Me by Ben E. King, Jerry Leiber and Mike Stoller (1961). Chord progression only, moved from A to G: no lyrics, melody, tab or recording.",
+  "key": "G",
+  "tempoBpm": 80,
+  "timeSignature": [
+    4,
+    4
+  ],
+  "strum": {
+    "subdivision": 8,
+    "slots": [
+      "D",
+      "-",
+      "D",
+      "U",
+      "-",
+      "U",
+      "D",
+      "U"
+    ]
+  },
+  "pick": {
+    "subdivision": 8,
+    "slots": [
+      "B",
+      "3",
+      "2",
+      "3",
+      "1",
+      "3",
+      "2",
+      "3"
+    ]
+  },
+  "sections": [
+    {
+      "name": "Loop",
+      "lines": [
+        {
+          "lyric": "",
+          "chords": [
+            {
+              "chord": "G",
+              "beats": 8
+            },
+            {
+              "chord": "Em",
+              "beats": 8
+            }
+          ]
+        },
+        {
+          "lyric": "",
+          "chords": [
+            {
+              "chord": "C",
+              "beats": 4
+            },
+            {
+              "chord": "D",
+              "beats": 4
+            },
+            {
+              "chord": "G",
+              "beats": 8
+            }
+          ]
+        },
+        {
+          "lyric": "",
+          "chords": [
+            {
+              "chord": "G",
+              "beats": 8
+            },
+            {
+              "chord": "Em",
+              "beats": 8
+            }
+          ]
+        },
+        {
+          "lyric": "",
+          "chords": [
+            {
+              "chord": "C",
+              "beats": 4
+            },
+            {
+              "chord": "D",
+              "beats": 4
+            },
+            {
+              "chord": "G",
+              "beats": 8
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
