@@ -104,6 +104,18 @@ namespace UntitledGuitarApp.Core.Tests.Synth
             return o;
         }
 
+        /// <summary>Adds <paramref name="src"/>·gain into <paramref name="dst"/> starting at <paramref name="at"/> (clipped to dst).</summary>
+        public static void MixInto(float[] dst, float[] src, int at, float gain)
+        {
+            for (int i = 0; i < src.Length; i++)
+            {
+                int j = at + i;
+                if (j < 0) continue;
+                if (j >= dst.Length) break;
+                dst[j] += gain * src[i];
+            }
+        }
+
         public static float[] WhiteNoise(int ms, double rms, int seed, int sampleRate = 48000)
         {
             int length = (int)((long)ms * sampleRate / 1000);
