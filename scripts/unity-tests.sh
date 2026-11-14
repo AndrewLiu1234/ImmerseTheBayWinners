@@ -6,7 +6,9 @@
 #
 # Output: build/editmode-results.xml (NUnit result) and build/unity-tests.log (Unity's log); both are gitignored.
 # Prints one line "unity-tests: EditMode passed=N failed=N total=N ..." plus every `error CS` line from the log, then PASS or FAIL.
-# Exit codes:  0 = every test passed AND no compile errors
+# Exit codes:  0 = every test passed AND no compile errors. Exception: a test that reports Inconclusive (it had nothing to
+#                  measure yet, e.g. no pose files, or no per-thread allocation counter in Unity's Mono) does not fail the
+#                  run when nothing failed and passed + inconclusive = total; each one is printed by name with its reason.
 #              1 = a test failed, there were compile errors, nothing ran (0 tests / no result file), or Unity failed or timed out
 #              2 = refused to start (the editor has this project open, Unity or the project is missing)
 # Environment: UNITY_PATH (default: the pinned 2021.3.3f1 editor), UNITY_TESTS_TIMEOUT in seconds (default 1200).
@@ -103,6 +105,21 @@ if [ -n "$total" ] && [ -n "$passed" ] && [ -n "$failed" ]; then
       inmsg { s = $0; if (s ~ /\]\]><\/message>/) { sub(/\]\]><\/message>.*/, "", s); inmsg = 0 } emit(s) }
     ' "$RESULTS" || true
   fi
+  if [ "${inconclusive:-0}" -gt 0 ]; then
+    # Each inconclusive test case: its full name and the first line of its reason. Not a failure, but never silent.
+    awk '
+      /<test-case / {
+        incase = ($0 ~ /result="Inconclusive"/)
+        if (incase) { match($0, /fullname="[^"]*"/); printf "  INCONCLUSIVE: %s", substr($0, RSTART + 10, RLENGTH - 11); need = 1 }
+        next
+      }
+      incase && need && /<message><!\[CDATA\[/ {
+        s = $0; sub(/.*<message><!\[CDATA\[/, "", s); sub(/\]\]><\/message>.*/, "", s)
+        print " -- " substr(s, 1, 160); need = 0; next
+      }
+      /<\/test-case>/ { if (incase && need) print ""; incase = 0; need = 0 }
+    ' "$RESULTS" || true
+  fi
 else
   echo "unity-tests: EditMode passed=? failed=? total=? (no usable result file at $RESULTS; unity exit $unity_rc)"
 fi
@@ -120,12 +137,23 @@ if [ -z "$total" ] || [ -z "$passed" ] || [ -z "$failed" ]; then
 else
   if [ "$total" -lt 1 ]; then verdict=FAIL; reason="${reason:-zero tests ran}"; fi
   if [ "$failed" -gt 0 ]; then verdict=FAIL; reason="${reason:-$failed test(s) failed}"; fi
-  if [ "$passed" -ne "$total" ]; then verdict=FAIL; reason="${reason:-not every test passed ($passed of $total)}"; fi
+  if [ $(( passed + ${inconclusive:-0} )) -ne "$total" ]; then verdict=FAIL; reason="${reason:-not every test passed ($passed of $total, ${inconclusive:-0} inconclusive)}"; fi
 fi
-if [ "$unity_rc" -ne 0 ]; then verdict=FAIL; reason="${reason:-unity exited with $unity_rc}"; fi
+# Unity exits 2 when any test did not pass, inconclusive ones included. Accept that code only when the counts above prove
+# the only non-passes are inconclusive tests; every other non-zero exit fails the run.
+only_inconclusive=0
+if [ -n "$total" ] && [ -n "$failed" ] && [ "$failed" -eq 0 ] && [ "${inconclusive:-0}" -gt 0 ] && \
+   [ $(( passed + inconclusive )) -eq "$total" ]; then only_inconclusive=1; fi
+if [ "$unity_rc" -ne 0 ] && ! { [ "$unity_rc" -eq 2 ] && [ "$only_inconclusive" -eq 1 ]; }; then
+  verdict=FAIL; reason="${reason:-unity exited with $unity_rc}"
+fi
 
 if [ "$verdict" = PASS ]; then
-  echo "unity-tests: PASS"
+  if [ "$only_inconclusive" -eq 1 ]; then
+    echo "unity-tests: PASS (with $inconclusive inconclusive test(s) listed above: nothing failed, but they measured nothing)"
+  else
+    echo "unity-tests: PASS"
+  fi
   exit 0
 fi
 echo "unity-tests: FAIL ($reason). Results: $RESULTS  Log: $LOG" >&2
