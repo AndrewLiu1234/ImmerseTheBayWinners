@@ -1,0 +1,8 @@
+# Generated files only: the mock-up that build_neck_mockup.py rebuilds, and Blender's own backup and temp files.
+# Every pattern starts with "/", so it applies to art/blender/ itself and to nothing below it:
+# art/blender/hand/** (the hand rig, its .blend files and renders) is never ignored by this file.
+# Your own working file here (for example hand_poses.blend) is not ignored either: commit it.
+/neck_mockup.blend
+/*.blend1
+/*.blend2
+/*.blend@
