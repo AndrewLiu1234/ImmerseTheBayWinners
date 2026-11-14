@@ -148,8 +148,6 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             GhostPose reference = ReferencePose(_library, hand);
             if (reference == null) return "no " + hand + " pose with a bind block is loaded from " + _library.Folder;
             if (model == null) return "Resources/" + ResourcePathFor(hand) + " was not found (the FBX is not imported yet)";
-            Material material = SharedMaterial();
-            if (material == null) return "Resources/" + ShaderResourcePath + ".shader is missing or not supported on this GPU";
 
             _model = Instantiate(model, transform, false) as GameObject;
             if (_model == null) return "the model could not be instantiated";
@@ -157,8 +155,15 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             SwitchOffAnimation(_model);
             SetLayerRecursively(_model.transform, gameObject.layer);
 
+            // the rig first (bones, fit to the poses' bind data), then the look, so the reason names the real problem
+            _driver = new GhostPoseDriver();
+            if (!_driver.Bind(_model.transform)) return _driver.Problem;
+            if (!_driver.Calibrate(reference)) return _driver.Problem;
+
             _renderers = _model.GetComponentsInChildren<Renderer>(true);
             if (_renderers.Length == 0) return "the model has no renderer";
+            Material material = SharedMaterial();
+            if (material == null) return "Resources/" + ShaderResourcePath + ".shader is missing or not supported on this GPU";
             for (int i = 0; i < _renderers.Length; i++)
             {
                 Renderer r = _renderers[i];
@@ -172,9 +177,6 @@ namespace UntitledGuitarApp.Runtime.GhostHand
                 r.reflectionProbeUsage = ReflectionProbeUsage.Off;
             }
 
-            _driver = new GhostPoseDriver();
-            if (!_driver.Bind(_model.transform)) return _driver.Problem;
-            if (!_driver.Calibrate(reference)) return _driver.Problem;
             if (!_driver.Apply(reference)) return "the pose " + reference.Name + " could not be applied";
             _currentPose = reference.Name;
             PushBlock();

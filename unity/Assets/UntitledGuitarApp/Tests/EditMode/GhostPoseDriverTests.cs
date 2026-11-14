@@ -83,6 +83,8 @@ namespace UntitledGuitarApp.Tests.EditMode
             Assert.IsFalse(GhostPoseDriver.NameMatches("index_distal_end", "index_distal"), "Blender's leaf bones are not the bone");
             Assert.IsFalse(GhostPoseDriver.NameMatches("wristband", "wrist"));
             Assert.IsFalse(GhostPoseDriver.NameMatches("xindex_distal", "index_distal"), "no separator before the name");
+            Assert.IsFalse(GhostPoseDriver.NameMatches("handwrist", "wrist"), "a longer word that merely ends in the name");
+            Assert.IsFalse(GhostPoseDriver.NameMatches("myindex_distal", "index_distal"), "a longer word that merely ends in the name");
             Assert.IsFalse(GhostPoseDriver.NameMatches("Wrist", "wrist"), "names are case-sensitive");
             Assert.IsFalse(GhostPoseDriver.NameMatches(null, "wrist"));
             Assert.IsFalse(GhostPoseDriver.NameMatches("wrist", null));
