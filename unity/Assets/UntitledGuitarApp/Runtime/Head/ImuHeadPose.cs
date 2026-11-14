@@ -50,7 +50,9 @@ namespace UntitledGuitarApp.Runtime.Head
         public event Action<HeadTrackingState> StateChanged;
 
         /// Makes the direction the wearer currently faces "forward" (yaw only; pitch and roll are kept). Do it before
-        /// aligning the neck: recentering afterwards shifts the world. Ignored, with a log line, while HeadLocked.
+        /// aligning the neck: recentering afterwards shifts the world. It needs fresh IMU packets: with none (no bridge, or
+        /// stale) it changes nothing and logs imu_recenter ok=False. It still works while anchorMode forces HeadLocked, so
+        /// the offset is ready when the mode changes back. After flipping an invert flag, recenter again.
         public void Recenter()
         {
             if (_core == null)
@@ -60,6 +62,13 @@ namespace UntitledGuitarApp.Runtime.Head
             }
             _core.Recenter(ImuUdpReceiver.NowSec());
             ApplyToTarget();
+        }
+
+        // Right-click the component header in the Inspector (Play Mode) and choose "Recenter" to try it without code.
+        [ContextMenu("Recenter")]
+        void RecenterFromInspector()
+        {
+            Recenter();
         }
 
         void OnEnable()
