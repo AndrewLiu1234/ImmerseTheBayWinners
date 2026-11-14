@@ -636,6 +636,19 @@ namespace UntitledGuitarApp.Tests.EditMode
         }
 
         [Test]
+        public void Replay_ReleasesWholeSamplesOnly_NeverRoundsUp()
+        {
+            WavReplaySource r = new WavReplaySource(Seq(0, 100), 1024);
+            r.Advance(10.0);
+            r.Advance(10.0 + 1.0 / 2048);                          // half a sample after the anchor
+            Assert.AreEqual(0, r.Backlog);
+            r.Advance(10.0 + 3.0 / 2048);                          // one and a half samples
+            Assert.AreEqual(1, r.Backlog);
+            r.Advance(10.0 + 2047.0 / 2048);                       // 1023.5 samples
+            Assert.AreEqual(1023, r.Backlog);
+        }
+
+        [Test]
         public void Replay_LoopsSeamlessly_AcrossReadBoundaries()
         {
             WavReplaySource r = new WavReplaySource(new float[] { 1, 2, 3, 4, 5 }, 8);

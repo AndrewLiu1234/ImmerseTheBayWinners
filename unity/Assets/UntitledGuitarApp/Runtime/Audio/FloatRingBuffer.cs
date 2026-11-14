@@ -75,7 +75,7 @@ namespace UntitledGuitarApp.Runtime.Audio
         /// <summary>Total samples ever read (monotonic; the consumer's position on the same sample clock).</summary>
         public long TotalRead { get { return Volatile.Read(ref _read); } }
 
-        /// <summary>Total samples discarded by the overflow policy (monotonic). A change means audio was lost.</summary>
+        /// <summary>Total samples <see cref="Write"/> refused because the buffer was full (monotonic). A caller that does not retry has lost them: a change means audio was lost.</summary>
         public long DroppedSamples { get { return Volatile.Read(ref _dropped); } }
 
         /// <summary>
