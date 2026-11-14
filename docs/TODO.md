@@ -78,9 +78,9 @@ ticks only the boxes their half proves; Person 1 sets `done` after the device ch
 **Acceptance (device):** - [ ] Happy Birthday at 75% with wait mode completes with both ghost hands animating
 **Max time:** 3h. (Core part can start right after SL0.)
 
-## SL6 — Patterns and timing   [track: CORE+XR] [owner: Person 2 · Person 1] [status: todo] [depends: SL5]
+## SL6 — Patterns and timing   [track: CORE+XR] [owner: Person 2 · Person 1] [status: doing] [depends: SL5]
 **User-visible outcome:** strum arrows and the picking strip with a cursor, in sync with the strumming hand; timing feedback.
-**Acceptance (automated):** - [ ] onset F1 ≥ 0.9 on synthetic audio · timing math tests
+**Acceptance (automated):** - [ ] onset F1 ≥ 0.9 on synthetic audio (open: SpectralFluxOnset, after SL1) · timing math tests ✓ Person 2: core-tests/Practice/PatternJudgeTests.cs, L1
 **Acceptance (device):** - [ ] the pattern strip and the strumming hand agree; feedback makes sense
 **Max time:** 2.5h.
 
@@ -95,8 +95,11 @@ ticks only the boxes their half proves; Person 1 sets `done` after the device ch
 - [ ] Sat afternoon: eval set recorded through the app and frozen; a human writes the baseline JSON in `AUDIO_BASELINE.md`
 **Max time:** spread across Fri night + Sat.
 
-## SL7 — Change drill (SHOULD)   [track: CORE+XR] [owner: Person 2] [status: todo] [depends: SL3]
+## SL7 — Change drill (SHOULD)   [track: CORE+XR] [owner: Person 2] [status: doing] [depends: SL3]
 **User-visible outcome:** a G↔C and Am↔G clean-change counter. **Max time:** 1.5h.
+- [x] Core: ChangeDrillSession (clean = target heard ≤3 s after previous; best rate per 60 s; late-change tip after 2 slow) — core-tests/Practice/ChangeDrillSessionTests.cs, L1 · counter UI = Person 1 · needs SL3 strum check for real input
 
-## SL10 — AI coach (COULD)   [track: CORE] [owner: Person 2] [status: todo] [depends: SL5]
+## SL10 — AI coach (COULD)   [track: CORE] [owner: Person 2] [status: doing] [depends: SL5]
 **User-visible outcome:** a coach card after a run (≤3 s, or a rule-based fallback). **Max time:** 2h.
+- [x] Core: CoachInput, RuleBasedCoach, CoachPrompt, CoachResponseParser — core-tests/Coach/CoachTests.cs, L1
+- [ ] Runtime (Person 1): HTTP call only when flag `coach` ≠ "off", model `CoachPrompt.ModelId`, 3 s timeout, key from env var, fallback to RuleBasedCoach; card on the HUD
