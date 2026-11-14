@@ -203,6 +203,16 @@ namespace UntitledGuitarApp.Tests.EditMode
             StringAssert.Contains("R recenter", DemoKeys.Legend);
         }
 
+        [TestCase(true, false, true)]    // scripted verdicts on a live mic: disclosed
+        [TestCase(true, true, false)]    // the replay badge is showing: it is the stronger disclosure, same spot
+        [TestCase(false, false, false)]
+        [TestCase(false, true, false)]
+        public void ScriptedChecksLabel_ShowsOnlyWhenTheReplayBadgeDoesNot(bool scripted, bool replayShowing, bool expected)
+        {
+            Assert.AreEqual(expected, DemoDirector.ShowScriptedChecks(scripted, replayShowing));
+            StringAssert.Contains("SIMULATED", DemoDirector.ScriptedChecksText);
+        }
+
         [Test]
         public void ArgumentValue_ReadsTheWordAfterTheFlag()
         {
