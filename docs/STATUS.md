@@ -1,6 +1,7 @@
 # STATUS — newest first (scribe keeps ≤40 lines; union-merged in git)
 <!-- - Sat HH:MM · Person 1 or Person 2 · track · what changed · level -->
 ## Now
+- Sat 10:20 · Person 1 · XR · session handoff (usage ran out): `~/Downloads/HANDOFF_untitled_guitar_app_person1_2026-11-14/HANDOFF.md` on Person 1's Mac lists the six unfinished worker worktrees, how to verify, and next steps. Composed frame: `docs/img/walking-skeleton-sbs.png`
 - Sat 08:30 · Person 1 · XR · walking skeleton on branch `person1/sl0-xr-foundation` (pushed, not yet in main): Unity project + `Main.unity` (one Bootstrap, built by `Editor/SceneBuilder`), flags hot reload, UGALog + session recorder, stereo SBS rig + `UGA > Glasses Game View`, IMU bridge + head pose (head-locked fallback), mic capture / WAV replay, HUD (chord label, mic meter, SIMULATED badge), spectator on the Mac screen, gaze dwell + reticle · L3: `./scripts/unity-tests.sh` 513/513 EditMode in Unity; built player smoke run headless against `bridge.py --fake`: Tracking at 250 Hz, 0 rejected · pending L4/L5 (glasses)
 - Sat 08:30 · Person 1 · XR · in progress: floating neck, capsule ghost hand + ghost shader, Blender hand rig + chord poses, pose loader, learn-mode and play-along HUD
 - Sat 01:00 · Person 1 · harness · people relabelled Person 1 / Person 2; lane guard added (`./scripts/set-person.sh`, protect-files, session hook). Person 2: run `./scripts/set-person.sh 2` after cloning · verified to L0 (hook tests)
