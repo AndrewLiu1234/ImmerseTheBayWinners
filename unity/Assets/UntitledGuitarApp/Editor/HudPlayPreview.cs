@@ -740,9 +740,7 @@ namespace UntitledGuitarApp.Editor
                 int unmeasured = 0;
                 foreach (HudText text in HudTexts(play))
                 {
-                    float distance = Vector3.Distance(eyePos, text.transform.position);
-                    float cap = HudText.AngularHeightForSize(text.CapHeightMeters, distance);
-                    float k = TrueSizeFactor(calibration, cap);
+                    float k = TrueSizeFactor(calibration, AskedCapDegrees(text));
                     text.transform.localScale *= k;
                     if (!text.SizeMeasured) unmeasured++;
                 }
@@ -811,15 +809,16 @@ namespace UntitledGuitarApp.Editor
                         .Append(", \"boxDeg\": ").Append(p.Mask.IsEmpty ? "null" : BoxDeg(stage, p.Mask.MinX, p.Mask.MinY, p.Mask.MaxX, p.Mask.MaxY));
                     if (p.Text != null)
                     {
-                        float distance = Vector3.Distance(eyePos, p.Text.transform.position);
-                        float cap = HudText.AngularHeightForSize(p.Text.CapHeightMeters, distance);
-                        partsJson.Append(", \"text\": ").Append(Q(p.Text.Text)).Append(", \"capDeg\": ").Append(F(cap)).Append(", \"measured\": ").Append(B(p.Text.SizeMeasured));
+                        float asked = AskedCapDegrees(p.Text);
+                        float drawn = DrawnCapDegrees(p.Text, eyePos);
+                        partsJson.Append(", \"text\": ").Append(Q(p.Text.Text)).Append(", \"askedCapDeg\": ").Append(F(asked))
+                            .Append(", \"drawnCapDegEstimate\": ").Append(F(drawn)).Append(", \"measured\": ").Append(B(p.Text.SizeMeasured));
                         bool chordName = p.Id.EndsWith("ChordPivot/CurrentChord", StringComparison.Ordinal);
                         float min = chordName ? HudText.ChordNameMinDegrees : HudText.MinTextDegrees;
-                        if (cap < min - 0.02f)
+                        if (drawn < 0.9f * min)
                         {
                             problems++;
-                            sum.AppendLine("   !! TOO SMALL: " + p.Label + " \"" + p.Text.Text + "\" " + F(cap) + " deg (minimum " + F(min) + ")");
+                            sum.AppendLine("   !! TOO SMALL: " + p.Label + " \"" + p.Text.Text + "\" about " + F(drawn) + " deg drawn (minimum " + F(min) + ")");
                         }
                     }
                     partsJson.Append("}");
@@ -896,6 +895,29 @@ namespace UntitledGuitarApp.Editor
             bool aSlot = PlayHudOverlap.Group(a) == PlayHudOverlap.CardGroup && PlayHudOverlap.PathOf(a).StartsWith("PatternStrip/Slot0/", StringComparison.Ordinal);
             bool bSlot = PlayHudOverlap.Group(b) == PlayHudOverlap.CardGroup && PlayHudOverlap.PathOf(b).StartsWith("PatternStrip/Slot0/", StringComparison.Ordinal);
             return (aSlot && PlayHudOverlap.Group(b) == PlayHudOverlap.NeckGroup) || (bSlot && PlayHudOverlap.Group(a) == PlayHudOverlap.NeckGroup);
+        }
+
+        // The cap height HudText was asked for, in degrees, read back from the raster size it chose
+        // (HudText.FontSizeForCapDegrees: degrees * 40 px per degree / 0.716 cap per em, rounded, 24..256 px). By the card's
+        // design (children sized for 0.5 m, the card scaled by distance / 0.5) this is also the angle at the real distance.
+        static float AskedCapDegrees(HudText text)
+        {
+            TextMesh mesh = text.GetComponent<TextMesh>();
+            if (mesh == null) return HudText.MinTextDegrees;
+            return mesh.fontSize * HudTextMetrics.FallbackCapPerEm / HudText.DefaultPixelsPerDegree;
+        }
+
+        // The cap height as drawn now (after the true-size scaling), estimated from the text's line box: a line of bold
+        // Arial is about 1.58 cap heights tall (ascent + descent 1117/2048 em over the cap height 1467/2048 em). +-3%.
+        static float DrawnCapDegrees(HudText text, Vector3 eye)
+        {
+            MeshRenderer renderer = text.GetComponent<MeshRenderer>();
+            if (renderer == null) return 0f;
+            float lines = 1f;
+            for (int i = 0; i < text.Text.Length; i++) if (text.Text[i] == '\n') lines++;
+            float boxM = renderer.localBounds.size.y * Mathf.Abs(text.transform.lossyScale.y);
+            float capM = boxM / (lines * 1.58f);
+            return HudText.AngularHeightForSize(capM, Vector3.Distance(eye, text.transform.position));
         }
 
         static IEnumerable<HudText> HudTexts(Play play)
