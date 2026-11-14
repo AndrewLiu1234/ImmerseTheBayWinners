@@ -370,6 +370,50 @@ namespace UntitledGuitarApp.Tests.EditMode
     }
 
     [TestFixture]
+    public class DisplayWatchTests
+    {
+        [Test]
+        public void ReSeatingTheCable_ActivatesTheGlassesAgain()
+        {
+            DisplayWatch w = new DisplayWatch();
+            Assert.AreEqual(DisplayWatch.Action.WarnMissing, w.Poll(1, 1, false), "start without the glasses: one warning");
+            Assert.AreEqual(DisplayWatch.Action.None, w.Poll(1, 1, false), "and only one");
+            Assert.IsTrue(w.Missing);
+            Assert.AreEqual(DisplayWatch.Action.Activate, w.Poll(1, 2, false), "plugged in: activate");
+            Assert.AreEqual(1, w.Activations);
+            Assert.AreEqual(DisplayWatch.Action.None, w.Poll(1, 2, true), "active: nothing to do");
+            Assert.AreEqual(DisplayWatch.Action.None, w.Poll(1, 2, true));
+            Assert.AreEqual(DisplayWatch.Action.WarnMissing, w.Poll(1, 1, false), "cable pulled: warn again");
+            Assert.AreEqual(DisplayWatch.Action.None, w.Poll(1, 1, false));
+            Assert.AreEqual(DisplayWatch.Action.Activate, w.Poll(1, 2, false), "re-seated: the new display starts inactive, activate it again");
+            Assert.AreEqual(2, w.Activations);
+            Assert.IsFalse(w.Missing);
+        }
+
+        [Test]
+        public void ADisplayThatStaysInactive_IsActivatedAtEveryPoll_AndThePrimaryIsNeverTouched()
+        {
+            DisplayWatch w = new DisplayWatch();
+            Assert.AreEqual(DisplayWatch.Action.Activate, w.Poll(1, 2, false));
+            Assert.AreEqual(DisplayWatch.Action.Activate, w.Poll(1, 2, false), "still inactive a second later: try again");
+            Assert.AreEqual(2, w.Activations);
+            DisplayWatch p = new DisplayWatch();
+            Assert.AreEqual(DisplayWatch.Action.None, p.Poll(0, 1, false), "display 0 is the Mac's own screen");
+            Assert.AreEqual(0, p.Activations);
+        }
+
+        [Test]
+        public void ChangingTheTargetDisplay_StartsOver()
+        {
+            DisplayWatch w = new DisplayWatch();
+            Assert.AreEqual(DisplayWatch.Action.WarnMissing, w.Poll(2, 2, false));
+            Assert.AreEqual(DisplayWatch.Action.None, w.Poll(2, 2, false));
+            Assert.AreEqual(DisplayWatch.Action.WarnMissing, w.Poll(3, 2, false), "a new render.glassesDisplay gets its own warning");
+            Assert.AreEqual(DisplayWatch.Action.Activate, w.Poll(1, 2, false));
+        }
+    }
+
+    [TestFixture]
     public class EditorSimHeadTests
     {
         [Test]

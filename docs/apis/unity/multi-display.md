@@ -62,7 +62,7 @@ Manual page "Multi-display", https://docs.unity3d.com/2021.3/Documentation/Manua
 > `public void Activate(int width, int height, int refreshRate)`: Windows only. ... **On Linux and macOS X, secondary displays always use the display's current resolution, if available.**
 > By default, the user's computer sorts the relative positions of its display monitors based on its x, y virtual desktop. To override this ... start your application from the command line and use the `-multidisplay` command line flag.
 
-**Consequences for the glasses:** the glasses must already be in their 3840x1080 mode (and an extended display) *before* `Activate`, because on macOS the window takes the display's current resolution and `Activate(w, h, hz)` cannot change it. StereoRig calls `Activate()` once per player run (guarded by `Display.active`), polls once a second until the display exists, and one second later logs `stereo.display_size` if `renderingWidth x renderingHeight` is not 3840x1080 (2D fallback: 1920x1080).
+**Consequences for the glasses:** the glasses must already be in their 3840x1080 mode (and an extended display) *before* `Activate`, because on macOS the window takes the display's current resolution and `Activate(w, h, hz)` cannot change it. StereoRig polls once a second for the WHOLE player run (since the hardening fix, Sat 2026-11-14; decision logic in `Runtime/Render/DisplayWatch.cs`, tested): whenever display `render.glassesDisplay` is in `Display.displays` but `!active`, it calls `Activate()` (log `stereo.display_activated`, then `stereo.display_reactivated` with the count), warns `stereo.display_missing` once per absence, and one second after each activation logs `stereo.display_size` if `renderingWidth x renderingHeight` is not 3840x1080 (2D fallback: 1920x1080). Why: "In a built application, Unity automatically updates this list when you connect or disconnect a display" (section 2) and csref `Display.bindings.cs` L159-169 `RecreateDisplayList` does `Display.displays = new Display[nativeDisplay.Length]` and `new Display(nativeDisplay[i])` for every entry, so after a re-seated cable the glasses come back as a new, inactive entry; the old code activated once and stopped polling, leaving them black until a restart. The Manual's "call `Display.Activate()` only once during startup" is about the same display; `active` is asked of the native display each time (csref L82-86 `get { return GetActiveImpl(nativeDisplay); }`). **NOT FOUND in any source:** what it reports for a re-connected display on macOS, and whether a second `Activate()` on it opens the window again (needs the glasses: L5).
 
 ## 4. Camera.targetDisplay, rect, projectionMatrix (UnityEngine.CoreModule)
 
@@ -115,13 +115,14 @@ Several Game views can exist at once and each renders its own display every fram
 ## 6. What StereoRig does with this
 
 - Eye cameras: `targetDisplay = render.glassesDisplay` (clamped 0..7), `rect` = left or right half (or full for the 2D fallback), `targetTexture = null`, explicit `projectionMatrix` (so the Game view's size or aspect cannot change the field of view, and no matrix is recomputed per frame).
-- Player: `Display.displays[i].Activate()` once when `i >= 1` exists and `!active`; polled once a second while missing; never touched in the Editor.
+- Player: `Display.displays[i].Activate()` whenever `i >= 1` exists and `!active`, polled once a second for the whole run (re-plug safe, `DisplayWatch`); never touched in the Editor.
 - Editor: the glasses Game view (Display 2, 3840x1080, toolbar hidden) is made by `Editor/GlassesGameView.cs`; see `docs/apis/unity/editorwindow-popup.md`.
 - `Application.runInBackground` (https://docs.unity3d.com/2021.3/Documentation/ScriptReference/Application-runInBackground.html: "Should the player be running when the application is in the background? Default is false (application pauses when it is in the background).") is set to true in **players only** (ProjectSettings has `runInBackground: 0`, so otherwise the glasses freeze when you click another window). The docs do not say what the setter does in the Editor, so StereoRig does not call it there.
 
 ## 7. NOT verified (needs the glasses, L5)
 
 - That `Display.Activate()` on macOS opens the second display's window borderless at 3840x1080, and the frame rate it reaches.
+- That pulling and re-seating the glasses' cable brings the picture back within ~1 s (`stereo.display_reactivated` in the player log), and the IMU (scripts/imu-bridge.sh now restarts bridge.py after 1-5 s).
 - That the glasses' display is index 1 in the player (it is the second display macOS reports; with more monitors set `render.glassesDisplay`).
 - The Game view popup behaviour on the glasses' monitor (see editorwindow-popup.md).
 - NOT FOUND: any Unity document about macOS-specific multi-display limits beyond the lines quoted above.

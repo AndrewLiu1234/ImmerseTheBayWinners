@@ -29,8 +29,8 @@ namespace UntitledGuitarApp.Runtime.Render
     /// no lights and no shadows are created here. Screen-space overlay canvases render once per display, not once per eye:
     /// give the HUD world-space canvases under <see cref="Head"/> instead.
     ///
-    /// Cost: nothing allocates per frame. Update only smooths an fps number and polls for a display that is not plugged in
-    /// yet. The optional fps log (see <see cref="FpsLogIntervalSeconds"/>) is off by default because logging boxes values.
+    /// Cost: nothing allocates per frame. Update only smooths an fps number and, in players, polls the glasses' display once a
+    /// second for the whole run (DisplayWatch: re-activates it after the cable is re-seated). The optional fps log (see <see cref="FpsLogIntervalSeconds"/>) is off by default because logging boxes values.
     ///
     /// API facts used (quoted in docs/apis/unity/multi-display.md): Camera.targetDisplay, Camera.rect, Camera.projectionMatrix,
     /// Display.displays, Display.Activate, Display.active, Display.systemWidth/systemHeight, Display.renderingWidth/renderingHeight.
@@ -52,7 +52,7 @@ namespace UntitledGuitarApp.Runtime.Render
         const int FallbackEyeWidth = 1920, FallbackEyeHeight = 1080, MinEyePixels = 16;
 
         const float FpsWindowSeconds = 0.5f;
-        const float DisplayPollSeconds = 1f;      // while the glasses display is not there yet
+        const float DisplayPollSeconds = 1f;      // players, the whole run: a re-plugged glasses display needs a new Activate
         const float SizeCheckDelaySeconds = 1f;   // after activating, give the window a moment before comparing sizes
 
         static readonly Color DebugLeftColor = new Color(0.6f, 0f, 0f, 1f);
@@ -81,8 +81,8 @@ namespace UntitledGuitarApp.Runtime.Render
         int _eyeHeight = FallbackEyeHeight;
 
         // standalone display handling
+        readonly DisplayWatch _displayWatch = new DisplayWatch();
         bool _displayWanted;
-        bool _warnedMissingDisplay;
         float _nextDisplayPollTime;
         bool _sizeCheckPending;
         float _sizeCheckTime;
@@ -406,6 +406,9 @@ namespace UntitledGuitarApp.Runtime.Render
         // Display (standalone player only; the Editor's Game view "Display N" popup plays this role there)
         // ---------------------------------------------------------------------------------------------------------------
 
+        // Called when the rig is built and then once a second for the WHOLE run in players (Update): the player updates
+        // Display.displays when a display is connected or disconnected, so a re-seated glasses cable shows up again as an
+        // inactive display that needs a new Activate(). The decision is DisplayWatch's (tested); this only does the Unity calls.
         void ActivateDisplayIfNeeded()
         {
             _displayWanted = false;
@@ -415,31 +418,26 @@ namespace UntitledGuitarApp.Runtime.Render
             if (index <= 0)
                 return;                                       // display 0 is the primary display and is always on
 
+            _displayWanted = true;                            // keep polling, also after a successful activation
+            _nextDisplayPollTime = Time.unscaledTime + DisplayPollSeconds;
             Display[] displays = Display.displays;
-            if (index >= displays.Length)
+            bool present = index < displays.Length;
+            switch (_displayWatch.Poll(index, displays.Length, present && displays[index].active))
             {
-                // Glasses not plugged in (yet). Keep polling once a second: the list updates by itself in a player.
-                _displayWanted = true;
-                _nextDisplayPollTime = Time.unscaledTime + DisplayPollSeconds;
-                if (!_warnedMissingDisplay)
-                {
-                    _warnedMissingDisplay = true;
+                case DisplayWatch.Action.WarnMissing:
                     UGALog.Warn("stereo.display_missing", "render.glassesDisplay is " + index + " but only " + displays.Length
                         + " display(s) are connected: plug the glasses in and make them an extended (not mirrored) display in System Settings > Displays."
-                        + " The eye cameras render to a display that is not there yet.");
-                }
-                return;
+                        + " The eye cameras render to a display that is not there yet; it is activated as soon as it appears.");
+                    break;
+                case DisplayWatch.Action.Activate:
+                    Display d = displays[index];
+                    d.Activate();                             // a new Display object after a re-plug starts inactive
+                    UGALog.Event(_displayWatch.Activations == 1 ? "stereo.display_activated" : "stereo.display_reactivated",
+                        "displayIndex", index, "activations", _displayWatch.Activations, "system", d.systemWidth + "x" + d.systemHeight);
+                    _sizeCheckPending = true;
+                    _sizeCheckTime = Time.unscaledTime + SizeCheckDelaySeconds;
+                    break;
             }
-
-            _warnedMissingDisplay = false;
-            Display d = displays[index];
-            if (!d.active)
-            {
-                d.Activate();                                 // once: "Once you activate a display, you can't deactivate it."
-                UGALog.Event("stereo.display_activated", "displayIndex", index, "systemW", d.systemWidth, "systemH", d.systemHeight);
-            }
-            _sizeCheckPending = true;
-            _sizeCheckTime = Time.unscaledTime + SizeCheckDelaySeconds;
         }
 
         void CheckDisplaySize()
