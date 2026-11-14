@@ -63,8 +63,14 @@ namespace UntitledGuitarApp.Runtime.Neck
         public const float BeadPitchDeg = 0.19f;
         public const float MinDotDeg = 0.40f;            // a fingertip dot is never smaller than this across (16 px)
 
-        /// <summary>Finger-number height: the project minimum for text (MASTER_PLAN section 17), 2 d tan(1.2 deg / 2).</summary>
-        public const float LabelCapDeg = 1.2f;
+        /// <summary>The project minimum for text (MASTER_PLAN section 17): 1.2 degrees, 2 d tan(1.2 deg / 2).</summary>
+        public const float MinTextDeg = 1.2f;
+
+        /// <summary>
+        /// Finger-number height asked for: the minimum plus 8%, so that the rounding of the font size, a label a little further
+        /// away than the nut, and the measured constant behind NeckLabel's size can never take a digit under 1.2 degrees.
+        /// </summary>
+        public const float LabelCapDeg = MinTextDeg * 1.08f;
 
         /// <summary>Text grows by this factor when the largeText flag is on (the same factor the HUD uses).</summary>
         public const float LargeTextScale = 1.35f;

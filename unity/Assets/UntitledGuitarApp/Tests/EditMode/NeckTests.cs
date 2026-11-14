@@ -536,7 +536,8 @@ namespace UntitledGuitarApp.Tests.EditMode
                 {
                     NeckSizes sizes = NeckStyle.Resolve(layout, distance, scale, false);
                     float cap = NeckMath.AngleForSize(sizes.labelCapMm * scale * 0.001f, distance);
-                    Assert.That(cap, Is.EqualTo(1.2f).Within(0.001f), "finger numbers at " + distance + " m, scale " + scale);
+                    Assert.That(cap, Is.EqualTo(NeckStyle.LabelCapDeg).Within(0.001f), "finger numbers at " + distance + " m, scale " + scale);
+                    Assert.That(cap, Is.GreaterThanOrEqualTo(NeckStyle.MinTextDeg * 1.05f), "the 1.2 degree minimum with a margin");
 
                     // X / O marks count as text: at least 1.2 degrees tall (the row and the facing are tested on the mesh below).
                     float mark = NeckMath.AngleForSize(sizes.markRadiusMm * 2f * scale * 0.001f, distance);
@@ -559,6 +560,56 @@ namespace UntitledGuitarApp.Tests.EditMode
             NeckSizes normal = NeckStyle.Resolve(layout, 0.9f, 1.2f, false);
             Assert.That(large.labelCapMm, Is.EqualTo(normal.labelCapMm * NeckStyle.LargeTextScale).Within(0.01f), "largeText makes the numbers bigger");
             Assert.That(NeckStyle.LabelCapDegrees(false), Is.GreaterThanOrEqualTo(1.2f));
+        }
+
+        [Test]
+        public void Labels_AreAtLeast1Point2DegreesTall_AtTheirRealDistanceFromTheEye()
+        {
+            // FloatingNeck asks every finger number for LabelCapDegrees at the nut's distance. A number sits beside the neck,
+            // nearer or further than the nut; seen from the eye it must still be 1.2 degrees, with 3% left over for the
+            // measured constant NeckLabel turns that size into (see NeckLabel.DigitUnitsPerFontSize).
+            NeckLayout layout = DevNeckLayout.Create();
+            int[][] frets = { EmFrets, CFrets, DFrets, AmFrets, AFrets, new[] { 3, 2, 0, 0, 0, 3 } };
+            int[][] fingers = { EmFingers, CFingers, DFingers, AmFingers, AFingers, new[] { 2, 1, 0, 0, 0, 3 } };
+            var slots = new LabelSlot[FloatingNeck.MaxDots];
+            float smallest = float.MaxValue;
+            foreach (FloatingPlacement placement in AllowedPlacements())
+            {
+                foreach (bool leftHanded in new[] { false, true })
+                {
+                    NeckSizes sizes = NeckStyle.Resolve(layout, placement.distanceM, placement.scale, false);
+                    NeckPose pose = NeckPlacement.Floating(placement, leftHanded);
+                    float capM = NeckMath.SizeForAngle(NeckStyle.LabelCapDegrees(false), placement.distanceM);   // what each label is asked for
+                    for (int c = 0; c < frets.Length; c++)
+                    {
+                        FingertipDot[] dots = NewDots();
+                        int count = DevNeckLayout.FromChordRow(layout, frets[c], fingers[c], dots, NewMarks());
+                        int n = NeckLabelLayout.Compute(layout, dots, count, sizes.labelCapMm, sizes.labelCellMm, sizes.labelGapMm, slots);
+                        for (int k = 0; k < n; k++)
+                        {
+                            Vector3 at = pose.TransformPoint(NeckMath.LocalMetres(slots[k].xMm, layout.stringHeightMm, slots[k].zMm));
+                            float seen = NeckMath.AngleForSize(capM, at.magnitude);
+                            smallest = Mathf.Min(smallest, seen);
+                            Assert.That(seen, Is.GreaterThanOrEqualTo(NeckStyle.MinTextDeg * 1.03f),
+                                        "chord " + c + " number " + k + " at " + at.magnitude.ToString("0.000") + " m, azimuth " + placement.azimuthDeg);
+                        }
+                    }
+                }
+            }
+            Assert.That(smallest, Is.LessThan(NeckStyle.LabelCapDeg + 0.2f), "sanity: the numbers are not oversized either");
+        }
+
+        [Test]
+        public void NeckLabel_DigitSize_IsTheOneMeasuredInUnity()
+        {
+            // The evidence behind NeckLabel.DigitUnitsPerFontSize. In the 10:07 render a "1" was asked for 1.2 degrees at 0.9 m
+            // (18.85 mm), at font size 67, under a parent of scale 1.2, and scaled with the old figure of 0.0716 units per unit
+            // of font size. It measured 14.50 mm. The constant must reproduce that render.
+            float asked = NeckMath.SizeForAngle(1.2f, 0.9f);
+            float oldScale = asked / (67 * 0.0716f * 1.2f);
+            float drawnMm = oldScale * NeckLabel.DigitHeightUnits(67) * 1.2f * 1000f;
+            Assert.That(asked * 1000f, Is.EqualTo(18.85f).Within(0.01f));
+            Assert.That(drawnMm, Is.EqualTo(14.50f).Within(0.1f));
         }
 
         [Test]
