@@ -130,6 +130,93 @@ namespace UntitledGuitarApp.Tests.EditMode
             Assert.Less(HudText.FontSizeForCapDegrees(2f, 40f), HudText.FontSizeForCapDegrees(3f, 40f));
         }
 
+        // ---------------------------------------------------------------- the size constant (no run-time measurement)
+
+        [Test]
+        public void CapConstant_IsTheCalibratedValue()
+        {
+            // Changing this number needs a new Editor/HudTextCalibration.cs run (the JSON named in the commit), not a guess.
+            Assert.AreEqual(0.0549f, HudText.CapUnitsPerFontSize, 1e-7);
+            Assert.AreEqual(223 * 0.0549f, HudText.CapHeightUnits(223), 1e-5);
+        }
+
+        // Expected values computed here from the definition, independently of HudText's own code path:
+        // cap metres = 2 d tan(deg / 2); font size = round(deg * 40 / 0.716); scale = metres / (fontSize * constant * parent).
+        [TestCase(1.2f, 1.0f, 67)]
+        [TestCase(2f, 1.0f, 112)]
+        [TestCase(3f, 1.2f, 168)]
+        [TestCase(4f, 1.0f, 223)]
+        [TestCase(4f, 1.2f, 223)]
+        public void CapScale_IsWhatTheConstantSays(float degrees, float distanceM, int fontSize)
+        {
+            double meters = 2.0 * distanceM * System.Math.Tan(degrees * 0.5 * System.Math.PI / 180.0);
+            Assert.AreEqual(fontSize, HudText.FontSizeForCapDegrees(degrees, HudText.DefaultPixelsPerDegree));
+            float scale = HudText.ScaleForCap(HudText.SizeForAngularHeight(degrees, distanceM), fontSize, 1f);
+            Assert.AreEqual(meters / (fontSize * (double)HudText.CapUnitsPerFontSize), scale, 1e-7);
+            // and the drawn cap height (font units x constant x scale) is the asked one
+            Assert.AreEqual(meters, fontSize * HudText.CapUnitsPerFontSize * scale, 1e-6);
+        }
+
+        [Test]
+        public void CapScale_ParentScaleDividesOut()
+        {
+            float one = HudText.ScaleForCap(0.05f, 168, 1f);
+            Assert.AreEqual(one / 2f, HudText.ScaleForCap(0.05f, 168, 2f), 1e-7);
+            Assert.AreEqual(one * 4f, HudText.ScaleForCap(0.05f, 168, 0.25f), 1e-6);
+        }
+
+        [Test]
+        public void CapScale_IsTheSameOnEveryCall()
+        {
+            // The old code measured Renderer.localBounds and changed its answer once the text had been drawn; this is a pure function.
+            float first = HudText.ScaleForCap(0.0698408f, 223, 1f);
+            for (int i = 0; i < 5; i++) Assert.AreEqual(first, HudText.ScaleForCap(0.0698408f, 223, 1f));
+        }
+
+        [TestCase(0f, 223, 1f)]
+        [TestCase(-0.05f, 223, 1f)]
+        [TestCase(float.NaN, 223, 1f)]
+        [TestCase(float.PositiveInfinity, 223, 1f)]
+        [TestCase(0.05f, 0, 1f)]
+        [TestCase(0.05f, -5, 1f)]
+        [TestCase(0.05f, 223, 0f)]
+        [TestCase(0.05f, 223, float.NaN)]
+        public void CapScale_BadInputIsZero(float capMeters, int fontSize, float parentScale)
+        {
+            Assert.AreEqual(0f, HudText.ScaleForCap(capMeters, fontSize, parentScale));
+        }
+
+        [Test]
+        public void HudText_SizeIsSetAtOnce_WithNoFrame()
+        {
+            // Needs the engine (GameObject, TextMesh): run in Unity's EditMode tests. No frame is rendered or advanced here, so a
+            // size that depended on a measurement after drawing would fail this.
+            var parent = new GameObject("HudTextTestParent");
+            try
+            {
+                parent.transform.localScale = new Vector3(2f, 2f, 2f);
+                HudText text = HudText.Create(parent.transform, "HudTextTest");
+                text.SetAngularHeight(4f, 1f);
+                float meters = HudText.SizeForAngularHeight(4f, 1f);
+                float expected = HudText.ScaleForCap(meters, HudText.FontSizeForCapDegrees(4f, HudText.DefaultPixelsPerDegree), 2f);
+                Assert.Greater(expected, 0f);
+                Assert.AreEqual(expected, text.transform.localScale.y, 1e-7);
+                Assert.AreEqual(meters, text.CapHeightMeters, 1e-7);
+                Assert.IsTrue(text.SizeMeasured);
+
+                text.SetText("G");                                   // new words: the size must not move
+                Assert.AreEqual(expected, text.transform.localScale.y, 1e-7);
+                text.SetAngularHeight(4f, 1f);                       // the same request again: the same size
+                Assert.AreEqual(expected, text.transform.localScale.y, 1e-7);
+                text.SetAngularHeight(0.5f, 1f);                     // below the minimum: raised to 1.2 degrees
+                Assert.AreEqual(HudText.SizeForAngularHeight(HudText.MinTextDegrees, 1f), text.CapHeightMeters, 1e-7);
+            }
+            finally
+            {
+                Object.DestroyImmediate(parent);
+            }
+        }
+
         // ---------------------------------------------------------------- change detection ("rebuild only when the words change")
 
         [TestCase("G", "G", false)]
