@@ -11,9 +11,9 @@
 //
 // Quality gates on a full alignment, in order: Core's own (Solve fails beyond 50 mm RMS or outside 30-90 cm), then
 //   ResidualRmsMm <= MaxResidualRmsMm (15 mm, gate G1),
-//   ViewerElevationDeg >= MinViewerElevationDeg: the fitted fretboard must not face away from the player. A mirrored fit (the
-//   two nut glances swapped) puts the viewer far behind the fretboard; a real guitar seen from the player's eyes is at worst
-//   nearly edge-on (AlignMath.ViewerElevationDeg).
+//   not LooksMirrored: the two nut glances swapped still fit well (RMS ~4 mm) but turn the neck over (string 1 drawn on the
+//   real string 6, every fingertip dot on the wrong side). That fit has the viewer behind the fretboard and the low E side
+//   pointing down; a real fit has the viewer in front (or, nearly edge-on, at least the low E string on top).
 // Person 2's G1 caution (docs/STATUS.md): the residual understates the nut error about 5x (depth along the gaze), so a
 // passing residual is not proof; the outcome says so, and the human checks the nut against a physical marker.
 using System;
@@ -24,7 +24,13 @@ using CoreNeckPose = UntitledGuitarApp.Core.Geometry.NeckPose;
 
 namespace UntitledGuitarApp.Runtime.Neck
 {
-    /// <summary>Detects a steady gaze: every sample of the recent run within <see cref="ThresholdDeg"/> of the run's mean.</summary>
+    /// <summary>
+    /// Detects a steady gaze: the recent run of samples whose angular diameter (largest angle between any two of them) is at
+    /// most 2 x <see cref="ThresholdDeg"/>, i.e. they fit in a patch about ThresholdDeg in radius. Each new sample is compared
+    /// with the run's samples only (O(run) per frame, no allocation): the run is cut just after the newest sample that is too
+    /// far from it. (A "distance from the run's mean" rule was tried first and could never start: with jitter of +-0.49
+    /// degrees the third sample pulls the mean off-centre and the run collapses; NeckAlignerTests pins the threshold.)
+    /// </summary>
     public sealed class GazeSteadiness
     {
         /// <summary>Most samples kept (about 4 s at 120 frames per second); the run is trimmed to the window anyway.</summary>
@@ -44,7 +50,7 @@ namespace UntitledGuitarApp.Runtime.Neck
             MaxGapSeconds = 0.25f;
         }
 
-        /// <summary>The largest allowed angle between any sample of the run and the run's mean direction, degrees.</summary>
+        /// <summary>Half the largest allowed angle between two samples of the run (about the patch radius), degrees.</summary>
         public float ThresholdDeg { get; set; }
 
         /// <summary>How long the run must last to count as steady, seconds.</summary>
@@ -108,9 +114,24 @@ namespace UntitledGuitarApp.Runtime.Neck
             {
                 float newest = _times[Index(_count - 1)];
                 if (timeSec < newest || timeSec - newest > MaxGapSeconds) Reset();
-                // A jump of more than twice the threshold from the run's mean cannot share a run with the old samples.
-                else if (AlignMath.AngleDeg(d, _sum) > 2f * ThresholdDeg) Reset();
             }
+
+            // Cut the run just after the newest sample that is further than the diameter from the new one: every pair left
+            // was already within the diameter, and the new sample is within it of all of them.
+            float sinLimit = Mathf.Sin(Mathf.Min(2f * Mathf.Max(ThresholdDeg, 0f), 89f) * Mathf.Deg2Rad);
+            float sinLimitSq = sinLimit * sinLimit;
+            int cut = -1;
+            for (int i = _count - 1; i >= 0; i--)
+            {
+                Vector3 other = _directions[Index(i)];
+                if (Vector3.Dot(other, d) <= 0f || Vector3.Cross(other, d).sqrMagnitude > sinLimitSq)
+                {
+                    cut = i;
+                    break;
+                }
+            }
+            for (int i = 0; i <= cut; i++) DropOldest();
+
             if (_count == Capacity) DropOldest();
             int slot = Index(_count);
             _directions[slot] = d;
@@ -118,16 +139,9 @@ namespace UntitledGuitarApp.Runtime.Neck
             _count++;
             _sum += d;
 
-            // Keep only as much history as the window needs (the run stays the shortest one that still covers the window)...
+            // Keep only as much history as the window needs (the run stays the shortest one that still covers the window).
             while (_count > 2 && timeSec - _times[Index(1)] >= WindowSeconds) DropOldest();
-            // ...and shrink it from the old end until every sample is within the threshold of the mean.
-            while (true)
-            {
-                _jitterDeg = MaxDeviationDeg();
-                if (_jitterDeg <= ThresholdDeg || _count <= 1) break;
-                DropOldest();
-            }
-            if (_count <= 1) _jitterDeg = 0f;
+            _jitterDeg = MaxDeviationDeg();
         }
 
         float MaxDeviationDeg()
@@ -416,10 +430,29 @@ namespace UntitledGuitarApp.Runtime.Neck
             if (!(result.ResidualRmsMm <= MaxResidualRmsMm))
                 outcome.Failure = "fit error " + result.ResidualRmsMm.ToString("0") + " mm is above " + MaxResidualRmsMm.ToString("0") +
                                   " mm: hold still on each point and redo the 4 glances";
-            else if (outcome.ViewerElevationDeg < MinViewerElevationDeg)
-                outcome.Failure = "the fit faces away from you: were the two nut glances swapped? Low E is the thick string";
+            else if (LooksMirrored(outcome.Pose, outcome.ViewerElevationDeg, _leftHanded))
+                outcome.Failure = "the fit is upside down: were the two nut glances swapped? Low E is the thick top string";
             else
                 outcome.Success = true;
+        }
+
+        /// <summary>Below this, the low E side of a fit points clearly downward (sine of its angle below the horizontal).</summary>
+        public const float MaxLowESideDown = -0.3f;
+
+        /// <summary>
+        /// The mirrored-fit gate. Swapping the two nut glances still fits the 4 nearly collinear points well (RMS 2-4 mm), but the
+        /// fit is the neck turned over about its length: the low E side then points down (in every synthetic seated scene the
+        /// real low E side points up, sine 0.5-0.9 above the horizontal; turned over it is -0.7 to -0.9), and the viewer moves to
+        /// the other side of the fretboard plane. Rejected when the low E side points clearly down, or the viewer is far behind
+        /// the fretboard, or both signs are wrong (a guitar held flat has its low E side near horizontal: the viewer side decides).
+        /// The world's +y is up: ImuHeadPose's rotation is gravity-aligned (recentering changes only the yaw).
+        /// </summary>
+        public static bool LooksMirrored(AlignedPose pose, float viewerElevationDeg, bool leftHanded)
+        {
+            float lowEUp = Vector3.Dot(AlignMath.TowardString6(pose, leftHanded), Vector3.up);
+            if (lowEUp < MaxLowESideDown) return true;
+            if (viewerElevationDeg < MinViewerElevationDeg) return true;
+            return lowEUp < 0f && viewerElevationDeg < 0f;
         }
 
         void FinishReanchor(AlignOutcome outcome, Vector3 headPivotM)

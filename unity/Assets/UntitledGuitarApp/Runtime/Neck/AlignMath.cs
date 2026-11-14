@@ -163,6 +163,12 @@ namespace UntitledGuitarApp.Runtime.Neck
             return Mathf.Asin(Mathf.Clamp(s, -1f, 1f)) * Mathf.Rad2Deg;
         }
 
+        /// <summary>The world direction across the neck toward string 6 (low E) for a neck at <paramref name="pose"/>.</summary>
+        public static Vector3 TowardString6(AlignedPose pose, bool leftHanded)
+        {
+            return pose.rotation * new Vector3(0f, 0f, leftHanded ? 1f : -1f);
+        }
+
         // ------------------------------------------------------------------ small rotation helpers (no engine calls)
 
         /// <summary>The angle between two directions in degrees (atan2 form: accurate for tiny angles, unlike acos).</summary>
