@@ -34,11 +34,14 @@
 //   documented  JSON values that match no field are ignored; "FromJsonOverwrite allocates GC memory only as necessary for
 //               written fields (for example, strings and arrays)"; the string overload may be used from a worker thread.
 //               https://docs.unity3d.com/2021.3/Documentation/Manual/JSONSerialization.html
-//   NOT documented, and NOT yet observed (this code was written without an editor; the EditMode test
-//               FlagsTests.JsonUtilityProbe_PrintsHowNestedObjectsAndArraysMerge prints it): what happens to (a) a nested
-//               object that is present but names only some of its fields, (b) an array that is present, (c) a nested object
-//               or array that is absent. Assumed: (a) merges in place, (b) is replaced whole (resized to the JSON length),
-//               (c) is left unchanged, which is what the documented sentence above says for any field.
+//   NOT documented: what happens to (a) a nested object that is present but names only some of its fields, (b) an array
+//               that is present, (c) a nested object or array that is absent. Assumed when this was written: (a) merges in
+//               place, (b) is replaced whole (resized to the JSON length), (c) is left unchanged.
+//   OBSERVED in Unity 2021.3.3f1 (Sat 2026-11-14 08:25 PT, headless EditMode run, 439/439 tests green, including the (b) and
+//               (c) tests): FlagsTests.JsonUtilityProbe_PrintsHowNestedObjectsAndArraysMerge logged
+//               {"evt":"jsonutility_probe","nested":"merge/same-instance","arrays":"empty=[]","invalid":"ArgumentException"}:
+//               (a) a partial nested object merges into the SAME instance; an empty JSON array gives an empty array; broken
+//               JSON throws ArgumentException.
 //   This code does not depend on (a): FlagMerge checks each group object by reference after the engine call and, if the
 //   engine swapped it for a new instance, puts the original back and re-applies that group's own JSON text to it (a
 //   top-level overwrite, which IS documented). It does depend on (b) and (c); FlagsTests covers both with the real
