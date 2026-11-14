@@ -1,0 +1,3 @@
+# Written by the com.unity.ide.vscode package (it is in Packages/manifest.json) every time Unity generates the C# projects.
+# Editor-local and regenerated, so it stays out of git. (The root .gitignore is a harness file; this nested one keeps the fix inside unity/.)
+.vscode/
