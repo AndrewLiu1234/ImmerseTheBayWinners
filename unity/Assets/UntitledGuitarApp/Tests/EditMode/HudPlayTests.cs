@@ -720,6 +720,36 @@ namespace UntitledGuitarApp.Tests.EditMode
             Assert.AreEqual(0f, PlayHudLayout.Offset(3f, 0f));
         }
 
+        // The signed-offset trap (Hud/Learn had it too): HudText.SizeForAngularHeight returns 0 for a negative angle, so a
+        // layout helper built on it puts everything that belongs below or left of its origin ON the origin. This test fails
+        // on the old PlayHudLayout.Size (it returned 0 for -2 degrees).
+        [Test]
+        public void Size_IsSigned_SoAPartBelowOrLeftOfItsOriginNeverCollapsesOntoIt()
+        {
+            // 2 * 0.5 m * tan(1 degree) = 0.0174551 m (python3: 2*0.5*math.tan(math.radians(1)))
+            Assert.AreEqual(0.0174551, PlayHudLayout.Size(2f, 0.5f), Tight);
+            Assert.AreEqual(-0.0174551, PlayHudLayout.Size(-2f, 0.5f), Tight);
+            Assert.AreEqual(-PlayHudLayout.Size(1.55f, 0.5f), PlayHudLayout.Size(-1.55f, 0.5f), 1e-7);   // the cursor lane drop
+            Assert.AreEqual(0f, PlayHudLayout.Size(0f, 0.5f));
+            Assert.AreEqual(0f, PlayHudLayout.Size(-2f, 0f));
+            Assert.AreEqual(0f, PlayHudLayout.Size(float.NaN, 0.5f));
+            Assert.AreEqual(0f, PlayHudLayout.Size(float.NegativeInfinity, 0.5f));
+        }
+
+        [Test]
+        public void SignedMeters_MirrorsTheUnsignedSizeAndKeepsTheSign()
+        {
+            for (float deg = 0.25f; deg < 20f; deg += 1.5f)
+            {
+                float unsigned = HudText.SizeForAngularHeight(deg, 0.7f);
+                Assert.AreEqual(unsigned, PlayHudLayout.SignedMeters(deg, 0.7f), 1e-7);
+                Assert.AreEqual(-unsigned, PlayHudLayout.SignedMeters(-deg, 0.7f), 1e-7);
+                Assert.AreEqual(PlayHudLayout.SignedMeters(-deg, 0.7f), PlayHudLayout.Size(-deg, 0.7f), 1e-7);
+            }
+            Assert.AreEqual(0f, PlayHudLayout.SignedMeters(-3f, -1f));
+            Assert.AreEqual(0f, PlayHudLayout.SignedMeters(float.PositiveInfinity, 0.5f));
+        }
+
         [Test]
         public void Layout_TextSizesRespectTheProjectMinimums()
         {
@@ -766,6 +796,28 @@ namespace UntitledGuitarApp.Tests.EditMode
 
             Assert.Less(chordNamesTop - laneBottom, PlayHudLayout.ViewHeightDeg);            // the whole column fits one 26.9 degree eye
             Assert.LessOrEqual(PlayHudLayout.ColumnMaxWidthDeg, PlayHudLayout.ViewWidthDeg * 0.5f);
+        }
+
+        // Ink, not cap boxes: "Happy" and "birthday" hang 'p' and 'y' below the line. Arial's descender is 434/2048 em and its
+        // cap height 1467/2048 em, so a descender reaches 0.296 cap heights below the baseline; lowercase ascenders (b, d, h)
+        // stand as tall as the capitals. The caret that glides under the words must clear both the descenders above it and
+        // the ascenders of the next line below it. (The old spacing put the caret 0.24 degrees into the descenders.)
+        [Test]
+        public void Layout_LyricCaretClearsTheDescendersAbove_AndTheNextLineBelow()
+        {
+            const float descenderOfCap = 434f / 1467f;
+            const float clearanceDeg = 0.08f;                                                    // ~3 glasses pixels
+            float descenderBottom = PlayHudLayout.LyricRowDeg - PlayHudLayout.LyricLineCapDeg * (0.5f + descenderOfCap);
+            float caretRow = PlayHudLayout.LyricRowDeg - PlayHudLayout.LyricCaretDropDeg;
+            float caretTop = caretRow + PlayHudLayout.LyricCaretDeg * 0.5f;
+            float caretBottom = caretRow - PlayHudLayout.LyricCaretDeg * 0.5f;
+            float nextInkTop = PlayHudLayout.LyricRowDeg - PlayHudLayout.LyricNextDropDeg + PlayHudLayout.LyricNextCapDeg * 0.5f;
+            Assert.Less(caretTop + clearanceDeg, descenderBottom);
+            Assert.Less(nextInkTop + clearanceDeg, caretBottom);
+            // ...and the next line's own descenders stay clear of the big chord name below it (it may breathe while waiting).
+            float nextDescenderBottom = PlayHudLayout.LyricRowDeg - PlayHudLayout.LyricNextDropDeg - PlayHudLayout.LyricNextCapDeg * (0.5f + descenderOfCap);
+            float chordTop = PlayHudLayout.ChordRowDeg + PlayHudLayout.ChordCapDeg * 0.5f * (1f + NeckHudCard.WaitBreathGain);
+            Assert.Less(chordTop + clearanceDeg, nextDescenderBottom);
         }
 
         [Test]
@@ -1032,6 +1084,98 @@ namespace UntitledGuitarApp.Tests.EditMode
             Assert.AreEqual(0.5f, v[v.Length - 1].magnitude, 1e-5);
             Assert.AreEqual(24 * 3 + 2 * 24 * 6, t.Length);
             foreach (int index in t) Assert.Less(index, v.Length);
+        }
+
+        // ---------------------------------------------------------------- relational overlap check (the preview's checker)
+
+        [Test]
+        public void Overlap_PlantedOverlapFires_AndDisjointPartsDoNot()
+        {
+            // Two "texts" whose ink shares a 6 x 5 block (planted), and a third far away.
+            var chord = new PixelMask(64, 32);
+            chord.FillRect(2, 2, 20, 12);
+            var lyric = new PixelMask(64, 32);
+            lyric.FillRect(15, 8, 40, 20);
+            var far = new PixelMask(64, 32);
+            far.FillRect(50, 25, 60, 30);
+
+            Assert.AreEqual(6 * 5, PixelMask.OverlapPixels(chord, lyric));            // x 15..20, y 8..12
+            Assert.AreEqual(PixelMask.OverlapPixels(lyric, chord), PixelMask.OverlapPixels(chord, lyric));
+            Assert.AreEqual(0, PixelMask.OverlapPixels(chord, far));
+            Assert.IsTrue(PixelMask.OverlapBox(chord, lyric, out int x0, out int y0, out int x1, out int y1));
+            Assert.AreEqual(15, x0); Assert.AreEqual(8, y0); Assert.AreEqual(20, x1); Assert.AreEqual(12, y1);
+
+            string why;
+            Assert.AreEqual(OverlapKind.Problem, PlayHudOverlap.Classify(
+                PlayHudOverlap.Id(PlayHudOverlap.CardGroup, "ChordPivot/CurrentChord"),
+                PlayHudOverlap.Id(PlayHudOverlap.CardGroup, "LyricStrip/Lyric"), out why));
+        }
+
+        [Test]
+        public void Overlap_IsJudgedOnInkNotOnBoxes()
+        {
+            // A ring (hollow square here) around a dot: their boxes overlap, their pixels do not.
+            var ring = new PixelMask(40, 40);
+            for (int i = 5; i <= 30; i++) { ring.Set(i, 5); ring.Set(i, 30); ring.Set(5, i); ring.Set(30, i); }
+            var dot = new PixelMask(40, 40);
+            dot.FillRect(15, 15, 20, 20);
+            Assert.AreEqual(0, PixelMask.OverlapPixels(ring, dot));
+            Assert.AreEqual(0, PixelMask.BoxGap(ring, dot));                           // the boxes do meet
+            dot.FillRect(28, 15, 31, 16);                                              // now the dot's ink reaches the stroke
+            Assert.Greater(PixelMask.OverlapPixels(ring, dot), 0);
+        }
+
+        [Test]
+        public void Overlap_MaskFromPixels_UsesBrightnessNotAlpha_AndFindsTheEdge()
+        {
+            var pixels = new Color32[4 * 3];
+            pixels[0] = new Color32(0, 0, 0, 255);          // black: what the glasses do not show
+            pixels[1] = new Color32(0, 0, 200, 0);          // bright blue with zero alpha: lit
+            pixels[6] = new Color32(30, 10, 10, 255);       // just above the threshold
+            pixels[7] = new Color32(24, 24, 24, 255);       // at the threshold: not lit
+            PixelMask mask = PixelMask.FromPixels(pixels, 4, 3, 24);
+            Assert.AreEqual(2, mask.Count);
+            Assert.IsTrue(mask.Get(1, 0));
+            Assert.IsTrue(mask.Get(2, 1));
+            Assert.IsFalse(mask.Get(3, 1));
+            Assert.IsTrue(mask.TouchesEdge);                 // row 0 is the bottom edge of the frame
+            var inside = new PixelMask(10, 10);
+            inside.FillRect(3, 3, 5, 5);
+            Assert.IsFalse(inside.TouchesEdge);
+            var right = new PixelMask(10, 10);
+            right.Set(9, 4);                                 // columns 6, 7 and 8 lie between x = 5 and x = 9
+            Assert.AreEqual(3, PixelMask.BoxGap(inside, right));
+            Assert.AreEqual(3, PixelMask.BoxGap(right, inside));
+        }
+
+        [Test]
+        public void Overlap_ClassifiesByDesignPairs()
+        {
+            string why;
+            string card = PlayHudOverlap.CardGroup;
+            Assert.AreEqual(OverlapKind.ByDesign, PlayHudOverlap.Classify(PlayHudOverlap.Id(card, "PatternStrip/Slot3/Halo"),
+                PlayHudOverlap.Id(card, "PatternStrip/Slot3/Arrow"), out why));
+            Assert.AreEqual(OverlapKind.Note, PlayHudOverlap.Classify(PlayHudOverlap.Id(card, "PatternStrip/Slot3/Halo"),
+                PlayHudOverlap.Id(card, "PatternStrip/Slot4/Arrow"), out why));
+            Assert.AreEqual(OverlapKind.Problem, PlayHudOverlap.Classify(PlayHudOverlap.Id(card, "PatternStrip/Slot3/Label"),
+                PlayHudOverlap.Id(card, "PatternStrip/Slot3/BassBar"), out why));
+            Assert.AreEqual(OverlapKind.ByDesign, PlayHudOverlap.Classify(PlayHudOverlap.Id(card, "PatternStrip/Cursor"),
+                PlayHudOverlap.Id(card, "PatternStrip/Beat2"), out why));
+            Assert.AreEqual(OverlapKind.Problem, PlayHudOverlap.Classify(PlayHudOverlap.Id(card, "LyricStrip/Caret"),
+                PlayHudOverlap.Id(card, "LyricStrip/Lyric"), out why));
+            Assert.AreEqual(OverlapKind.ByDesign, PlayHudOverlap.Classify(PlayHudOverlap.Id(PlayHudOverlap.RingsGroup, "Ring0_2"),
+                PlayHudOverlap.Id(PlayHudOverlap.RingsGroup, "Target0_2"), out why));
+            Assert.AreEqual(OverlapKind.Note, PlayHudOverlap.Classify(PlayHudOverlap.Id(PlayHudOverlap.RingsGroup, "Ring0_2"),
+                PlayHudOverlap.Id(PlayHudOverlap.RingsGroup, "Target0_1"), out why));
+            Assert.AreEqual(OverlapKind.ByDesign, PlayHudOverlap.Classify(PlayHudOverlap.Id(PlayHudOverlap.RingsGroup, "Ring0_2"),
+                PlayHudOverlap.Id(PlayHudOverlap.NeckGroup, "Dots"), out why));
+            // The card on the neck is always a problem: it must never hide a dot, a mark or a finger number.
+            Assert.AreEqual(OverlapKind.Problem, PlayHudOverlap.Classify(PlayHudOverlap.Id(card, "BeatDots/Dot0"),
+                PlayHudOverlap.Id(PlayHudOverlap.NeckGroup, "FingerNumber1/Text"), out why));
+            Assert.IsFalse(PlayHudOverlap.ShouldCompare(PlayHudOverlap.Id(PlayHudOverlap.NeckGroup, "Dots"),
+                PlayHudOverlap.Id(PlayHudOverlap.NeckGroup, "FingerNumber0/Text")));
+            Assert.IsTrue(PlayHudOverlap.ShouldCompare(PlayHudOverlap.Id(card, "NextChord"),
+                PlayHudOverlap.Id(PlayHudOverlap.NeckGroup, "Dots")));
         }
 
         // ---------------------------------------------------------------- helpers

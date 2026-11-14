@@ -14,7 +14,7 @@
 //
 //      +12.0   chord names above the words      (lyric strip, optional; a chords-only song shows its
 //       +9.8   current lyric line                chord sequence with one tick per beat here instead)
-//       +7.4   next lyric line (smaller)
+//       +7.0   next lyric line (smaller)
 //       +3.0   CURRENT CHORD (4 degrees)   |  "next" + next chord
 //       -0.9   beat dots (countdown to the change)  /  wait cue
 //       -4.2   strum or picking strip, cursor lane under it
@@ -96,9 +96,11 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
         public const float LyricMarkerRiseDeg = 1.2f;
         public const float LyricMarkerWidthDeg = 1.1f;
         public const float LyricMarkerHeightDeg = 0.2f;
-        public const float LyricCaretDropDeg = 1.25f;
-        public const float LyricCaretDeg = 0.6f;
-        public const float LyricNextDropDeg = 2.45f;
+        // The caret glides between the descenders of the line above it (p, y: 0.3 cap heights below the baseline) and the
+        // ascenders of the next line below it (b, d, h: as tall as capitals). It used to sit 0.24 degrees inside the descenders.
+        public const float LyricCaretDropDeg = 1.6f;
+        public const float LyricCaretDeg = 0.5f;
+        public const float LyricNextDropDeg = 2.8f;
         public const float LyricNextCapDeg = HudText.MinTextDegrees;
 
         // A chords-only line: chord names over one tick per beat, the next line's names smaller underneath.
@@ -132,10 +134,28 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
             return Mathf.Max(capDegrees * HudText.TextScale(largeText), HudText.MinTextDegrees);
         }
 
-        /// <summary>World size in metres of something spanning <paramref name="degrees"/> at <paramref name="distanceM"/> (same formula as HudText).</summary>
+        /// <summary>
+        /// World size in metres of something spanning <paramref name="degrees"/> at <paramref name="distanceM"/> (same formula
+        /// as HudText: 2 d tan(degrees / 2)). SIGNED: a negative angle gives a negative length, so a part placed below or
+        /// left of its origin stays there. (It used to return HudText.SizeForAngularHeight, which is 0 for a negative
+        /// angle; Hud/Learn had the same trap, see LearnHudLayout.SignedMeters.) 0 for a non-finite angle or an unusable distance.
+        /// </summary>
         public static float Size(float degrees, float distanceM)
         {
-            return HudText.SizeForAngularHeight(degrees, distanceM);
+            return SignedMeters(degrees, distanceM);
+        }
+
+        /// <summary>
+        /// The signed version of HudText.SizeForAngularHeight: the length in metres that <paramref name="degrees"/> of view
+        /// spans at <paramref name="distanceM"/>, with the sign of the angle. Use it (or <see cref="Offset"/>) for anything
+        /// that is a displacement; HudText.SizeForAngularHeight returns 0 for a negative angle. 0 for a non-finite angle or an
+        /// unusable distance.
+        /// </summary>
+        public static float SignedMeters(float degrees, float distanceM)
+        {
+            if (float.IsNaN(degrees) || float.IsInfinity(degrees)) return 0f;
+            float meters = HudText.SizeForAngularHeight(Mathf.Abs(degrees), distanceM);
+            return degrees < 0f ? -meters : meters;
         }
 
         /// <summary>Distance in metres from the card's centre of a point <paramref name="degrees"/> off-centre on a flat card (d * tan). Signed.</summary>
