@@ -12,7 +12,8 @@ namespace UntitledGuitarApp.Core.Contracts
         public readonly string ExpectedChord;
         /// <summary>Name of the best-matching hypothesis (expected, other song chords, confusers); null if nothing rang.</summary>
         public readonly string BestMatch;
-        /// <summary>Chroma cosine of <see cref="BestMatch"/>, 0 … 1.</summary>
+        /// <summary>Hypothesis score of <see cref="BestMatch"/>, 0 … 1 (chroma F-measure blended with the bass-note term;
+        /// see Core/Audio/StrumVerifier). A relative score for ranking chords, not a probability.</summary>
         public readonly double Confidence;
         /// <summary>Score(expected) − best score among the other hypotheses; negative when another chord won.</summary>
         public readonly double Margin;
