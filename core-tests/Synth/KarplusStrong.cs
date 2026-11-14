@@ -17,15 +17,28 @@ namespace UntitledGuitarApp.Core.Tests.Synth
         /// <param name="t60Sec">Time for the loop to decay by 60 dB (a steel string rings ~3–8 s).</param>
         /// <param name="amplitude">Peak level of the excitation burst (0.5 ≈ −6 dBFS).</param>
         public static float[] Pluck(int midi, int ms, int sampleRate = 48000, int seed = 0,
-                                    double detuneCents = 0.0, double t60Sec = 4.0, float amplitude = 0.5f)
+                                    double detuneCents = 0.0, double t60Sec = 4.0, float amplitude = 0.5f, double brightness = 1.0)
         {
             double f0 = Midi.ToHz(midi) * Math.Pow(2.0, detuneCents / 1200.0);
-            return PluckHz(f0, ms, sampleRate, seed, t60Sec, amplitude);
+            return PluckHz(f0, ms, sampleRate, seed, t60Sec, amplitude, brightness);
         }
 
+        /// <summary>
+        /// One seeded down-strum of <paramref name="chord"/> with injected <paramref name="mistakes"/> (see <see cref="StrumScenes"/>):
+        /// <see cref="StrumScenes.PreSec"/> of silence, then the strings 6 → 1 spread over <paramref name="spreadMs"/>, plus white
+        /// noise at <paramref name="snrDb"/> against the strum's own RMS over the 30–250 ms analysis window. The onset (first
+        /// string) is at <see cref="StrumScenes.OnsetIndex"/>.
+        /// </summary>
+        public static float[] Strum(ChordShape chord, StrumMistake[] mistakes, double spreadMs, double snrDb, int seed,
+                                    int sampleRate = StrumScenes.Sr, double brightness = 1.0, double detuneCents = 0.0) =>
+            StrumScenes.Render(chord, mistakes, spreadMs, snrDb, seed, sampleRate, brightness, detuneCents);
+
+        /// <param name="brightness">Excitation lowpass, (0, 1]: 1 = white-noise burst (classic KS, flat partials); smaller =
+        /// one-pole lowpass on the burst (a softer pick / a thumb: upper partials weaker, as on a real acoustic through a mic).</param>
         public static float[] PluckHz(double f0, int ms, int sampleRate = 48000, int seed = 0,
-                                      double t60Sec = 4.0, float amplitude = 0.5f)
+                                      double t60Sec = 4.0, float amplitude = 0.5f, double brightness = 1.0)
         {
+            if (!(brightness > 0) || brightness > 1) throw new ArgumentOutOfRangeException(nameof(brightness));
             if (!(f0 > 0) || f0 > sampleRate / 4.0) throw new ArgumentOutOfRangeException(nameof(f0));
             int length = (int)((long)ms * sampleRate / 1000);
             var output = new float[length];
@@ -40,7 +53,14 @@ namespace UntitledGuitarApp.Core.Tests.Synth
             var line = new double[n];
             var rng = new XorShift32(seed);
             double mean = 0;
-            for (int i = 0; i < n; i++) { line[i] = rng.NextBipolar(); mean += line[i]; }
+            for (int i = 0; i < n; i++) line[i] = rng.NextBipolar();
+            if (brightness < 1)
+                for (int pass = 0; pass < 2; pass++)            // two passes ≈ zero-phase-ish lowpass around the circular line
+                {
+                    double yv = line[n - 1];
+                    for (int i = 0; i < n; i++) { yv += brightness * (line[i] - yv); line[i] = yv; }
+                }
+            for (int i = 0; i < n; i++) mean += line[i];
             mean /= n;
             double peak = 1e-12;
             for (int i = 0; i < n; i++) { line[i] -= mean; peak = Math.Max(peak, Math.Abs(line[i])); }

@@ -23,7 +23,8 @@ namespace UntitledGuitarApp.Core.Practice
         FingerByFinger,
         /// <summary>Whole shape held; pluck every played string, low → high; each must be Correct (incl. ring-out).</summary>
         PluckCheck,
-        /// <summary>Strum the whole chord. The strum check is SL3: the caller reports its verdict via <see cref="LearnChordSession.OnStrumVerdict"/>.</summary>
+        /// <summary>Strum the whole chord. The caller runs <see cref="StrumVerifier"/> on each onset and passes the result to
+        /// <see cref="LearnChordSession.OnStrum"/> (or a bare verdict to <see cref="LearnChordSession.OnStrumVerdict"/>).</summary>
         WholeChord,
         Mastered,
     }
@@ -164,14 +165,40 @@ namespace UntitledGuitarApp.Core.Practice
         }
 
         /// <summary>SL3 hook: the strum check's chord-level verdict for the WholeChord stage. Clean → Mastered.</summary>
-        public LearnChordState OnStrumVerdict(bool clean, double nowSec, string tip = null, string tipKey = null)
+        public LearnChordState OnStrumVerdict(bool clean, double nowSec, string tip = null, string tipKey = null) =>
+            StrumVerdict(clean, clean ? PluckVerdict.Correct : PluckVerdict.Unclear, true, nowSec, tip, tipKey);
+
+        /// <summary>The last strum-check result accepted in the WholeChord stage (HUD detail: best match, issue string).</summary>
+        public StrumCheckResult? LastStrum { get; private set; }
+
+        /// <summary>
+        /// The strum check (<see cref="StrumVerifier"/>) for the WholeChord stage. Clean → Mastered; otherwise the top issue's
+        /// tip (<see cref="Tips.ForStrum"/>), and <see cref="LearnChordState.LastVerdict"/> carries the one-string fault as a
+        /// pluck verdict (Unclear for a wrong chord). Nothing heard (Unclear, no best match) shows "strum again" without counting
+        /// as an attempt, like an Unclear pluck. Results checked against another chord (stale) are ignored.
+        /// </summary>
+        public LearnChordState OnStrum(in StrumCheckResult r, double nowSec)
+        {
+            if (Stage != LearnStage.WholeChord || r.ExpectedChord != Chord.Name)
+            {
+                Clock(nowSec);
+                _advanced = false;
+                return Snapshot();
+            }
+            LastStrum = r;
+            bool heard = r.BestMatch != null;
+            PluckVerdict v = r.Clean ? PluckVerdict.Correct : r.HasStringFault ? r.StringVerdict : PluckVerdict.Unclear;
+            return StrumVerdict(r.Clean, v, heard, nowSec, Tips.ForStrum(r, Chord), r.TipKey);
+        }
+
+        LearnChordState StrumVerdict(bool clean, PluckVerdict verdict, bool countsAsAttempt, double nowSec, string tip, string tipKey)
         {
             Clock(nowSec);
             _advanced = false;
             if (Stage != LearnStage.WholeChord) return Snapshot();
-            _hasLast = true; _last = clean ? PluckVerdict.Correct : PluckVerdict.Unclear;
+            _hasLast = true; _last = verdict;
             _lastTip = clean ? null : tip; _lastKey = clean ? null : tipKey;
-            if (clean) Advance(); else _attempts++;
+            if (clean) Advance(); else if (countsAsAttempt) _attempts++;
             return Snapshot();
         }
 

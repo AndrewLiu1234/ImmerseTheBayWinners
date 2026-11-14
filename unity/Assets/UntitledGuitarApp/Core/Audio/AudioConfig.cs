@@ -159,6 +159,68 @@ namespace UntitledGuitarApp.Core.Audio
         /// the fastest pattern (16ths at 100 bpm) is 150 ms apart.</summary>
         public double OnsetMinGapSec { get; }
 
+
+        // ---- Strum check (SL3, §19 "Strum verdict" + "Clean / quality"; chord level only) ----
+        /// <summary>Analysis window start after the onset, s (§19: 30 ms). Skips the pick noise and the strum's spread
+        /// (strings arrive over 10–40 ms), so every string has sounded before the window opens on a normal strum.</summary>
+        public double StrumWindowStartSec { get; }
+        /// <summary>Analysis window end after the onset, s (§19: 250 ms). Strum-to-verdict ≤ 350 ms leaves 100 ms for onset
+        /// confirmation (≈ 2 hops) and the analysis itself (&lt; 5 ms).</summary>
+        public double StrumWindowEndSec { get; }
+        /// <summary>FFT size = smallest power of two ≥ this × the window length. 1.5: 220 ms @ 48 kHz (10,560 samples) → 16,384
+        /// points, 2.9 Hz bins — under the window's 4.5 Hz resolution, so the nearest bin is never more than a third of a
+        /// resolution cell off (and the coverage tables model the exact bins anyway).</summary>
+        public double StrumFftPadding { get; }
+        /// <summary>Lowest chord note the strum check models, MIDI (E2 = open low E: nothing in standard tuning goes lower).</summary>
+        public int StrumMinMidi { get; }
+        /// <summary>Highest chord note the strum check models, MIDI. A4 (69) covers every open-position chord note in the
+        /// library (G4) plus faults a fret or two sharp.</summary>
+        public int StrumMaxMidi { get; }
+        /// <summary>Highest semitone probe, MIDI. C6 (1047 Hz) = the 12th partial of low E: high enough for the 2nd–6th partials
+        /// of the bass strings (§19: where semitone gaps exceed the window's resolution), low enough that string inharmonicity
+        /// (≈ 865·B·n² cents, B ≈ 1e-4 → 12 cents at n = 12) still lands inside a probe.</summary>
+        public int StrumProbeMaxMidi { get; }
+        /// <summary>Each semitone probe takes the max FFT amplitude within ± this many cents (always ≥ the nearest bin). 30 cents
+        /// tolerates a slightly out-of-tune string and inharmonicity while staying clear of the neighbouring semitone (100).</summary>
+        public double StrumProbeCents { get; }
+        /// <summary>Probe amplitudes minus this × the median FFT amplitude (the broadband noise floor; partials occupy a small
+        /// share of the bins, so the median is noise). 2: the max of a few Rayleigh-distributed noise bins sits ≈ 1.5–2× their median.</summary>
+        public double StrumNoiseFloorK { get; }
+        /// <summary>The loudest probe must stand this many dB above the median FFT amplitude for the window to be a strum (else
+        /// Unclear, "strum again"). White noise alone reaches ≤ 11 dB (max of ~45 pooled probes, 20 seeds); the synthetic
+        /// grid's strums at 10 dB SNR read ≥ 28 dB.</summary>
+        public double StrumMinPeakDb { get; }
+        /// <summary>A probe is "explained" by a hypothesis when some partial of one of its notes puts at least this fraction of
+        /// its amplitude there (pooled Hann response). 0.1 = −20 dB: inside the main lobe; beyond it only −31 dB sidelobes remain.</summary>
+        public double StrumCoverMin { get; }
+        /// <summary>A note's own evidence = the probes nearest its partials 1 … this that no other note of the hypothesis
+        /// explains. 6 (§19: "harmonics 2–6"): with 4, a bass string whose fundamental the mic rolls off often kept a single
+        /// own probe, and clean G/Em strums through a simulated laptop-mic high-pass read "string 6 muted" (held-out sweep:
+        /// clean accuracy 90 % with 4, 100 % with 6).</summary>
+        public int StrumOwnPartials { get; }
+        /// <summary>… and only probes up to this note, MIDI (G5, 784 Hz). Above it the partials of six strings are dense, and a
+        /// detuned or inharmonic 12th–13th partial of low E lands on an absent note's probe and makes it look present (held-out
+        /// sweep: G#3 "heard" in an Em; clean accuracy 88 % with 84, 100 % with 76–80, 95 % with 72).</summary>
+        public int StrumOwnMaxMidi { get; }
+        /// <summary>A note is fully present when the upper median of its own probes (after removing the leakage a neighbouring
+        /// semitone's peak can put there) reaches this fraction of the loudest probe; below that presence scales linearly.
+        /// 0.01 (−40 dB) sits mid-plateau (0.005–0.02 all 100 % held-out): weak fundamentals still count, while a muted
+        /// string's thud has decayed ≈ 45 dB by the window start and the noise floor is subtracted.</summary>
+        public double StrumPresenceRatio { get; }
+        /// <summary>Precision weighs each probe by amplitude^this. 0.5 (square-root compression): a foreign string's few own
+        /// partials are not drowned out by the strong low partials of the others (0.3 gave identical synthetic results).</summary>
+        public double StrumPrecisionGamma { get; }
+        /// <summary>Probes weaker than this fraction of the loudest one are left out of the precision. 0.02 (−34 dB) guards against
+        /// Hann sidelobes (−31 dB) and noise residue counting as foreign; 0, 0.02 and 0.05 gave identical synthetic results.</summary>
+        public double StrumPrecisionFloor { get; }
+        /// <summary>Clean needs score(expected) − best other chord ≥ this (flag audio.strumMinMargin = 0.15, §19).</summary>
+        public double StrumMinMargin { get; }
+        /// <summary>A fault hypothesis (the expected chord with one string open / a fret off / muted, or extra bass strings) wins
+        /// when it beats the expected chord's score by ≥ this. 0.02: clean strums leave the best fault ≤ 0 (180/180 seeded clean
+        /// strums stay clean at 0.02); a foreign note with only two own partials (G with high E open → E4) opens just 0.02–0.04,
+        /// so 0.04 let 7/108 such faults through as clean.</summary>
+        public double StrumFaultMargin { get; }
+
         public AudioConfig(
             int frameSize = 2048,
             int hopSize = 512,
@@ -200,7 +262,24 @@ namespace UntitledGuitarApp.Core.Audio
             double onsetThresholdK = 1.5,
             double onsetMedianSec = 0.3,
             double onsetMinFlux = 0.15,
-            double onsetMinGapSec = 0.06)
+            double onsetMinGapSec = 0.06,
+            double strumWindowStartSec = 0.030,
+            double strumWindowEndSec = 0.250,
+            double strumFftPadding = 1.5,
+            int strumMinMidi = 40,
+            int strumMaxMidi = 69,
+            int strumProbeMaxMidi = 84,
+            double strumProbeCents = 30.0,
+            double strumNoiseFloorK = 2.0,
+            double strumMinPeakDb = 20.0,
+            double strumCoverMin = 0.1,
+            int strumOwnPartials = 6,
+            int strumOwnMaxMidi = 79,
+            double strumPresenceRatio = 0.01,
+            double strumPrecisionGamma = 0.5,
+            double strumPrecisionFloor = 0.02,
+            double strumMinMargin = 0.15,
+            double strumFaultMargin = 0.02)
         {
             if (frameSize < 256) throw new ArgumentOutOfRangeException(nameof(frameSize));
             if (hopSize < 1 || hopSize > frameSize) throw new ArgumentOutOfRangeException(nameof(hopSize));
@@ -243,6 +322,23 @@ namespace UntitledGuitarApp.Core.Audio
             if (!(onsetMinFlux >= 0)) throw new ArgumentOutOfRangeException(nameof(onsetMinFlux));
             if (!(onsetMinGapSec >= 0) || onsetMinGapSec > 2) throw new ArgumentOutOfRangeException(nameof(onsetMinGapSec));
 
+            if (!(strumWindowStartSec >= 0) || !(strumWindowEndSec > strumWindowStartSec + 0.02) || strumWindowEndSec > 1.0)
+                throw new ArgumentOutOfRangeException(nameof(strumWindowEndSec));
+            if (!(strumFftPadding >= 1) || strumFftPadding > 8) throw new ArgumentOutOfRangeException(nameof(strumFftPadding));
+            if (strumMinMidi < 20 || strumMaxMidi <= strumMinMidi || strumMaxMidi > 100) throw new ArgumentOutOfRangeException(nameof(strumMaxMidi));
+            if (strumProbeMaxMidi < strumMaxMidi || strumProbeMaxMidi > 120) throw new ArgumentOutOfRangeException(nameof(strumProbeMaxMidi));
+            if (!(strumProbeCents >= 0) || strumProbeCents >= 50) throw new ArgumentOutOfRangeException(nameof(strumProbeCents));
+            if (!(strumNoiseFloorK >= 0)) throw new ArgumentOutOfRangeException(nameof(strumNoiseFloorK));
+            if (!(strumMinPeakDb >= 0)) throw new ArgumentOutOfRangeException(nameof(strumMinPeakDb));
+            if (!(strumCoverMin > 0) || strumCoverMin >= 1) throw new ArgumentOutOfRangeException(nameof(strumCoverMin));
+            if (strumOwnMaxMidi < strumMinMidi) throw new ArgumentOutOfRangeException(nameof(strumOwnMaxMidi));
+            if (strumOwnPartials < 1 || strumOwnPartials > 32) throw new ArgumentOutOfRangeException(nameof(strumOwnPartials));
+            if (!(strumPresenceRatio > 0) || strumPresenceRatio > 1) throw new ArgumentOutOfRangeException(nameof(strumPresenceRatio));
+            if (!(strumPrecisionGamma > 0) || strumPrecisionGamma > 2) throw new ArgumentOutOfRangeException(nameof(strumPrecisionGamma));
+            if (!(strumPrecisionFloor >= 0) || strumPrecisionFloor >= 1) throw new ArgumentOutOfRangeException(nameof(strumPrecisionFloor));
+            if (!(strumMinMargin >= 0) || strumMinMargin > 1) throw new ArgumentOutOfRangeException(nameof(strumMinMargin));
+            if (!(strumFaultMargin >= 0) || strumFaultMargin > 1) throw new ArgumentOutOfRangeException(nameof(strumFaultMargin));
+
             FrameSize = frameSize; HopSize = hopSize; MinHz = minHz; MaxHz = maxHz;
             YinThreshold = yinThreshold; MaxAperiodicity = maxAperiodicity; SilenceRmsDbfs = silenceRmsDbfs;
             OctaveCorrection = octaveCorrection; OctaveSupportRatio = octaveSupportRatio; OctaveCheckPartials = octaveCheckPartials;
@@ -255,6 +351,10 @@ namespace UntitledGuitarApp.Core.Audio
             RingOutSec = ringOutSec; RingPartials = ringPartials; RingDropDb = ringDropDb; RingFloorDb = ringFloorDb; RingCutDb = ringCutDb; RingStepSec = ringStepSec;
             OnsetFftSize = onsetFftSize; OnsetMaxHz = onsetMaxHz; OnsetLogGamma = onsetLogGamma; OnsetMaxFilterBins = onsetMaxFilterBins; OnsetDiffLagHops = onsetDiffLagHops; OnsetThresholdK = onsetThresholdK;
             OnsetMedianSec = onsetMedianSec; OnsetMinFlux = onsetMinFlux; OnsetMinGapSec = onsetMinGapSec;
+            StrumWindowStartSec = strumWindowStartSec; StrumWindowEndSec = strumWindowEndSec; StrumFftPadding = strumFftPadding;
+            StrumMinMidi = strumMinMidi; StrumMaxMidi = strumMaxMidi; StrumProbeMaxMidi = strumProbeMaxMidi; StrumProbeCents = strumProbeCents;
+            StrumNoiseFloorK = strumNoiseFloorK; StrumMinPeakDb = strumMinPeakDb; StrumCoverMin = strumCoverMin; StrumOwnPartials = strumOwnPartials; StrumOwnMaxMidi = strumOwnMaxMidi;
+            StrumPresenceRatio = strumPresenceRatio; StrumPrecisionGamma = strumPrecisionGamma; StrumPrecisionFloor = strumPrecisionFloor; StrumMinMargin = strumMinMargin; StrumFaultMargin = strumFaultMargin;
         }
 
         public static readonly AudioConfig Default = new AudioConfig();
