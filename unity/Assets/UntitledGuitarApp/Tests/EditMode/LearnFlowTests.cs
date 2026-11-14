@@ -471,6 +471,59 @@ namespace UntitledGuitarApp.Tests.EditMode
             Assert.AreEqual(1f, LearnHudLayout.ZoneLeftDegrees(1f, 20.5f, -1f, float.PositiveInfinity), 1e-5f);
         }
 
+        // ------------------------------------------------------------------ the tuner's rows at the true text size
+
+        // Relational, from TunerNeedle's own constants: a text box is BoxPerCap cap heights tall, centred on its anchor
+        // (measured at the true size on 14 Nov: "E" 5.00 deg for a 3.20 deg cap, "string 6" 2.18 for 1.40, "Too low" 2.49 for
+        // 1.59). The needle is a capsule from 0.64 to 1.07 dial radii, 0.05 radii wide, swinging +-40 deg. Every offset scales
+        // with largeText, so one scale-free check covers both.
+        const float BoxPerCap = 1.5625f;
+
+        static void Box(float centre, float cap, out float bottom, out float top)
+        {
+            bottom = centre - 0.5f * BoxPerCap * cap;
+            top = centre + 0.5f * BoxPerCap * cap;
+        }
+
+        [Test]
+        public void TunerNoteStringAndStatusBoxesNeverTouch_AndTheNeedleClearsTheNote()
+        {
+            float noteB, noteT, strB, strT, st1B, st1T, st2B, st2T, dbgB, dbgT;
+            Box(TunerNeedle.NoteY, TunerNeedle.NoteDegrees, out noteB, out noteT);
+            Box(TunerNeedle.StringY, TunerNeedle.StringDegrees, out strB, out strT);
+            float half = 0.5f * TunerNeedle.StatusLineStepInCaps * TunerNeedle.StatusDegrees;
+            Box(TunerNeedle.StatusY + half, TunerNeedle.StatusDegrees, out st1B, out st1T);
+            Box(TunerNeedle.StatusY - half, TunerNeedle.StatusDegrees, out st2B, out st2T);
+            Box(TunerNeedle.DebugY, TunerNeedle.DebugDegrees, out dbgB, out dbgT);
+            const float Gap = 0.05f;   // degrees; the preview flags anything deeper than 1.5 px (0.04 deg)
+            Assert.Greater(noteB - strT, Gap, "note name vs string label");
+            Assert.Greater(strB - st1T, Gap, "string label vs first status line");
+            Assert.Greater(st1B - st2T, Gap, "the two status lines");
+            Assert.Greater(st2B - dbgT, Gap, "status vs debug line");
+
+            // The needle's lowest corner while it is over the note's column (|x| <= half the note's box width, 0.93 caps).
+            float r = TunerNeedle.DialRadiusDegrees;
+            float noteHalfWidth = 0.5f * 0.928f * TunerNeedle.NoteDegrees;   // "E": 2.97 deg box for a 3.20 deg cap
+            float lowest = float.MaxValue;
+            for (float angle = -40f; angle <= 40f; angle += 0.25f)
+            {
+                float a = angle * Mathf.Deg2Rad;
+                for (int side = -1; side <= 1; side += 2)
+                {
+                    float x = side * 0.025f * r, y = (0.64f - 0.025f) * r;
+                    float rx = x * Mathf.Cos(a) - y * Mathf.Sin(a), ry = x * Mathf.Sin(a) + y * Mathf.Cos(a);
+                    if (Mathf.Abs(rx) <= noteHalfWidth) lowest = Mathf.Min(lowest, ry);
+                }
+            }
+            Assert.Greater(lowest - noteT, Gap, "needle vs note name (lowest reach " + lowest.ToString("0.00") + ", note top " + noteT.ToString("0.00") + ")");
+
+            // The whole block (dial top to the second status line) stays inside its declared half height around the origin.
+            float top = TunerNeedle.PivotY + (1.07f + 0.025f) * r;
+            float bottom = TunerNeedle.PivotY + st2B;
+            Assert.LessOrEqual(top, TunerNeedle.BlockHalfHeightDegrees + 0.5f, "top");
+            Assert.GreaterOrEqual(bottom, -TunerNeedle.BlockHalfHeightDegrees, "bottom");
+        }
+
         // ------------------------------------------------------------------ the SIMULATED dev run
 
         [Test]
