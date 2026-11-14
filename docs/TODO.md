@@ -57,9 +57,9 @@ ticks only the boxes their half proves; Person 1 sets `done` after the device ch
 **Acceptance (device):** - [ ] matches a clip-on or phone tuner within 10 cents
 **Max time:** 2.5h.
 
-## SL2 — Pluck check + finger by finger + ring-out quality   [track: CORE+XR] [owner: Person 2 · Person 1] [status: todo] [depends: SL1]
+## SL2 — Pluck check + finger by finger + ring-out quality   [track: CORE+XR] [owner: Person 2 · Person 1] [status: doing] [depends: SL1]
 **User-visible outcome:** each string gets ✓/✕ and a tip ("Arch finger 3, B string muted"); a short sustain gets "let string N ring".
-**Acceptance (automated):** - [ ] synthetic verdict classes ≥ 95% correct · every deliberate fault in the dev clips is caught
+**Acceptance (automated):** - [ ] synthetic verdict classes ≥ 95% correct ✓ (Person 2: 100% clean/20/10 dB, core-tests/Audio/PluckVerifierTests.cs, L1) · every deliberate fault in the dev clips is caught (open: no clips yet)
 **Acceptance (device):** - [ ] a deliberately muted B string on G is flagged in 4 of 5 tries
 **Max time:** 3h.
 
@@ -80,7 +80,7 @@ ticks only the boxes their half proves; Person 1 sets `done` after the device ch
 
 ## SL6 — Patterns and timing   [track: CORE+XR] [owner: Person 2 · Person 1] [status: doing] [depends: SL5]
 **User-visible outcome:** strum arrows and the picking strip with a cursor, in sync with the strumming hand; timing feedback.
-**Acceptance (automated):** - [ ] onset F1 ≥ 0.9 on synthetic audio (open: SpectralFluxOnset, after SL1) · timing math tests ✓ Person 2: core-tests/Practice/PatternJudgeTests.cs, L1
+**Acceptance (automated):** - [x] onset F1 ≥ 0.9 on synthetic audio ✓ (Person 2: F1 ≥ 0.979 at 50/75/100%, core-tests/Audio/SpectralFluxOnsetTests.cs, L1) · timing math tests ✓ Person 2: core-tests/Practice/PatternJudgeTests.cs, L1
 **Acceptance (device):** - [ ] the pattern strip and the strumming hand agree; feedback makes sense
 **Max time:** 2.5h.
 
