@@ -1,9 +1,10 @@
 // NeckLabel: one finger number on the neck (a bold world-space TextMesh in the built-in font).
 //
-// SEAM: this is the ONLY text code in Runtime/Neck, kept small on purpose. The HUD worker's HudText (Runtime/Hud, branch
-// person1/sl0-spectator-hud) does the same job more thoroughly. At integration, replace "NeckLabel" with "HudText" in
-// FloatingNeck.cs and delete this file: the five members used there have the same names and signatures
-// (Create(parent, name), SetText, SetAngularHeight(capDegrees, distanceM), Color, Visible).
+// SEAM: this is the ONLY text code in Runtime/Neck, kept small on purpose. The HUD worker's HudText (Runtime/Hud) does the
+// same job and has the same five members (Create(parent, name), SetText, SetAngularHeight(capDegrees, distanceM), Color,
+// Visible), but do NOT swap it in yet: in the full-app frame of 14 Nov (docs/img/walking-skeleton-sbs.png) its text also
+// comes out at about 0.8 of the asked height (the chord name "G", asked for 4 degrees by ChordLabel.CurrentDegrees,
+// measures 3.28 including the G's overshoot). Swap only once HudText draws text at the size it is asked for.
 //
 // SOURCES (Unity 2021.3.3f1, read offline under /Applications/Unity/Hub/Editor/2021.3.3f1/):
 //  * Built-in font name: "Arial.ttf". Unity.app/Contents/Resources/PackageManager/BuiltInPackages/com.unity.ugui/Runtime/UI/
@@ -14,11 +15,13 @@
 //  * Documentation/en/Manual/class-TextMesh.html: when setting the font from a script, "set the component's font property and
 //    also set the texture of the font material": the MeshRenderer gets font.material.
 //  * Documentation/en/ScriptReference/TextMesh-characterSize.html says only "The size of each character (This scales the
-//    whole text)": the docs give NO formula from fontSize / characterSize to world units. So the size is measured from
-//    Renderer.localBounds (Documentation/en/ScriptReference/Renderer-localBounds.html) and the transform is scaled to fit.
-//    UNVERIFIED until someone runs it in Unity: that localBounds is up to date right after TextMesh.text changes. If it is
-//    not, the fallback constant below (one font pixel = 0.1 units at characterSize 1) is used; that constant is the usual
-//    community figure, not a documented one.
+//    whole text)": the docs give NO formula from fontSize / characterSize to world units. So the size comes from a
+//    MEASUREMENT in Unity's own renders (DigitUnitsPerFontSize below), and the transform is scaled to fit.
+//  * NOT used any more: Renderer.localBounds (Documentation/en/ScriptReference/Renderer-localBounds.html). In the 14 Nov
+//    previews the old code got two sizes for the same request from it: before anything had been drawn it fell back to the
+//    community figure (digits at 0.769 of the asked size); in the left-handed preview, made after three renders, it used
+//    the bounds and the digits came out at 0.64. That bounds height matches Arial's line height (ascent + descent,
+//    1.117 em), not its digit height (0.716 em).
 using System;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -29,14 +32,20 @@ namespace UntitledGuitarApp.Runtime.Neck
     [DisallowMultipleComponent]
     public sealed class NeckLabel : MonoBehaviour
     {
-        /// <summary>Glasses pixels per degree (1080 px over about 27 degrees): the font is rasterised about 1:1 with the display.</summary>
+        /// <summary>Glasses pixels per degree (1080 px over about 27 degrees).</summary>
         const float PixelsPerDegree = 40f;
 
-        /// <summary>Arial: capital letters and digits are 1466/2048 em tall.</summary>
-        const float CapHeightEm = 0.716f;
+        /// <summary>
+        /// MEASURED, not documented: how tall a digit is in the TextMesh's own units, per unit of fontSize, at characterSize 1.
+        /// The usual community figure (0.1 unit per font pixel, times Arial's digit height of 0.716 em) gives 0.0716, but in
+        /// the Unity renders of 14 Nov (build/previews/neck, 10:07, and docs/img/walking-skeleton-sbs.png) a "1" sized with
+        /// that figure came out at 0.769 of the asked size: 14.50 mm instead of 18.85 mm, from its 50% edges, at its real
+        /// distance from the eye (0.869 m). The three renders agree within half a percent. 0.0716 x 0.769 = 0.0551.
+        /// </summary>
+        public const float DigitUnitsPerFontSize = 0.0551f;
 
-        /// <summary>UNVERIFIED fallback (see the file header): world units per font pixel at characterSize 1.</summary>
-        const float FallbackUnitsPerFontPixel = 0.1f;
+        /// <summary>A digit's height in font pixels per unit of fontSize, if one TextMesh unit is ten font pixels (the usual figure).</summary>
+        const float DigitPixelsPerFontSize = DigitUnitsPerFontSize * 10f;
 
         static readonly string[] BuiltinFontNames = { "Arial.ttf", "LegacyRuntime.ttf" };
         static readonly string[] OsFontNames = { "Arial", "Helvetica Neue", "Helvetica" };
@@ -161,15 +170,17 @@ namespace UntitledGuitarApp.Runtime.Neck
         }
 
         /// <summary>
-        /// Sizes the text so capital letters and digits span <paramref name="capHeightDegrees"/> of view for a viewer
-        /// <paramref name="distanceM"/> metres away, whatever the scale of its parents.
+        /// Sizes the text so its digits span <paramref name="capHeightDegrees"/> of view for a viewer <paramref name="distanceM"/>
+        /// metres away, whatever the scale of its parents. The same size every time: no measurement that changes once the text
+        /// has been drawn (see the file header).
         /// </summary>
         public void SetAngularHeight(float capHeightDegrees, float distanceM)
         {
             float meters = NeckMath.SizeForAngle(capHeightDegrees, distanceM);
             if (!(meters > 0f)) return;
             _targetCapM = meters;
-            int size = Mathf.Clamp(Mathf.RoundToInt(capHeightDegrees * PixelsPerDegree / CapHeightEm), 24, 256);
+            // Raster the font so a digit has at least as many font pixels as it covers on the glasses (sharp, never blown up).
+            int size = Mathf.Clamp(Mathf.RoundToInt(capHeightDegrees * PixelsPerDegree / DigitPixelsPerFontSize), 24, 256);
             if (size != _fontSize)
             {
                 _fontSize = size;
@@ -178,17 +189,16 @@ namespace UntitledGuitarApp.Runtime.Neck
             ApplyScale();
         }
 
+        /// <summary>The digit height in the TextMesh's own units at characterSize 1 and this font size (the measured constant).</summary>
+        public static float DigitHeightUnits(int fontSize)
+        {
+            return fontSize * DigitUnitsPerFontSize;
+        }
+
         void ApplyScale()
         {
             if (!(_targetCapM > 0f)) return;
-            float capLocal = _fontSize * FallbackUnitsPerFontPixel * CapHeightEm;
-            // Prefer the real size of the generated glyphs: a single digit or capital is exactly one cap height tall. Accept the
-            // measurement only when it is plausible, so a stale or empty bounding box can never produce an absurd size.
-            if (_text.Length == 1 && _renderer.enabled)
-            {
-                float measured = _renderer.localBounds.size.y;
-                if (measured > capLocal * 0.5f && measured < capLocal * 2f) capLocal = measured;
-            }
+            float capLocal = DigitHeightUnits(_fontSize);
             float parentScale = 1f;
             Transform parent = transform.parent;
             if (parent != null)

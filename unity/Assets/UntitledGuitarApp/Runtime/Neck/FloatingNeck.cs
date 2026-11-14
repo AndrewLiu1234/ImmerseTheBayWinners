@@ -8,8 +8,8 @@
 //     ghostHand.transform.SetParent(neck.Socket, false);         // the fretting ghost hand: neck frame, metres
 //     strumHand.transform.SetParent(neck.StrumZone, false);      // the strumming ghost hand
 //
-// It shows strings, frets, the nut, the fretboard edges, fingertip dots with finger numbers and X / O marks at the nut.
-// Positions come in as data, in the pinned neck frame (NeckLayout.cs); nothing here computes music theory.
+// It shows strings, frets, the nut, the fretboard edges, fingertip dots with finger numbers and X / O marks in a row beyond
+// the nut. Positions come in as data, in the pinned neck frame (NeckLayout.cs); nothing here computes music theory.
 //
 // Two modes. Floating: PlaceFloating puts it 0.8-1.0 m ahead, lower-left of view, like the player's own neck seen from
 // above, and keeps it there as the head turns. Aligned: another component (NeckAligner, later) calls SetWorldPose to put it
@@ -18,7 +18,8 @@
 // StrumZone are mirrored together).
 //
 // Cost: two meshes and one material. Meshes are rebuilt only when the layout, the dots, the marks, the mode or a flag
-// changes. Brightness changes (active finger, muted strings) are material values eased in Update; nothing allocates per frame.
+// changes, or when the eye has moved relative to the neck (the X / O marks face it). Brightness changes (active finger,
+// muted strings) are material values eased in Update; nothing allocates per frame.
 //
 // Sources (Unity 2021.3.3f1 offline docs, /Applications/Unity/Hub/Editor/2021.3.3f1/Documentation/en/ScriptReference/):
 //   Mesh.SetVertices.html, Mesh.SetColors.html, Mesh.SetUVs.html, Mesh.SetTriangles.html  the (array, start, length) overloads,
@@ -116,6 +117,8 @@ namespace UntitledGuitarApp.Runtime.Neck
         float _builtDistanceM = -1f;
         float _builtScale = -1f;
         NeckMode _builtMode;
+        bool _dotsHaveViewer;
+        Vector3 _dotsViewerMm;
 
         readonly FingertipDot[] _dots = new FingertipDot[MaxDots];
         int _dotCount;
@@ -340,13 +343,13 @@ namespace UntitledGuitarApp.Runtime.Neck
         }
 
         /// <summary>
-        /// The player's head, used to turn the finger numbers toward the eyes. PlaceFloating sets it; in aligned mode set it
-        /// once (without it the numbers lie flat on the fretboard).
+        /// The player's head, used to turn the finger numbers and the X / O marks toward the eyes. PlaceFloating sets it; in
+        /// aligned mode set it once (without it the numbers and marks lie flat on the fretboard).
         /// </summary>
         public Transform Viewer
         {
             get { return _viewer; }
-            set { _viewer = value; if (_initialized) UpdateLabelPoses(); }
+            set { _viewer = value; if (_initialized) FollowViewer(); }
         }
 
         /// <summary>Overall brightness of the lines and dots (1 = as designed). Tune it with the glasses' dimming in the demo room.</summary>
@@ -504,7 +507,7 @@ namespace UntitledGuitarApp.Runtime.Neck
                 transform.localRotation = pose.rotation;
             }
             transform.localScale = pose.scale;
-            UpdateLabelPoses();
+            FollowViewer();
         }
 
         /// <summary>
@@ -522,7 +525,7 @@ namespace UntitledGuitarApp.Runtime.Neck
             RebuildIfStyleChanged();
             transform.SetPositionAndRotation(nutPosition, rotation);
             transform.localScale = NeckPlacement.ScaleFor(1f, _options.leftHanded);
-            UpdateLabelPoses();
+            FollowViewer();
         }
 
         // ------------------------------------------------------------------ flags
@@ -569,7 +572,7 @@ namespace UntitledGuitarApp.Runtime.Neck
             {
                 RebuildIfStyleChanged();
                 transform.localScale = NeckPlacement.ScaleFor(1f, _options.leftHanded);
-                UpdateLabelPoses();
+                FollowViewer();
             }
         }
 
@@ -686,7 +689,10 @@ namespace UntitledGuitarApp.Runtime.Neck
         void RebuildDots()
         {
             _slotCount = NeckLabelLayout.Compute(_layout, _dots, _dotCount, _sizes.labelCapMm, _sizes.labelCellMm, _sizes.labelGapMm, _slots);
-            NeckMeshBuilder.BuildDots(_layout, _sizes, BuildOptions(), _dots, _dotCount, _marks, _slots, _slotCount, _dotGeometry);
+            NeckBuildOptions options = BuildOptions();
+            _dotsHaveViewer = options.hasViewer;
+            _dotsViewerMm = options.viewerMm;
+            NeckMeshBuilder.BuildDots(_layout, _sizes, options, _dots, _dotCount, _marks, _slots, _slotCount, _dotGeometry);
             Upload(_dotMesh, _dotGeometry, "dots");
 
             float capDegrees = NeckStyle.LabelCapDegrees(_options.largeText);
@@ -713,7 +719,44 @@ namespace UntitledGuitarApp.Runtime.Neck
             options.fingerColors = _options.fingerColors;
             options.debugOverlay = _options.debugOverlay;
             options.strumZoneXMm = StrumZoneXMm();
+            options.breakStrings = _mode == NeckMode.Aligned;
+            options.hasViewer = TryViewerMm(out options.viewerMm);
             return options;
+        }
+
+        // The eye in neck-local millimetres, when it is known: the X / O marks turn to face it.
+        bool TryViewerMm(out Vector3 viewerMm)
+        {
+            if (_viewer != null)
+            {
+                viewerMm = transform.InverseTransformPoint(_viewer.position) / NeckMath.MetresPerMm;
+                return true;
+            }
+            if (_mode == NeckMode.Floating && _placed)
+            {
+                viewerMm = _floatingPose.InverseTransformPoint(Vector3.zero) / NeckMath.MetresPerMm;
+                return true;
+            }
+            viewerMm = Vector3.zero;
+            return false;
+        }
+
+        // After the neck or the viewer moved: the finger numbers turn (a transform change); the X / O marks are part of the
+        // dots mesh, so it is rebuilt when the eye has moved by more than about one degree as seen from the nut.
+        void FollowViewer()
+        {
+            if (_layout != null && ViewerMovedSinceDotsWereBuilt()) RebuildDots();   // ends with UpdateLabelPoses
+            else UpdateLabelPoses();
+        }
+
+        bool ViewerMovedSinceDotsWereBuilt()
+        {
+            Vector3 viewerMm;
+            bool known = TryViewerMm(out viewerMm);
+            if (known != _dotsHaveViewer) return true;
+            if (!known) return false;
+            float limit = 0.02f * viewerMm.magnitude;
+            return (viewerMm - _dotsViewerMm).sqrMagnitude > limit * limit;
         }
 
         static void Upload(Mesh mesh, NeckGeometry geometry, string what)

@@ -23,14 +23,15 @@ namespace UntitledGuitarApp.Runtime.Neck
         public float nutMm;             // nut bar thickness (along the neck)
         public float edgeMm;            // fretboard edge line width
         public float tailMm;            // strings and edges fade out over this length beyond the last fret
-        public float strumHalfMm;       // half length of the string patch drawn under the strumming hand
-        public float strumFadeMm;       // the patch fades in and out over this length
+        public float strumHalfMm;       // the strings reach this far past the strum zone (aligned neck: half the patch there)
+        public float strumFadeMm;       // and fade out over this length (aligned neck: the patch fades in and out)
         public float dotRadiusMm;       // fingertip dot core
         public float haloRadiusMm;      // soft glow around the dot
         public float hotRadiusMm;       // white-hot centre
-        public float markRadiusMm;      // X / O mark at the nut
+        public float markRadiusMm;      // half the height of an X / O mark (the O's outer radius; the X fills the same square)
         public float markStrokeMm;      // stroke of the X and of the O ring
-        public float markGapMm;         // gap between the nut and the marks
+        public float markPitchMm;       // centre-to-centre spacing of the row of marks beyond the nut (one slot per string)
+        public float markRowXMm;        // x of the centre of that row (negative: beyond the nut, over the headstock)
         public float beadRadiusMm;      // dotted leader from a dot to its finger number
         public float beadPitchMm;
         public float labelCapMm;        // finger-number digit height
@@ -54,13 +55,22 @@ namespace UntitledGuitarApp.Runtime.Neck
         public const float FretDeg = 0.075f;
         public const float NutDeg = 0.25f;               // a bar, 10 px
         public const float EdgeDeg = 0.075f;
-        public const float MarkStrokeDeg = 0.095f;
+        public const float MarkDeg = 1.30f;              // X / O mark height: the 1.2 degree text minimum plus a margin (51 px)
+        public const float MarkGapDeg = 0.30f;           // clear space between the marks of neighbouring strings
+        public const float MarkStrokeDeg = 0.16f;        // stroke of the X and of the O ring (6 px: bold at this size)
+        public const float MarkFanDeg = 55f;             // no string bends more steeply than this (from the neck's line) to reach its mark
         public const float BeadDeg = 0.10f;              // diameter of one leader bead (4 px)
         public const float BeadPitchDeg = 0.19f;
         public const float MinDotDeg = 0.40f;            // a fingertip dot is never smaller than this across (16 px)
 
-        /// <summary>Finger-number height: the project minimum for text (MASTER_PLAN section 17), 2 d tan(1.2 deg / 2).</summary>
-        public const float LabelCapDeg = 1.2f;
+        /// <summary>The project minimum for text (MASTER_PLAN section 17): 1.2 degrees, 2 d tan(1.2 deg / 2).</summary>
+        public const float MinTextDeg = 1.2f;
+
+        /// <summary>
+        /// Finger-number height asked for: the minimum plus 8%, so that the rounding of the font size, a label a little further
+        /// away than the nut, and the measured constant behind NeckLabel's size can never take a digit under 1.2 degrees.
+        /// </summary>
+        public const float LabelCapDeg = MinTextDeg * 1.08f;
 
         /// <summary>Text grows by this factor when the largeText flag is on (the same factor the HUD uses).</summary>
         public const float LargeTextScale = 1.35f;
@@ -69,7 +79,6 @@ namespace UntitledGuitarApp.Runtime.Neck
         public const float DotRadiusPitch = 0.46f;       // the dot just fits between its neighbours
         public const float HaloRadiusPitch = 1.20f;
         public const float HotRadiusPitch = 0.24f;
-        public const float MarkRadiusPitch = 0.44f;
 
         // ---- brightness (0..1 of full white) ------------------------------------------------------------------------------
         public const float StringIntensity = 0.80f;
@@ -78,7 +87,8 @@ namespace UntitledGuitarApp.Runtime.Neck
         public const float EdgeIntensity = 0.24f;
         public const float HaloIntensity = 0.60f;
         public const float BeadIntensity = 0.65f;
-        public const float LabelIntensity = 0.80f;       // under the dots: the numbers are big, and the dots must stay the brightest thing in view
+        public const float MarkLeadIntensity = 0.45f;    // the line that carries a marked string on past the nut to its X / O
+        public const float LabelIntensity = 1.00f;       // full white: on an additive display anything less is only a dimmer white
 
         /// <summary>Everything that is not the active finger is shown at this brightness (GHOST_HANDS section 1).</summary>
         public const float InactiveGain = 0.30f;
@@ -175,9 +185,16 @@ namespace UntitledGuitarApp.Runtime.Neck
             s.dotRadiusMm = Mathf.Max(DotRadiusPitch * pitch, 0.5f * AngleToLocalMm(MinDotDeg, viewDistanceM, scale));
             s.haloRadiusMm = s.dotRadiusMm * (HaloRadiusPitch / DotRadiusPitch);
             s.hotRadiusMm = s.dotRadiusMm * (HotRadiusPitch / DotRadiusPitch);
-            s.markRadiusMm = MarkRadiusPitch * pitch;
+            // X / O marks are as tall as text must be, about 2.5 string spacings on the floating neck, so they cannot sit on
+            // the string ends. They stand in a row beyond the nut, one slot per string in string order (the X / O row of a
+            // chord diagram), and each marked string carries on past the nut to its mark (NeckMeshBuilder.BuildDots). The
+            // row is pushed out far enough that no string has to bend more steeply than MarkFanDeg to reach its slot.
+            s.markRadiusMm = 0.5f * AngleToLocalMm(MarkDeg, viewDistanceM, scale);
             s.markStrokeMm = AngleToLocalMm(MarkStrokeDeg, viewDistanceM, scale);
-            s.markGapMm = 0.35f * pitch;
+            s.markPitchMm = Mathf.Max(pitch, AngleToLocalMm(MarkDeg + MarkGapDeg, viewDistanceM, scale));
+            float spread = 0.5f * (NeckLayout.StringCount - 1) * (s.markPitchMm - pitch);   // outer slot beyond its string, across the neck
+            float fan = Mathf.Max(0.35f * pitch, spread / Mathf.Tan(MarkFanDeg * Mathf.Deg2Rad));
+            s.markRowXMm = -(s.nutMm + fan + s.markRadiusMm);
             s.beadRadiusMm = 0.5f * AngleToLocalMm(BeadDeg, viewDistanceM, scale);
             s.beadPitchMm = AngleToLocalMm(BeadPitchDeg, viewDistanceM, scale);
             s.labelCapMm = cap;

@@ -13,7 +13,9 @@
 //   neck_closeup_grey.png            the same over mid-grey: anything that is not pure added light shows up here
 //   neck_glasses_eye_lefthanded.png  the eye view with the neck mirrored for a left-handed player
 //   neck_closeup_fingercolors.png    per-finger colours on, finger 1 active (the others at 30%)
+//   neck_closeup_c_chord.png         the C chord: X and O marks together, the widest fan of strings to the X / O row
 //   neck_preview.txt                 the sizes in millimetres, degrees and glasses pixels
+// The close-ups frame everything from the X / O row beyond the nut to the last fret.
 // The scene is a temporary preview scene: it is never saved, and the scene open in the editor is not touched.
 // On failure the process exits with code 1 in batch mode; inside an open editor it throws instead (never closes the editor).
 //
@@ -55,6 +57,10 @@ namespace UntitledGuitarApp.Editor
         const int EyeHeight = 1080;
         const float CloseupVerticalFovDeg = 10.5f;
         const string SceneObjectName = "FloatingNeck (dev preview, not saved)";
+
+        // Appendix B2 row for C, string 6 -> 1 (-1 = x, 0 = open; finger 0 = none): X on string 6, O on strings 3 and 1.
+        static readonly int[] CFrets = { -1, 3, 2, 0, 1, 0 };
+        static readonly int[] CFingers = { 0, 3, 2, 0, 1, 0 };
 
         /// <summary>Entry point for -executeMethod and for the menu.</summary>
         [MenuItem("Untitled Guitar App/Neck/Render Previews")]
@@ -206,6 +212,15 @@ namespace UntitledGuitarApp.Editor
                 neck.SetActiveFinger(-1);
                 neck.UseOptions(new NeckOptions());
 
+                // 6. The C chord: an X and two O marks, at both ends of the row.
+                var cDots = new FingertipDot[FloatingNeck.MaxDots];
+                var cMarks = new StringMark[NeckLayout.StringCount];
+                int cCount = DevNeckLayout.FromChordRow(neck.Layout, CFrets, CFingers, cDots, cMarks);
+                neck.SetDots(cDots, cCount);
+                neck.SetStringMarks(cMarks);
+                AimCloseup(eye, neck);
+                written.Add(Save(eye, black, Path.Combine(folder, "neck_closeup_c_chord.png")));
+
                 string report = Path.Combine(folder, "neck_preview.txt");
                 File.WriteAllText(report, Describe(neck, horizontalFov, verticalFov));
                 written.Add(report);
@@ -218,11 +233,13 @@ namespace UntitledGuitarApp.Editor
             return written;
         }
 
-        // Looks from the eye at the middle of the fretted part of the neck, zoomed in.
+        // Looks from the eye at the middle of everything from the X / O row beyond the nut to the last fret, zoomed in.
         static void AimCloseup(Camera eye, FloatingNeck neck)
         {
             NeckLayout layout = neck.Layout;
-            Vector3 middle = neck.transform.TransformPoint(NeckMath.LocalMetres(layout.LastFretXMm * 0.5f, layout.stringHeightMm, 0f));
+            NeckSizes sizes = neck.Sizes;
+            float fromX = sizes.markRowXMm - sizes.markRadiusMm;
+            Vector3 middle = neck.transform.TransformPoint(NeckMath.LocalMetres(0.5f * (fromX + layout.LastFretXMm), layout.stringHeightMm, 0f));
             eye.transform.SetPositionAndRotation(Vector3.zero, Quaternion.LookRotation(middle.normalized, Vector3.up));
             eye.fieldOfView = CloseupVerticalFovDeg;
         }
@@ -278,10 +295,15 @@ namespace UntitledGuitarApp.Editor
             Row(sb, "fretboard edge", sizes.edgeMm, placement, pixelsPerDegree);
             Row(sb, "fingertip dot diameter", sizes.dotRadiusMm * 2f, placement, pixelsPerDegree);
             Row(sb, "dot glow diameter", sizes.haloRadiusMm * 2f, placement, pixelsPerDegree);
-            Row(sb, "X / O mark diameter", sizes.markRadiusMm * 2f, placement, pixelsPerDegree);
-            Row(sb, "finger number height", sizes.labelCapMm, placement, pixelsPerDegree);
+            Row(sb, "X / O mark height", sizes.markRadiusMm * 2f, placement, pixelsPerDegree);
+            Row(sb, "X / O mark stroke", sizes.markStrokeMm, placement, pixelsPerDegree);
+            Row(sb, "X / O row: mark spacing", sizes.markPitchMm, placement, pixelsPerDegree);
+            Row(sb, "X / O row: beyond the nut", -sizes.markRowXMm, placement, pixelsPerDegree);
+            Row(sb, "finger number height (asked)", sizes.labelCapMm, placement, pixelsPerDegree);
             Row(sb, "string spacing at the nut", NeckMath.StringPitchAtNutMm(neck.Layout), placement, pixelsPerDegree);
             Row(sb, "nut to last fret", neck.Layout.LastFretXMm, placement, pixelsPerDegree);
+            sb.AppendLine("Degrees are at the nut's distance. Measure the drawn digits in neck_glasses_eye_1920x1080.png: NeckLabel's size");
+            sb.AppendLine("constant (DigitUnitsPerFontSize) comes from a measurement of an earlier render, so the picture is the check.");
             return sb.ToString();
         }
 

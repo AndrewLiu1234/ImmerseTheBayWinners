@@ -296,27 +296,59 @@ namespace UntitledGuitarApp.Tests.EditMode
         [Test]
         public void Floating_EverythingFitsInsideTheGlassesFieldOfView()
         {
+            // Every vertex the neck draws (strings to past the strum zone, all six X / O slots in use, the dots of every chord
+            // in the table) and every finger number, at every allowed placement, with a degree to spare at each edge.
             NeckLayout layout = DevNeckLayout.Create();
             float horizontal, vertical;
             NeckMath.FovFromDiagonal(52f, 16f / 9f, out horizontal, out vertical);
+            int[][] frets = { EmFrets, CFrets, DFrets, AmFrets, AFrets, new[] { 3, 2, 0, 0, 0, 3 } };
+            int[][] fingers = { EmFingers, CFingers, DFingers, AmFingers, AFingers, new[] { 2, 1, 0, 0, 0, 3 } };
+            var g = new NeckGeometry(192);
+            var slots = new LabelSlot[FloatingNeck.MaxDots];
+            foreach (FloatingPlacement placement in AllowedPlacements())
             foreach (bool leftHanded in new[] { false, true })
             {
-                NeckPose pose = NeckPlacement.Floating(FloatingPlacement.Default, leftHanded);
-                float strumX = NeckMath.FloatingStrumZoneXMm(layout, 110f) + 80f;   // the far end of the strum patch
-                float halfWidth = 60f;                                              // fretboard plus the finger numbers
-                foreach (Vector3 corner in new[]
-                         {
-                             NeckMath.LocalMetres(-25f, 0f, -halfWidth), NeckMath.LocalMetres(-25f, 0f, halfWidth),
-                             NeckMath.LocalMetres(strumX, 0f, -halfWidth), NeckMath.LocalMetres(strumX, 0f, halfWidth),
-                         })
+                NeckSizes sizes = NeckStyle.Resolve(layout, placement.distanceM, placement.scale, false);
+                NeckPose pose = NeckPlacement.Floating(placement, leftHanded);
+                NeckBuildOptions options = SeenFrom(layout, pose);
+                string hand = (leftHanded ? " (left-handed" : " (right-handed") + ", azimuth " + placement.azimuthDeg + ", elevation " + placement.elevationDeg +
+                              ", distance " + placement.distanceM + ", tilt " + placement.tiltDeg + ", scale " + placement.scale + ")";
+
+                NeckMeshBuilder.BuildLines(layout, sizes, options, g);
+                AssertInView(g, pose, horizontal, vertical, "lines" + hand);
+                for (int c = 0; c < frets.Length; c++)
                 {
-                    Vector3 p = pose.TransformPoint(corner);
-                    float azimuth = Mathf.Atan2(p.x, p.z) * Mathf.Rad2Deg;
-                    float elevation = Mathf.Atan2(p.y, p.z) * Mathf.Rad2Deg;
-                    Assert.That(Mathf.Abs(azimuth), Is.LessThan(horizontal * 0.5f - 1f), "azimuth of " + corner + (leftHanded ? " (left-handed)" : ""));
-                    Assert.That(Mathf.Abs(elevation), Is.LessThan(vertical * 0.5f - 1f), "elevation of " + corner);
+                    FingertipDot[] dots = NewDots();
+                    int count = DevNeckLayout.FromChordRow(layout, frets[c], fingers[c], dots, NewMarks());
+                    int labels = NeckLabelLayout.Compute(layout, dots, count, sizes.labelCapMm, sizes.labelCellMm, sizes.labelGapMm, slots);
+                    NeckMeshBuilder.BuildDots(layout, sizes, options, dots, count, EveryMark, slots, labels, g);
+                    AssertInView(g, pose, horizontal, vertical, "dots and marks, chord " + c + hand);
+                    for (int k = 0; k < labels; k++)
+                    {
+                        for (int corner = 0; corner < 4; corner++)
+                        {
+                            float x = slots[k].xMm + (corner % 2 == 0 ? -0.5f : 0.5f) * sizes.labelCellMm;
+                            float z = slots[k].zMm + (corner < 2 ? -0.5f : 0.5f) * sizes.labelCapMm;
+                            AssertPointInView(pose.TransformPoint(NeckMath.LocalMetres(x, layout.stringHeightMm, z)), horizontal, vertical,
+                                              "finger number " + k + " of chord " + c + hand);
+                        }
+                    }
                 }
             }
+        }
+
+        static void AssertInView(NeckGeometry g, NeckPose pose, float horizontalFov, float verticalFov, string what)
+        {
+            for (int i = 0; i < g.VertexCount; i++)
+                AssertPointInView(pose.TransformPoint(g.positions[i]), horizontalFov, verticalFov, what + ", vertex " + i);
+        }
+
+        static void AssertPointInView(Vector3 p, float horizontalFov, float verticalFov, string what)
+        {
+            float azimuth = Mathf.Atan2(p.x, p.z) * Mathf.Rad2Deg;
+            float elevation = Mathf.Atan2(p.y, p.z) * Mathf.Rad2Deg;
+            Assert.That(Mathf.Abs(azimuth), Is.LessThan(horizontalFov * 0.5f - 1f), "azimuth of " + what);
+            Assert.That(Mathf.Abs(elevation), Is.LessThan(verticalFov * 0.5f - 1f), "elevation of " + what);
         }
 
         [Test]
@@ -504,7 +536,12 @@ namespace UntitledGuitarApp.Tests.EditMode
                 {
                     NeckSizes sizes = NeckStyle.Resolve(layout, distance, scale, false);
                     float cap = NeckMath.AngleForSize(sizes.labelCapMm * scale * 0.001f, distance);
-                    Assert.That(cap, Is.EqualTo(1.2f).Within(0.001f), "finger numbers at " + distance + " m, scale " + scale);
+                    Assert.That(cap, Is.EqualTo(NeckStyle.LabelCapDeg).Within(0.001f), "finger numbers at " + distance + " m, scale " + scale);
+                    Assert.That(cap, Is.GreaterThanOrEqualTo(NeckStyle.MinTextDeg * 1.05f), "the 1.2 degree minimum with a margin");
+
+                    // X / O marks count as text: at least 1.2 degrees tall (the row and the facing are tested on the mesh below).
+                    float mark = NeckMath.AngleForSize(sizes.markRadiusMm * 2f * scale * 0.001f, distance);
+                    Assert.That(mark, Is.GreaterThanOrEqualTo(1.2f), "X / O marks at " + distance + " m, scale " + scale);
 
                     foreach (float lineMm in new[] { sizes.stringThinMm, sizes.stringThickMm, sizes.fretMm, sizes.edgeMm, sizes.markStrokeMm, sizes.nutMm })
                     {
@@ -526,16 +563,81 @@ namespace UntitledGuitarApp.Tests.EditMode
         }
 
         [Test]
+        public void Labels_AreAtLeast1Point2DegreesTall_AtTheirRealDistanceFromTheEye()
+        {
+            // FloatingNeck asks every finger number for LabelCapDegrees at the nut's distance. A number sits beside the neck,
+            // nearer or further than the nut; seen from the eye it must still be 1.2 degrees, with 3% left over for the
+            // measured constant NeckLabel turns that size into (see NeckLabel.DigitUnitsPerFontSize).
+            NeckLayout layout = DevNeckLayout.Create();
+            int[][] frets = { EmFrets, CFrets, DFrets, AmFrets, AFrets, new[] { 3, 2, 0, 0, 0, 3 } };
+            int[][] fingers = { EmFingers, CFingers, DFingers, AmFingers, AFingers, new[] { 2, 1, 0, 0, 0, 3 } };
+            var slots = new LabelSlot[FloatingNeck.MaxDots];
+            float smallest = float.MaxValue;
+            foreach (FloatingPlacement placement in AllowedPlacements())
+            {
+                foreach (bool leftHanded in new[] { false, true })
+                {
+                    NeckSizes sizes = NeckStyle.Resolve(layout, placement.distanceM, placement.scale, false);
+                    NeckPose pose = NeckPlacement.Floating(placement, leftHanded);
+                    float capM = NeckMath.SizeForAngle(NeckStyle.LabelCapDegrees(false), placement.distanceM);   // what each label is asked for
+                    for (int c = 0; c < frets.Length; c++)
+                    {
+                        FingertipDot[] dots = NewDots();
+                        int count = DevNeckLayout.FromChordRow(layout, frets[c], fingers[c], dots, NewMarks());
+                        int n = NeckLabelLayout.Compute(layout, dots, count, sizes.labelCapMm, sizes.labelCellMm, sizes.labelGapMm, slots);
+                        for (int k = 0; k < n; k++)
+                        {
+                            Vector3 at = pose.TransformPoint(NeckMath.LocalMetres(slots[k].xMm, layout.stringHeightMm, slots[k].zMm));
+                            float seen = NeckMath.AngleForSize(capM, at.magnitude);
+                            smallest = Mathf.Min(smallest, seen);
+                            Assert.That(seen, Is.GreaterThanOrEqualTo(NeckStyle.MinTextDeg * 1.03f),
+                                        "chord " + c + " number " + k + " at " + at.magnitude.ToString("0.000") + " m, azimuth " + placement.azimuthDeg);
+                        }
+                    }
+                }
+            }
+            Assert.That(smallest, Is.LessThan(NeckStyle.LabelCapDeg + 0.2f), "sanity: the numbers are not oversized either");
+        }
+
+        [Test]
+        public void NeckLabel_DigitSize_IsTheOneMeasuredInUnity()
+        {
+            // The evidence behind NeckLabel.DigitUnitsPerFontSize. In the 10:07 render a "1" was asked for 1.2 degrees at 0.9 m
+            // (18.85 mm), at font size 67, under a parent of scale 1.2, and scaled with the old figure of 0.0716 units per unit
+            // of font size. It measured 14.50 mm. The constant must reproduce that render.
+            float asked = NeckMath.SizeForAngle(1.2f, 0.9f);
+            float oldScale = asked / (67 * 0.0716f * 1.2f);
+            float drawnMm = oldScale * NeckLabel.DigitHeightUnits(67) * 1.2f * 1000f;
+            Assert.That(asked * 1000f, Is.EqualTo(18.85f).Within(0.01f));
+            Assert.That(drawnMm, Is.EqualTo(14.50f).Within(0.1f));
+        }
+
+        [Test]
         public void Sizes_DotsFitBetweenTheirNeighbours_AndMarksDoNotTouch()
         {
             NeckLayout layout = DevNeckLayout.Create();
-            NeckSizes sizes = NeckStyle.Resolve(layout, 0.9f, 1.2f, false);
             float pitch = NeckMath.StringPitchAtNutMm(layout);
-            Assert.That(sizes.dotRadiusMm * 2f, Is.LessThanOrEqualTo(pitch), "two dots on neighbouring strings in one fret do not merge");
-            Assert.That(sizes.dotRadiusMm * 2f, Is.GreaterThan(pitch * 0.8f), "but the dot is as big as the spacing allows");
-            Assert.That(sizes.markRadiusMm * 2f, Is.LessThan(pitch));
-            Assert.That(sizes.haloRadiusMm, Is.GreaterThan(sizes.dotRadiusMm));
-            Assert.That(sizes.hotRadiusMm, Is.LessThan(sizes.dotRadiusMm));
+            foreach (float distance in new[] { 0.8f, 0.9f, 1.0f, 0.55f })
+            {
+                foreach (float scale in new[] { 1.0f, 1.2f })
+                {
+                    NeckSizes sizes = NeckStyle.Resolve(layout, distance, scale, false);
+                    string where = " at " + distance + " m, scale " + scale;
+                    Assert.That(sizes.dotRadiusMm * 2f, Is.LessThanOrEqualTo(pitch), "two dots on neighbouring strings in one fret do not merge" + where);
+                    Assert.That(sizes.dotRadiusMm * 2f, Is.GreaterThan(pitch * 0.8f), "but the dot is as big as the spacing allows" + where);
+                    Assert.That(sizes.haloRadiusMm, Is.GreaterThan(sizes.dotRadiusMm));
+                    Assert.That(sizes.hotRadiusMm, Is.LessThan(sizes.dotRadiusMm));
+
+                    // The marks are wider than the string spacing, so they stand in their own row with room between them.
+                    Assert.That(sizes.markRadiusMm * 2f, Is.GreaterThan(pitch), "a mark is wider than the string spacing" + where);
+                    Assert.That(sizes.markPitchMm - 2f * sizes.markRadiusMm, Is.GreaterThan(sizes.markStrokeMm),
+                                "neighbouring marks in the row do not touch" + where);
+                    Assert.That(sizes.markRowXMm + sizes.markRadiusMm, Is.LessThan(-sizes.nutMm), "the row stands beyond the nut" + where);
+                    float outerRise = 2.5f * (sizes.markPitchMm - pitch), fan = -sizes.markRowXMm - sizes.markRadiusMm - sizes.nutMm;
+                    Assert.That(Mathf.Atan2(outerRise, fan) * Mathf.Rad2Deg, Is.LessThanOrEqualTo(NeckStyle.MarkFanDeg + 0.01f),
+                                "no string bends more steeply than " + NeckStyle.MarkFanDeg + " degrees to reach its mark" + where);
+                }
+            }
         }
 
         [Test]
@@ -562,7 +664,7 @@ namespace UntitledGuitarApp.Tests.EditMode
             layout.nutToSoundholeMm = 470f;
             Assert.That(NeckMath.StrumZoneXMm(layout), Is.EqualTo(470f));
 
-            // The floating neck is drawn with a break: the strum zone sits just beyond the last fret, never beyond the real place.
+            // The floating neck is drawn shortened: the strum zone sits just beyond the last fret, never beyond the real place.
             Assert.That(NeckMath.FloatingStrumZoneXMm(layout, 110f), Is.EqualTo(layout.LastFretXMm + 110f).Within(0.01f));
             Assert.That(NeckMath.FloatingStrumZoneXMm(layout, 5000f), Is.EqualTo(470f));
             Assert.That(NeckMath.FloatingStrumZoneXMm(layout, 0f), Is.EqualTo(470f), "0 = keep the real distance");
@@ -748,8 +850,8 @@ namespace UntitledGuitarApp.Tests.EditMode
             var g = new NeckGeometry(192);
             NeckMeshBuilder.BuildLines(layout, sizes, Floating(layout), g);
 
-            // 5 frets + 1 nut + 2 edges x 2 parts + 6 strings x (neck 2 parts + strum patch 3 parts).
-            Assert.That(g.QuadCount, Is.EqualTo(5 + 1 + 4 + 6 * 5));
+            // 5 frets + 1 nut + 2 edges x 2 parts + 6 strings x 2 parts (unbroken to past the strum zone, then a fade).
+            Assert.That(g.QuadCount, Is.EqualTo(5 + 1 + 4 + 6 * 2));
             Assert.That(g.Dropped, Is.EqualTo(0));
             Assert.That(g.VertexCount, Is.EqualTo(g.QuadCount * 4));
             Assert.That(g.IndexCount, Is.EqualTo(g.QuadCount * 6));
@@ -772,7 +874,49 @@ namespace UntitledGuitarApp.Tests.EditMode
                     Assert.That(c.z, Is.EqualTo(NeckMath.StringZMm(layout, s, c.x * 1000f) * 0.001f).Within(2e-5f), "string " + s + " lies on its line");
                     Assert.That(c.y, Is.EqualTo(layout.stringHeightMm * 0.001f).Within(1e-6f), "at string height");
                 }
-                Assert.That(quads, Is.EqualTo(5), "string " + s);
+                Assert.That(quads, Is.EqualTo(2), "string " + s);
+            }
+        }
+
+        // The pieces (x from, x to, in mm) one string is drawn with, sorted along the neck, and how far it stays at full brightness.
+        static List<Vector2> StringPieces(NeckGeometry g, int stringNumber, out float fullBrightnessToMm)
+        {
+            var pieces = new List<Vector2>();
+            fullBrightnessToMm = 0f;
+            int group = NeckGeometry.StringGroup(stringNumber);
+            for (int q = 0; q < g.QuadCount; q++)
+            {
+                if (!QuadIs(g, q, NeckGeometry.ShapeRect, group)) continue;
+                int v = q * 4;   // a line's vertices 0 and 1 are its start and end (minus the half width, which is across the neck)
+                float from = g.positions[v].x * 1000f, to = g.positions[v + 1].x * 1000f;
+                pieces.Add(new Vector2(from, to));
+                Color32 a = g.colors[v], b = g.colors[v + 1];
+                if (a.r == b.r && a.g == b.g && a.b == b.b && b.g > 0) fullBrightnessToMm = Mathf.Max(fullBrightnessToMm, to);
+            }
+            pieces.Sort((m, n) => m.x.CompareTo(n.x));
+            return pieces;
+        }
+
+        [Test]
+        public void BuildLines_FloatingStrings_RunUnbrokenFromTheNutToPastTheStrumZone()
+        {
+            // The review render of the floating neck showed the strings fading out after fret 5 and starting again before the
+            // strum zone. They must read as one neck: every string is one run of pieces joined end to end, starting at the nut.
+            NeckLayout layout = DevNeckLayout.Create();
+            NeckSizes sizes = NeckStyle.Resolve(layout, 0.9f, 1.2f, false);
+            NeckBuildOptions options = Floating(layout);
+            var g = new NeckGeometry(192);
+            NeckMeshBuilder.BuildLines(layout, sizes, options, g);
+            for (int s = 1; s <= 6; s++)
+            {
+                float full;
+                List<Vector2> pieces = StringPieces(g, s, out full);
+                Assert.That(pieces.Count, Is.GreaterThan(0));
+                Assert.That(pieces[0].x, Is.EqualTo(0f).Within(0.01f), "string " + s + " starts at the nut");
+                for (int i = 1; i < pieces.Count; i++)
+                    Assert.That(pieces[i].x, Is.EqualTo(pieces[i - 1].y).Within(0.01f), "string " + s + ": no gap before piece " + i);
+                Assert.That(full, Is.GreaterThan(options.strumZoneXMm + 10f), "string " + s + " is at full brightness under the strumming hand");
+                Assert.That(pieces[pieces.Count - 1].y, Is.LessThanOrEqualTo(layout.scaleLengthMm + 0.01f), "and never runs past the saddle");
             }
         }
 
@@ -782,10 +926,19 @@ namespace UntitledGuitarApp.Tests.EditMode
             NeckLayout layout = DevNeckLayout.Create();
             NeckSizes sizes = NeckStyle.Resolve(layout, 0.55f, 1f, false);
             var g = new NeckGeometry(192);
-            var options = new NeckBuildOptions { crossRibbons = true, strumZoneXMm = NeckMath.StrumZoneXMm(layout) };
+            var options = new NeckBuildOptions { crossRibbons = true, breakStrings = true, strumZoneXMm = NeckMath.StrumZoneXMm(layout) };
             NeckMeshBuilder.BuildLines(layout, sizes, options, g);
             Assert.That(g.QuadCount, Is.EqualTo(5 + 1 + 2 * 4 + 2 * 6 * 5));
             Assert.That(g.Dropped, Is.EqualTo(0));
+
+            // On the real neck the strings break after the frets (the real strings show) and come back under the strumming hand.
+            float full;
+            List<Vector2> pieces = StringPieces(g, 3, out full);
+            bool gap = false;
+            for (int i = 1; i < pieces.Count; i++)
+                if (pieces[i].x > pieces[i - 1].y + 1f) gap = true;
+            Assert.That(gap, Is.True, "aligned: a break between the frets and the strum zone");
+            Assert.That(full, Is.GreaterThan(options.strumZoneXMm), "a full-brightness stretch under the strumming hand");
 
             options.strumZoneXMm = 0f;   // no strum patch
             NeckMeshBuilder.BuildLines(layout, sizes, options, g);
@@ -820,20 +973,27 @@ namespace UntitledGuitarApp.Tests.EditMode
                 Assert.That(radius, Is.EqualTo(sizes.dotRadiusMm * 0.001f).Within(1e-6f), "core radius");
             }
 
-            // G has three open strings (2, 3, 4): three rings on the headstock side of the nut, level with their strings.
-            int rings = 0, beads = 0;
+            // G has three open strings (2, 3, 4): three rings in the row beyond the nut, each in its own string's slot, and each
+            // of those strings carried on past the nut by a line in that string's gain group.
+            int rings = 0, beads = 0, leads = 0;
             for (int q = count * 3; q < g.QuadCount; q++)
             {
-                if (g.shape[q * 4].z != NeckGeometry.ShapeDisc) continue;
-                if (g.shape[q * 4].w > 0f)
+                Vector3 c = QuadCentre(g, q);
+                int group = Mathf.RoundToInt(g.extra[q * 4].x);
+                if (g.shape[q * 4].z == NeckGeometry.ShapeRect)
+                {
+                    leads++;
+                    Assert.That(group == NeckGeometry.StringGroup(2) || group == NeckGeometry.StringGroup(3) || group == NeckGeometry.StringGroup(4),
+                                "a line past the nut belongs to an open string (group " + group + ")");
+                }
+                else if (g.shape[q * 4].w > 0f)
                 {
                     rings++;
-                    Vector3 c = QuadCentre(g, q);
-                    Assert.That(c.x, Is.LessThan(-sizes.nutMm * 0.001f), "marks sit beyond the nut");
-                    bool onAnOpenString = false;
+                    bool inAnOpenSlot = false;
                     foreach (int s in new[] { 2, 3, 4 })
-                        if (Mathf.Abs(c.z - layout.stringZAtNutMm[s - 1] * 0.001f) < 1e-6f) onAnOpenString = true;
-                    Assert.That(onAnOpenString, "ring at z = " + c.z);
+                        if ((c - FlatSlot(layout, sizes, s)).magnitude < 1e-6f) inAnOpenSlot = true;
+                    Assert.That(inAnOpenSlot, "ring at " + c.ToString("F4"));
+                    Assert.That(c.x, Is.LessThan(-(sizes.nutMm + sizes.markRadiusMm) * 0.001f), "the whole ring is beyond the nut");
                 }
                 else
                 {
@@ -841,8 +1001,15 @@ namespace UntitledGuitarApp.Tests.EditMode
                 }
             }
             Assert.That(rings, Is.EqualTo(3));
+            Assert.That(leads, Is.EqualTo(3));
             Assert.That(beads, Is.GreaterThan(0), "leaders are drawn from the dots toward the numbers");
-            Assert.That(g.QuadCount, Is.EqualTo(count * 3 + rings + beads), "G has no X marks");
+            Assert.That(g.QuadCount, Is.EqualTo(count * 3 + beads + leads + rings), "G has no X marks");
+        }
+
+        // A string's X / O slot in local metres when the marks lie flat (no eye known): the row beyond the nut, in string order.
+        static Vector3 FlatSlot(NeckLayout layout, NeckSizes sizes, int stringNumber)
+        {
+            return NeckMath.LocalMetres(sizes.markRowXMm, layout.stringHeightMm, NeckMeshBuilder.MarkSlotOffset(stringNumber) * sizes.markPitchMm);
         }
 
         [Test]
@@ -853,16 +1020,195 @@ namespace UntitledGuitarApp.Tests.EditMode
             var marks = new[] { StringMark.None, StringMark.None, StringMark.None, StringMark.None, StringMark.Muted, StringMark.Muted };
             var g = new NeckGeometry(192);
             NeckMeshBuilder.BuildDots(layout, sizes, Floating(layout), null, 0, marks, null, 0, g);
-            Assert.That(g.QuadCount, Is.EqualTo(4), "two strokes per X");
+            Assert.That(g.QuadCount, Is.EqualTo(2 * 3), "per X: the string's line past the nut, then two strokes");
+            int strokes = 0;
             for (int q = 0; q < g.QuadCount; q++)
             {
-                Assert.That(QuadIs(g, q, NeckGeometry.ShapeRect, NeckGeometry.GroupFixed));
+                Assert.That(g.shape[q * 4].z, Is.EqualTo(NeckGeometry.ShapeRect));
+                int group = Mathf.RoundToInt(g.extra[q * 4].x);
+                if (group != NeckGeometry.GroupFixed)
+                {
+                    Assert.That(group == NeckGeometry.StringGroup(5) || group == NeckGeometry.StringGroup(6), "the line dims with its muted string");
+                    continue;
+                }
+                strokes++;
+                int s = strokes <= 2 ? 5 : 6;
                 Assert.That(g.colors[q * 4], Is.EqualTo(NeckStyle.MarkMuted), "X marks are red");
-                Vector3 c = QuadCentre(g, q);
-                float z = layout.stringZAtNutMm[q < 2 ? 4 : 5] * 0.001f;
-                Assert.That(c.z, Is.EqualTo(z).Within(1e-6f), "level with string " + (q < 2 ? 5 : 6));
-                Assert.That(c.x, Is.LessThan(0f));
+                AssertVector(QuadCentre(g, q), FlatSlot(layout, sizes, s), 1e-6f, "the X stands in string " + s + "'s slot");
+                float low = float.MaxValue, high = float.MinValue;
+                for (int k = 0; k < 4; k++)
+                {
+                    low = Mathf.Min(low, g.positions[q * 4 + k].z);
+                    high = Mathf.Max(high, g.positions[q * 4 + k].z);
+                }
+                Assert.That((high - low) * 1000f, Is.EqualTo(2f * sizes.markRadiusMm).Within(0.01f), "each stroke spans the mark's full height, as tall as an O");
             }
+            Assert.That(strokes, Is.EqualTo(4), "two strokes per X");
+        }
+
+        // Every placement the floating neck accepts: the default and each end of the ranges in FloatingPlacement.Clamped (the
+        // values are pushed past each end, so the clamp itself is what puts them there).
+        static List<FloatingPlacement> AllowedPlacements()
+        {
+            FloatingPlacement d = FloatingPlacement.Default;
+            var list = new List<FloatingPlacement> { d };
+            FloatingPlacement p;
+            p = d; p.distanceM = 0.5f; list.Add(p.Clamped());
+            p = d; p.distanceM = 2.0f; list.Add(p.Clamped());
+            p = d; p.azimuthDeg = -60f; list.Add(p.Clamped());
+            p = d; p.azimuthDeg = 0f; list.Add(p.Clamped());
+            p = d; p.elevationDeg = -60f; list.Add(p.Clamped());
+            p = d; p.elevationDeg = 0f; list.Add(p.Clamped());
+            p = d; p.tiltDeg = -30f; list.Add(p.Clamped());
+            p = d; p.tiltDeg = 90f; list.Add(p.Clamped());
+            p = d; p.scale = 0.5f; list.Add(p.Clamped());
+            return list;
+        }
+
+        // Build options for the floating neck seen from the eye at the head's origin, as FloatingNeck makes them.
+        static NeckBuildOptions SeenFrom(NeckLayout layout, NeckPose pose)
+        {
+            NeckBuildOptions options = Floating(layout);
+            options.hasViewer = true;
+            options.viewerMm = pose.InverseTransformPoint(Vector3.zero) * 1000f;
+            return options;
+        }
+
+        static readonly StringMark[] EveryMark = { StringMark.Open, StringMark.Muted, StringMark.Open, StringMark.Muted, StringMark.Open, StringMark.Muted };
+
+        [Test]
+        public void BuildDots_EveryXAndOFacesTheEye_AtLeast1Point2DegreesTall_WhereverTheNeckFloats()
+        {
+            // The review measured the old marks at about 0.4 degrees. Here the size is measured as the eye sees it: rays from
+            // the eye (the head's origin) to the drawn mark, for every allowed placement and both hands.
+            NeckLayout layout = DevNeckLayout.Create();
+            var g = new NeckGeometry(192);
+            foreach (FloatingPlacement placement in AllowedPlacements())
+            {
+                foreach (bool leftHanded in new[] { false, true })
+                {
+                    string where = " (distance " + placement.distanceM + ", azimuth " + placement.azimuthDeg + ", elevation " + placement.elevationDeg +
+                                   ", tilt " + placement.tiltDeg + ", scale " + placement.scale + (leftHanded ? ", left-handed)" : ")");
+                    NeckSizes sizes = NeckStyle.Resolve(layout, placement.distanceM, placement.scale, false);
+                    NeckPose pose = NeckPlacement.Floating(placement, leftHanded);
+                    NeckBuildOptions options = SeenFrom(layout, pose);
+                    NeckMeshBuilder.BuildDots(layout, sizes, options, null, 0, EveryMark, null, 0, g);
+                    Assert.That(g.Dropped, Is.EqualTo(0));
+
+                    Vector3 row = new Vector3(sizes.markRowXMm, layout.stringHeightMm, 0f), view, along, across;
+                    NeckMeshBuilder.MarkFrame(options, row, out view, out along, out across);
+                    float previousAngle = 0f;
+                    Vector3 previous = Vector3.zero;
+                    for (int s = 1; s <= 6; s++)
+                    {
+                        Vector3 centreMm = row + across * (NeckMeshBuilder.MarkSlotOffset(s) * sizes.markPitchMm);
+                        Vector3 centre = pose.TransformPoint(centreMm * 0.001f);
+                        Vector3 top = pose.TransformPoint((centreMm + across * sizes.markRadiusMm) * 0.001f);
+                        Vector3 bottom = pose.TransformPoint((centreMm - across * sizes.markRadiusMm) * 0.001f);
+                        Vector3 left = pose.TransformPoint((centreMm - along * sizes.markRadiusMm) * 0.001f);
+                        Vector3 right = pose.TransformPoint((centreMm + along * sizes.markRadiusMm) * 0.001f);
+                        float height = Vector3.Angle(top, bottom);
+                        Assert.That(height, Is.GreaterThanOrEqualTo(1.2f), "string " + s + ": mark height on the display" + where);
+                        Assert.That(Vector3.Angle(left, right), Is.GreaterThanOrEqualTo(1.2f), "string " + s + ": mark width" + where);
+                        Vector3 normal = Vector3.Cross(right - left, top - bottom).normalized;
+                        Assert.That(Mathf.Abs(Vector3.Dot(normal, centre.normalized)), Is.GreaterThan(0.99f), "string " + s + ": the mark faces the eye" + where);
+                        if (s > 1)
+                            Assert.That(Vector3.Angle(previous, centre) - 0.5f * (height + previousAngle), Is.GreaterThan(0.2f),
+                                        "strings " + (s - 1) + " and " + s + ": the marks keep apart" + where);
+                        previous = centre;
+                        previousAngle = height;
+                    }
+
+                    // The mesh is drawn on exactly that frame: every ring spans r along `along` and `across`, every X stroke spans
+                    // the mark's full height along `across`.
+                    int rings = 0, strokes = 0;
+                    for (int q = 0; q < g.QuadCount; q++)
+                    {
+                        int v = q * 4;
+                        if (g.shape[v].z == NeckGeometry.ShapeDisc)
+                        {
+                            rings++;
+                            AssertVector((g.positions[v + 1] - g.positions[v]) * 500f, along * sizes.markRadiusMm, 1e-3f, "ring radius along" + where);
+                            AssertVector((g.positions[v + 3] - g.positions[v]) * 500f, across * sizes.markRadiusMm, 1e-3f, "ring radius across" + where);
+                        }
+                        else if (Mathf.RoundToInt(g.extra[v].x) == NeckGeometry.GroupFixed)
+                        {
+                            strokes++;
+                            float low = float.MaxValue, high = float.MinValue;
+                            for (int k = 0; k < 4; k++)
+                            {
+                                float d = Vector3.Dot(g.positions[v + k] * 1000f, across);
+                                low = Mathf.Min(low, d);
+                                high = Mathf.Max(high, d);
+                            }
+                            Assert.That(high - low, Is.EqualTo(2f * sizes.markRadiusMm).Within(0.01f), "X stroke height" + where);
+                        }
+                    }
+                    Assert.That(rings, Is.EqualTo(3));
+                    Assert.That(strokes, Is.EqualTo(6));
+                }
+            }
+        }
+
+        [Test]
+        public void BuildDots_EachMarkedStringRunsOnPastTheNut_ToItsOwnMark()
+        {
+            // C (x 3 2 0 1 0): X on string 6, O on strings 3 and 1, so the lines fan out to both ends of the row.
+            NeckLayout layout = DevNeckLayout.Create();
+            FingertipDot[] dots = NewDots();
+            StringMark[] cMarks = NewMarks();
+            int count = DevNeckLayout.FromChordRow(layout, CFrets, CFingers, dots, cMarks);
+            AssertLeadsReachTheirOwnMarks(layout, dots, count, cMarks, 3, FloatingPlacement.Default, false);
+
+            // Every slot in use, at every allowed placement: no line runs into another string's mark.
+            foreach (FloatingPlacement placement in AllowedPlacements())
+                foreach (bool leftHanded in new[] { false, true })
+                    AssertLeadsReachTheirOwnMarks(layout, dots, count, EveryMark, 6, placement, leftHanded);
+        }
+
+        static void AssertLeadsReachTheirOwnMarks(NeckLayout layout, FingertipDot[] dots, int count, StringMark[] marks, int expectedLeads,
+                                                  FloatingPlacement placement, bool leftHanded)
+        {
+            NeckSizes sizes = NeckStyle.Resolve(layout, placement.distanceM, placement.scale, false);
+            NeckPose pose = NeckPlacement.Floating(placement, leftHanded);
+            NeckBuildOptions options = SeenFrom(layout, pose);
+            var g = new NeckGeometry(192);
+            NeckMeshBuilder.BuildDots(layout, sizes, options, dots, count, marks, null, 0, g);
+
+            Vector3 row = new Vector3(sizes.markRowXMm, layout.stringHeightMm, 0f), view, along, across;
+            NeckMeshBuilder.MarkFrame(options, row, out view, out along, out across);
+            int leads = 0;
+            for (int q = 0; q < g.QuadCount; q++)
+            {
+                int v = q * 4, group = Mathf.RoundToInt(g.extra[v].x);
+                if (g.shape[v].z != NeckGeometry.ShapeRect || group < NeckGeometry.StringGroup(1)) continue;
+                leads++;
+                int s = group - NeckGeometry.StringGroup(1) + 1;
+                Assert.That(marks[s - 1], Is.Not.EqualTo(StringMark.None), "only a string with a mark carries on past the nut (string " + s + ")");
+                Vector3 startMm = (g.positions[v] + g.positions[v + 3]) * 500f, endMm = (g.positions[v + 1] + g.positions[v + 2]) * 500f;
+                AssertVector(startMm, new Vector3(-sizes.nutMm, layout.stringHeightMm, layout.stringZAtNutMm[s - 1]), 1e-3f,
+                             "string " + s + "'s line starts at its end at the nut");
+                Vector3 own = row + across * (NeckMeshBuilder.MarkSlotOffset(s) * sizes.markPitchMm);
+                float toOwn = (endMm - own).magnitude;
+                Assert.That(toOwn, Is.EqualTo(NeckMeshBuilder.MarkLeadStopMm(sizes, marks[s - 1])).Within(1e-3f), "and stops just short of its own mark");
+                float tips = marks[s - 1] == StringMark.Muted ? (sizes.markRadiusMm - sizes.markStrokeMm * 0.35355f) * Mathf.Sqrt(2f) : sizes.markRadiusMm;
+                Assert.That(toOwn - tips, Is.GreaterThanOrEqualTo(0.5f * sizes.markStrokeMm - 1e-3f), "outside the ring, or beyond the tips of the X's arms");
+                for (int other = 1; other <= 6; other++)
+                {
+                    if (other == s) continue;
+                    Vector3 slot = row + across * (NeckMeshBuilder.MarkSlotOffset(other) * sizes.markPitchMm);
+                    Assert.That(DistanceToSegment(slot, startMm, endMm), Is.GreaterThan(sizes.markRadiusMm + sizes.markStrokeMm),
+                                "string " + s + "'s line stays clear of string " + other + "'s slot (tilt " + placement.tiltDeg + ")");
+                }
+            }
+            Assert.That(leads, Is.EqualTo(expectedLeads), "one line per marked string");
+        }
+
+        static float DistanceToSegment(Vector3 p, Vector3 a, Vector3 b)
+        {
+            Vector3 ab = b - a;
+            float t = Mathf.Clamp01(Vector3.Dot(p - a, ab) / Mathf.Max(ab.sqrMagnitude, 1e-9f));
+            return (p - (a + ab * t)).magnitude;
         }
 
         [Test]
