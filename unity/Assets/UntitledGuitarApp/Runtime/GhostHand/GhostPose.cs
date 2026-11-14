@@ -309,11 +309,12 @@ namespace UntitledGuitarApp.Runtime.GhostHand
                 problems.Add("units is '" + file.units + "', expected '" + Units + "'");
             if (!string.Equals(file.space, Space, StringComparison.Ordinal))
                 problems.Add("space is '" + file.space + "', expected '" + Space + "'");
-            if (!IsFinite(file.rootPositionMm))
+            Vector3 root = ToVector(file.rootPositionMm);
+            if (!IsFinite(root))
                 problems.Add("rootPositionMm is not a finite position");
 
             Vector3[] bind = ReadBind(file.bind, problems);
-            var pose = new GhostPose(file.hand, file.name, file.rootPositionMm, bind);
+            var pose = new GhostPose(file.hand, file.name, root, bind);
             if (file.source != null)
             {
                 pose.SourceBlend = file.source.blend;
@@ -340,7 +341,7 @@ namespace UntitledGuitarApp.Runtime.GhostHand
                     continue;
                 }
                 seen[bone] = true;
-                Quaternion q = entry.rotation;
+                Xyzw q = entry.rotation;
                 float length = Mathf.Sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
                 if (float.IsNaN(length) || float.IsInfinity(length) || Mathf.Abs(length - 1f) > UnitTolerance)
                 {
@@ -369,12 +370,12 @@ namespace UntitledGuitarApp.Runtime.GhostHand
                     problems.Add("fingertips[" + k + "] names '" + (entry == null ? null : entry.bone) + "', which is not a distal bone");
                 else if (seenTip[digit])
                     problems.Add("fingertip " + entry.bone + " is listed twice");
-                else if (!IsFinite(entry.positionMm))
+                else if (!IsFinite(ToVector(entry.positionMm)))
                     problems.Add("fingertip " + entry.bone + " is not a finite position");
                 else
                 {
                     seenTip[digit] = true;
-                    pose._fingertipsMm[digit] = entry.positionMm;
+                    pose._fingertipsMm[digit] = ToVector(entry.positionMm);
                 }
             }
             if (tipEntries > 0)
@@ -411,25 +412,25 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             {
                 PointEntry entry = block.joints[k];
                 int bone = entry == null ? -1 : BoneIndex(entry.bone);
-                if (bone < 0 || seen[bone] || !IsFinite(entry.positionMm))
+                if (bone < 0 || seen[bone] || !IsFinite(ToVector(entry.positionMm)))
                 {
                     problems.Add("bind.joints[" + k + "] ('" + (entry == null ? null : entry.bone) + "') is unknown, repeated or not finite");
                     continue;
                 }
                 seen[bone] = true;
-                bind[bone] = entry.positionMm;
+                bind[bone] = ToVector(entry.positionMm);
             }
             for (int k = 0; k < tips; k++)
             {
                 PointEntry entry = block.fingertips[k];
                 int digit = entry == null ? -1 : DigitOfDistalBone(entry.bone);
-                if (digit < 0 || seen[BoneCount + digit] || !IsFinite(entry.positionMm))
+                if (digit < 0 || seen[BoneCount + digit] || !IsFinite(ToVector(entry.positionMm)))
                 {
                     problems.Add("bind.fingertips[" + k + "] ('" + (entry == null ? null : entry.bone) + "') is unknown, repeated or not finite");
                     continue;
                 }
                 seen[BoneCount + digit] = true;
-                bind[BoneCount + digit] = entry.positionMm;
+                bind[BoneCount + digit] = ToVector(entry.positionMm);
             }
             int found = 0;
             for (int i = 0; i < JointCount; i++) if (seen[i]) found++;
@@ -451,6 +452,8 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             return false;
         }
 
+        static Vector3 ToVector(Xyz v) { return new Vector3(v.x, v.y, v.z); }
+
         static bool IsFinite(Vector3 v)
         {
             return !(float.IsNaN(v.x) || float.IsNaN(v.y) || float.IsNaN(v.z) || float.IsInfinity(v.x) || float.IsInfinity(v.y) || float.IsInfinity(v.z));
@@ -465,6 +468,9 @@ namespace UntitledGuitarApp.Runtime.GhostHand
         }
 
         // ---- the JSON shape, for UnityEngine.JsonUtility (field names are the JSON keys; unknown keys are ignored) -------
+        // No field has an initialiser: Unity's two pages on JsonUtility.FromJson disagree on whether one would survive a
+        // missing key, so a missing key is always read as null / 0 here and then refused or treated as absent above.
+        // Positions and rotations use our own structs so the JSON keys x, y, z, w are plain serializable fields.
 #pragma warning disable 0649
         [Serializable]
         sealed class PoseFile
@@ -475,7 +481,7 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             public string units;
             public string space;
             public SourceBlock source;
-            public Vector3 rootPositionMm;
+            public Xyz rootPositionMm;
             public BoneEntry[] bones;
             public PointEntry[] fingertips;
             public BindBlock bind;
@@ -494,14 +500,14 @@ namespace UntitledGuitarApp.Runtime.GhostHand
         sealed class BoneEntry
         {
             public string name;
-            public Quaternion rotation;
+            public Xyzw rotation;
         }
 
         [Serializable]
         sealed class PointEntry
         {
             public string bone;
-            public Vector3 positionMm;
+            public Xyz positionMm;
         }
 
         [Serializable]
@@ -509,6 +515,23 @@ namespace UntitledGuitarApp.Runtime.GhostHand
         {
             public PointEntry[] joints;
             public PointEntry[] fingertips;
+        }
+
+        [Serializable]
+        struct Xyz
+        {
+            public float x;
+            public float y;
+            public float z;
+        }
+
+        [Serializable]
+        struct Xyzw
+        {
+            public float x;
+            public float y;
+            public float z;
+            public float w;
         }
 #pragma warning restore 0649
     }
