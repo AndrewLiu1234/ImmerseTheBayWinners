@@ -22,8 +22,14 @@ namespace UntitledGuitarApp.Runtime.Neck
         /// <summary>Flag debugOverlay: draw the neck frame's axes at the socket (x red, y green, z blue) and a cross at the strum zone.</summary>
         public bool debugOverlay;
 
-        /// <summary>x of the strum zone in mm; 0 or less = draw no string patch there.</summary>
+        /// <summary>x of the strum zone in mm; 0 or less = no strum zone (the strings fade out just beyond the last fret).</summary>
         public float strumZoneXMm;
+
+        /// <summary>
+        /// Aligned neck: the strings stop just beyond the last fret and come back only under the strumming hand, because the
+        /// real strings show in between. False (the floating neck): they run unbroken from the nut to just past the strum zone.
+        /// </summary>
+        public bool breakStrings;
     }
 
     public static class NeckMeshBuilder
@@ -72,21 +78,34 @@ namespace UntitledGuitarApp.Runtime.Neck
 
             // Strings: thin, bright, cool white; the low strings thicker, as on the real guitar. Each one follows its own gain
             // group, so a string that is not played can be dimmed without rebuilding the mesh.
+            // Floating neck: unbroken from the nut to just past the strum zone, then fading out, so the neck reads as one neck
+            // and the strumming hand has strings under it. Aligned neck (breakStrings): they stop just beyond the last fret and
+            // come back under the strumming hand; the real strings show in between, and virtual strings half a metre long would
+            // drift visibly off the real ones with any alignment error.
             Color32 str = NeckStyle.Dim(NeckStyle.CoolWhite, NeckStyle.StringIntensity * ribbon);
+            bool strumZone = options.strumZoneXMm > 0f;
+            float solidEnd = lastX, fadeEnd = tailEnd;
+            if (strumZone && !options.breakStrings)
+            {
+                solidEnd = Mathf.Max(lastX, Mathf.Min(options.strumZoneXMm + sizes.strumHalfMm, layout.scaleLengthMm));
+                fadeEnd = Mathf.Min(solidEnd + sizes.strumFadeMm, layout.scaleLengthMm);   // strings end at the saddle
+            }
+            bool fades = fadeEnd > solidEnd;
             float patchFade = sizes.strumFadeMm;
             float patchFrom = options.strumZoneXMm - sizes.strumHalfMm;
             float patchTo = options.strumZoneXMm + sizes.strumHalfMm;
             float patchStart = Mathf.Max(patchFrom - patchFade, tailEnd);            // never run back into the neck part: leave the break
             float patchEnd = Mathf.Min(patchTo + patchFade, layout.scaleLengthMm);   // strings end at the saddle
-            bool patch = options.strumZoneXMm > 0f && patchFrom > patchStart && patchEnd > patchTo;
+            bool patch = strumZone && options.breakStrings && patchFrom > patchStart && patchEnd > patchTo;
             for (int n = 1; n <= NeckLayout.StringCount; n++)
             {
                 float w = sizes.StringWidthMm(n);
                 int group = NeckGeometry.StringGroup(n);
-                Ribbon(g, S(layout, n, 0f, h), S(layout, n, lastX, h), w, str, str, true, false, group, options.crossRibbons);
-                Ribbon(g, S(layout, n, lastX, h), S(layout, n, tailEnd, h), w, str, Black, false, false, group, options.crossRibbons);
+                Ribbon(g, S(layout, n, 0f, h), S(layout, n, solidEnd, h), w, str, str, true, !fades, group, options.crossRibbons);
+                if (fades)
+                    Ribbon(g, S(layout, n, solidEnd, h), S(layout, n, fadeEnd, h), w, str, Black, false, false, group, options.crossRibbons);
                 if (!patch) continue;
-                // The stretch under the strumming hand. On the floating neck it sits just beyond a break in the strings.
+                // The stretch under the strumming hand, beyond the break.
                 Ribbon(g, S(layout, n, patchStart, h), S(layout, n, patchFrom, h), w, Black, str, false, false, group, options.crossRibbons);
                 Ribbon(g, S(layout, n, patchFrom, h), S(layout, n, patchTo, h), w, str, str, false, false, group, options.crossRibbons);
                 Ribbon(g, S(layout, n, patchTo, h), S(layout, n, patchEnd, h), w, str, Black, false, false, group, options.crossRibbons);

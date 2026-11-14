@@ -23,8 +23,8 @@ namespace UntitledGuitarApp.Runtime.Neck
         public float nutMm;             // nut bar thickness (along the neck)
         public float edgeMm;            // fretboard edge line width
         public float tailMm;            // strings and edges fade out over this length beyond the last fret
-        public float strumHalfMm;       // half length of the string patch drawn under the strumming hand
-        public float strumFadeMm;       // the patch fades in and out over this length
+        public float strumHalfMm;       // the strings reach this far past the strum zone (aligned neck: half the patch there)
+        public float strumFadeMm;       // and fade out over this length (aligned neck: the patch fades in and out)
         public float dotRadiusMm;       // fingertip dot core
         public float haloRadiusMm;      // soft glow around the dot
         public float hotRadiusMm;       // white-hot centre
@@ -78,7 +78,7 @@ namespace UntitledGuitarApp.Runtime.Neck
         public const float EdgeIntensity = 0.24f;
         public const float HaloIntensity = 0.60f;
         public const float BeadIntensity = 0.65f;
-        public const float LabelIntensity = 0.80f;       // under the dots: the numbers are big, and the dots must stay the brightest thing in view
+        public const float LabelIntensity = 1.00f;       // full white: on an additive display anything less is only a dimmer white
 
         /// <summary>Everything that is not the active finger is shown at this brightness (GHOST_HANDS section 1).</summary>
         public const float InactiveGain = 0.30f;

@@ -562,7 +562,7 @@ namespace UntitledGuitarApp.Tests.EditMode
             layout.nutToSoundholeMm = 470f;
             Assert.That(NeckMath.StrumZoneXMm(layout), Is.EqualTo(470f));
 
-            // The floating neck is drawn with a break: the strum zone sits just beyond the last fret, never beyond the real place.
+            // The floating neck is drawn shortened: the strum zone sits just beyond the last fret, never beyond the real place.
             Assert.That(NeckMath.FloatingStrumZoneXMm(layout, 110f), Is.EqualTo(layout.LastFretXMm + 110f).Within(0.01f));
             Assert.That(NeckMath.FloatingStrumZoneXMm(layout, 5000f), Is.EqualTo(470f));
             Assert.That(NeckMath.FloatingStrumZoneXMm(layout, 0f), Is.EqualTo(470f), "0 = keep the real distance");
@@ -748,8 +748,8 @@ namespace UntitledGuitarApp.Tests.EditMode
             var g = new NeckGeometry(192);
             NeckMeshBuilder.BuildLines(layout, sizes, Floating(layout), g);
 
-            // 5 frets + 1 nut + 2 edges x 2 parts + 6 strings x (neck 2 parts + strum patch 3 parts).
-            Assert.That(g.QuadCount, Is.EqualTo(5 + 1 + 4 + 6 * 5));
+            // 5 frets + 1 nut + 2 edges x 2 parts + 6 strings x 2 parts (unbroken to past the strum zone, then a fade).
+            Assert.That(g.QuadCount, Is.EqualTo(5 + 1 + 4 + 6 * 2));
             Assert.That(g.Dropped, Is.EqualTo(0));
             Assert.That(g.VertexCount, Is.EqualTo(g.QuadCount * 4));
             Assert.That(g.IndexCount, Is.EqualTo(g.QuadCount * 6));
@@ -772,7 +772,49 @@ namespace UntitledGuitarApp.Tests.EditMode
                     Assert.That(c.z, Is.EqualTo(NeckMath.StringZMm(layout, s, c.x * 1000f) * 0.001f).Within(2e-5f), "string " + s + " lies on its line");
                     Assert.That(c.y, Is.EqualTo(layout.stringHeightMm * 0.001f).Within(1e-6f), "at string height");
                 }
-                Assert.That(quads, Is.EqualTo(5), "string " + s);
+                Assert.That(quads, Is.EqualTo(2), "string " + s);
+            }
+        }
+
+        // The pieces (x from, x to, in mm) one string is drawn with, sorted along the neck, and how far it stays at full brightness.
+        static List<Vector2> StringPieces(NeckGeometry g, int stringNumber, out float fullBrightnessToMm)
+        {
+            var pieces = new List<Vector2>();
+            fullBrightnessToMm = 0f;
+            int group = NeckGeometry.StringGroup(stringNumber);
+            for (int q = 0; q < g.QuadCount; q++)
+            {
+                if (!QuadIs(g, q, NeckGeometry.ShapeRect, group)) continue;
+                int v = q * 4;   // a line's vertices 0 and 1 are its start and end (minus the half width, which is across the neck)
+                float from = g.positions[v].x * 1000f, to = g.positions[v + 1].x * 1000f;
+                pieces.Add(new Vector2(from, to));
+                Color32 a = g.colors[v], b = g.colors[v + 1];
+                if (a.r == b.r && a.g == b.g && a.b == b.b && b.g > 0) fullBrightnessToMm = Mathf.Max(fullBrightnessToMm, to);
+            }
+            pieces.Sort((m, n) => m.x.CompareTo(n.x));
+            return pieces;
+        }
+
+        [Test]
+        public void BuildLines_FloatingStrings_RunUnbrokenFromTheNutToPastTheStrumZone()
+        {
+            // The review render of the floating neck showed the strings fading out after fret 5 and starting again before the
+            // strum zone. They must read as one neck: every string is one run of pieces joined end to end, starting at the nut.
+            NeckLayout layout = DevNeckLayout.Create();
+            NeckSizes sizes = NeckStyle.Resolve(layout, 0.9f, 1.2f, false);
+            NeckBuildOptions options = Floating(layout);
+            var g = new NeckGeometry(192);
+            NeckMeshBuilder.BuildLines(layout, sizes, options, g);
+            for (int s = 1; s <= 6; s++)
+            {
+                float full;
+                List<Vector2> pieces = StringPieces(g, s, out full);
+                Assert.That(pieces.Count, Is.GreaterThan(0));
+                Assert.That(pieces[0].x, Is.EqualTo(0f).Within(0.01f), "string " + s + " starts at the nut");
+                for (int i = 1; i < pieces.Count; i++)
+                    Assert.That(pieces[i].x, Is.EqualTo(pieces[i - 1].y).Within(0.01f), "string " + s + ": no gap before piece " + i);
+                Assert.That(full, Is.GreaterThan(options.strumZoneXMm + 10f), "string " + s + " is at full brightness under the strumming hand");
+                Assert.That(pieces[pieces.Count - 1].y, Is.LessThanOrEqualTo(layout.scaleLengthMm + 0.01f), "and never runs past the saddle");
             }
         }
 
@@ -782,10 +824,19 @@ namespace UntitledGuitarApp.Tests.EditMode
             NeckLayout layout = DevNeckLayout.Create();
             NeckSizes sizes = NeckStyle.Resolve(layout, 0.55f, 1f, false);
             var g = new NeckGeometry(192);
-            var options = new NeckBuildOptions { crossRibbons = true, strumZoneXMm = NeckMath.StrumZoneXMm(layout) };
+            var options = new NeckBuildOptions { crossRibbons = true, breakStrings = true, strumZoneXMm = NeckMath.StrumZoneXMm(layout) };
             NeckMeshBuilder.BuildLines(layout, sizes, options, g);
             Assert.That(g.QuadCount, Is.EqualTo(5 + 1 + 2 * 4 + 2 * 6 * 5));
             Assert.That(g.Dropped, Is.EqualTo(0));
+
+            // On the real neck the strings break after the frets (the real strings show) and come back under the strumming hand.
+            float full;
+            List<Vector2> pieces = StringPieces(g, 3, out full);
+            bool gap = false;
+            for (int i = 1; i < pieces.Count; i++)
+                if (pieces[i].x > pieces[i - 1].y + 1f) gap = true;
+            Assert.That(gap, Is.True, "aligned: a break between the frets and the strum zone");
+            Assert.That(full, Is.GreaterThan(options.strumZoneXMm), "a full-brightness stretch under the strumming hand");
 
             options.strumZoneXMm = 0f;   // no strum patch
             NeckMeshBuilder.BuildLines(layout, sizes, options, g);

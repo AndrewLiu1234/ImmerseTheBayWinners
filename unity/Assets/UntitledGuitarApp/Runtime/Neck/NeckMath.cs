@@ -76,8 +76,8 @@ namespace UntitledGuitarApp.Runtime.Neck
 
         /// <summary>
         /// x in mm of the strum zone on the floating neck. The real distance (about half a metre) would put the strumming hand
-        /// 30 degrees to the right of the fretting hand, at the edge of a 46 degree view, so the floating neck is drawn with a
-        /// break: the strum zone sits <paramref name="gapAfterLastFretMm"/> beyond the last fret, never beyond its real place.
+        /// 30 degrees to the right of the fretting hand, at the edge of a 46 degree view, so the floating neck is drawn shortened:
+        /// the strum zone sits <paramref name="gapAfterLastFretMm"/> beyond the last fret, never beyond its real place.
         /// A gap of 0 or less means "do not shorten".
         /// </summary>
         public static float FloatingStrumZoneXMm(NeckLayout layout, float gapAfterLastFretMm)

@@ -713,6 +713,7 @@ namespace UntitledGuitarApp.Runtime.Neck
             options.fingerColors = _options.fingerColors;
             options.debugOverlay = _options.debugOverlay;
             options.strumZoneXMm = StrumZoneXMm();
+            options.breakStrings = _mode == NeckMode.Aligned;
             return options;
         }
 
