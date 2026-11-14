@@ -798,6 +798,28 @@ namespace UntitledGuitarApp.Tests.EditMode
             Assert.LessOrEqual(PlayHudLayout.ColumnMaxWidthDeg, PlayHudLayout.ViewWidthDeg * 0.5f);
         }
 
+        // Ink, not cap boxes: "Happy" and "birthday" hang 'p' and 'y' below the line. Arial's descender is 434/2048 em and its
+        // cap height 1467/2048 em, so a descender reaches 0.296 cap heights below the baseline; lowercase ascenders (b, d, h)
+        // stand as tall as the capitals. The caret that glides under the words must clear both the descenders above it and
+        // the ascenders of the next line below it. (The old spacing put the caret 0.24 degrees into the descenders.)
+        [Test]
+        public void Layout_LyricCaretClearsTheDescendersAbove_AndTheNextLineBelow()
+        {
+            const float descenderOfCap = 434f / 1467f;
+            const float clearanceDeg = 0.08f;                                                    // ~3 glasses pixels
+            float descenderBottom = PlayHudLayout.LyricRowDeg - PlayHudLayout.LyricLineCapDeg * (0.5f + descenderOfCap);
+            float caretRow = PlayHudLayout.LyricRowDeg - PlayHudLayout.LyricCaretDropDeg;
+            float caretTop = caretRow + PlayHudLayout.LyricCaretDeg * 0.5f;
+            float caretBottom = caretRow - PlayHudLayout.LyricCaretDeg * 0.5f;
+            float nextInkTop = PlayHudLayout.LyricRowDeg - PlayHudLayout.LyricNextDropDeg + PlayHudLayout.LyricNextCapDeg * 0.5f;
+            Assert.Less(caretTop + clearanceDeg, descenderBottom);
+            Assert.Less(nextInkTop + clearanceDeg, caretBottom);
+            // ...and the next line's own descenders stay clear of the big chord name below it (it may breathe while waiting).
+            float nextDescenderBottom = PlayHudLayout.LyricRowDeg - PlayHudLayout.LyricNextDropDeg - PlayHudLayout.LyricNextCapDeg * (0.5f + descenderOfCap);
+            float chordTop = PlayHudLayout.ChordRowDeg + PlayHudLayout.ChordCapDeg * 0.5f * (1f + NeckHudCard.WaitBreathGain);
+            Assert.Less(chordTop + clearanceDeg, nextDescenderBottom);
+        }
+
         [Test]
         public void Layout_WhatIsNeededWhilePlayingStaysNearTheAnchor()
         {

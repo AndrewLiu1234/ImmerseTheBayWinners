@@ -14,7 +14,7 @@
 //
 //      +12.0   chord names above the words      (lyric strip, optional; a chords-only song shows its
 //       +9.8   current lyric line                chord sequence with one tick per beat here instead)
-//       +7.4   next lyric line (smaller)
+//       +7.0   next lyric line (smaller)
 //       +3.0   CURRENT CHORD (4 degrees)   |  "next" + next chord
 //       -0.9   beat dots (countdown to the change)  /  wait cue
 //       -4.2   strum or picking strip, cursor lane under it
@@ -96,9 +96,11 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
         public const float LyricMarkerRiseDeg = 1.2f;
         public const float LyricMarkerWidthDeg = 1.1f;
         public const float LyricMarkerHeightDeg = 0.2f;
-        public const float LyricCaretDropDeg = 1.25f;
-        public const float LyricCaretDeg = 0.6f;
-        public const float LyricNextDropDeg = 2.45f;
+        // The caret glides between the descenders of the line above it (p, y: 0.3 cap heights below the baseline) and the
+        // ascenders of the next line below it (b, d, h: as tall as capitals). It used to sit 0.24 degrees inside the descenders.
+        public const float LyricCaretDropDeg = 1.6f;
+        public const float LyricCaretDeg = 0.5f;
+        public const float LyricNextDropDeg = 2.8f;
         public const float LyricNextCapDeg = HudText.MinTextDegrees;
 
         // A chords-only line: chord names over one tick per beat, the next line's names smaller underneath.

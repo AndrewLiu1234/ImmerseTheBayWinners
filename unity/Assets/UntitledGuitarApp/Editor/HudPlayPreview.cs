@@ -246,7 +246,7 @@ namespace UntitledGuitarApp.Editor
                     .Append(", \"verticalFovDeg\": ").Append(F(stage.VerticalFov)).Append(", \"pixelsPerDegreeAtCentre\": ").Append(F(stage.FocalPx * Mathf.Deg2Rad))
                     .Append(", \"camera\": \"StereoRig left eye: StereoMath.EyeProjection + half-IPD offset, from the render flags\"},\n");
                 json.Append("  \"flags\": {\"largeText\": ").Append(B(flags.largeText)).Append(", \"fingerColors\": ").Append(B(flags.ghost != null && flags.ghost.fingerColors))
-                    .Append(", \"fovDiagonalDeg\": ").Append(F(flags.render.fovDiagonalDeg)).Append(", \"ipdMm\": ").Append(F(flags.render.ipdMm)).Append("},\n");
+                    .Append(", \"fovDiagonalDeg\": ").Append(F((flags.render ?? new RenderFlags()).fovDiagonalDeg)).Append(", \"ipdMm\": ").Append(F((flags.render ?? new RenderFlags()).ipdMm)).Append("},\n");
                 json.Append("  \"neck\": {\"placement\": ").Append(Q(DescribePlacement(stage.Neck))).Append("},\n");
 
                 List<float[]> calibration = Calibrate(stage);
@@ -669,7 +669,12 @@ namespace UntitledGuitarApp.Editor
 
         static void ResultsState(Play play)
         {
-            ShowChordOnNeck(play, "G");
+            // The song is over: no chord on the neck (the neck itself stays, as nobody has said it hides).
+            for (int i = 0; i < play.Marks.Length; i++) play.Marks[i] = StringMark.None;
+            play.DotCount = 0;
+            play.Stage.Neck.SetDots(play.Dots, 0);
+            play.Stage.Neck.SetStringMarks(play.Marks);
+            play.ChordOnNeck = "(none)";
             play.Card.gameObject.SetActive(false);
             play.Rings.Clear();
             play.Results.Title = "Riptide (loop)";
