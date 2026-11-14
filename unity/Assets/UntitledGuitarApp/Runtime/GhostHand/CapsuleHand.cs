@@ -13,13 +13,21 @@
 //     <hand root>            stays at the parent's origin (identity), so "wrist" below is expressed in the parent's frame
 //       wrist                the palm's pose and the hand's scale
 //         thumb_proximal > thumb_intermediate > thumb_distal        (and the same for index, middle, ring, pinky)
-//         mesh_palm, mesh_index, mesh_middle, mesh_ring, mesh_pinky, mesh_thumb     (MeshRenderers, one per part)
-//   Each bone's local +z runs along the bone toward the next joint and +y is the back of the finger. The meshes are
+//         mesh_hand          the one MeshRenderer: the palm and the five fingers in one mesh
+//   Each bone's local +z runs along the bone toward the next joint and +y is the back of the finger. The mesh is
 //   redrawn from the bone transforms every LateUpdate (only when a bone moved), so anything that rotates the named bones
 //   (an authored pose, for example) moves the visible hand too. Set driveBones = false to stop the built-in IK writing them.
 //
-// COST: one shared material, one MaterialPropertyBlock per part, six draw calls, about 4,700 triangles. Nothing is
-// allocated after Create: a pose change rewrites vertex arrays in place and uploads them to meshes that already exist.
+// ONE MESH ON PURPOSE: the GhostHand shader first writes the depth of the mesh and then adds light only on its front-most
+// surface, which joins the palm and the fingers into one body of light only when they are one draw. So the per-part
+// brightness (finger-by-finger mode) and the fingertip glow are per-vertex data (TEXCOORD0), not one renderer per part.
+//
+// LOOK (GhostHandLook): the active finger at full brightness and every other part at dimmedEmphasis; the fingertip glow
+// only on the fingers that press a string (or the active finger), never on the thumb; the palm and the wrist mostly rim.
+//
+// COST: one shared material, one MaterialPropertyBlock, one renderer drawn in two passes (depth, then colour), about
+// 4,700 triangles. Nothing is allocated after Create: a pose change rewrites vertex arrays in place and uploads them to the
+// mesh that already exists; a brightness change rewrites the per-vertex look data while it eases.
 //
 // APIS (Unity 2021.3 Scripting Reference, local copy Unity.app/Contents/Documentation/en/ScriptReference/<page>.html,
 // online https://docs.unity3d.com/2021.3/Documentation/ScriptReference/<page>.html):
@@ -29,6 +37,9 @@
 //   MaterialPropertyBlock     "used by Graphics.DrawMesh and Renderer.SetPropertyBlock ... The block passed ... is copied"
 //   Renderer.SetPropertyBlock "public void SetPropertyBlock(MaterialPropertyBlock properties)"
 //   Mesh.SetVertices / Mesh.SetNormals   "public void SetVertices(Vector3[] inVertices)", "public void SetNormals(Vector3[] inNormals)"
+//   Mesh.SetColors            "public void SetColors(Color32[] inColors)": "Set the per-vertex colors of the Mesh."
+//   Mesh.SetUVs               "public void SetUVs(int channel, Vector4[] uvs)": "A channel value of 0 corresponds to the
+//                             channel that is commonly called "UV0", and maps to the shader semantic TEXCOORD0"
 //   Mesh.MarkDynamic          "Optimize mesh for frequent updates."
 //   Mesh-bounds, Mesh.RecalculateBounds  "After modifying vertices you should call this function ..." (here the bounds are
 //                             set to a fixed box instead, so the hand is never culled by mistake)
@@ -49,20 +60,22 @@ namespace UntitledGuitarApp.Runtime.GhostHand
         public const string ShaderResourcePath = "Shaders/GhostHand";
 
         const int FingerCount = CapsuleHandDimensions.FingerCount;      // index, middle, ring, little, thumb
-        const int ThumbIndex = CapsuleHandDimensions.ThumbIndex;
-        const int PartCount = 6;            // 0 = palm, 1-4 = fingers 1-4, 5 = thumb  (part = finger index + 1)
+        const int PartCount = GhostHandGeometry.PartCount;              // 0 = palm, 1-4 = fingers 1-4, 5 = thumb  (part = finger index + 1)
         const int FingerAround = 20;        // vertices around a finger
         const int PalmAround = 28;
-        const int ElbowSteps = 4;
-        const int CapRows = 4;
-        const int FadeRows = 3;
 
         static readonly int ColorId = Shader.PropertyToID("_Color");
         static readonly int RimColorId = Shader.PropertyToID("_RimColor");
         static readonly int TipColorId = Shader.PropertyToID("_TipColor");
+        static readonly int[] FingerTipColorIds =                                       // colour slots 1-4 = fingers 1-4
+        {
+            Shader.PropertyToID("_TipColor1"), Shader.PropertyToID("_TipColor2"),
+            Shader.PropertyToID("_TipColor3"), Shader.PropertyToID("_TipColor4"),
+        };
         static readonly int FillId = Shader.PropertyToID("_Fill");
         static readonly int EmphasisId = Shader.PropertyToID("_Emphasis");
         static readonly int FadeId = Shader.PropertyToID("_Fade");
+        static readonly int VertexControlId = Shader.PropertyToID("_VertexControl");
 
         static readonly Color DefaultBlue = new Color(0.310f, 0.765f, 0.969f, 1f);      // #4FC3F7
         static readonly Color DefaultTip = new Color(0.86f, 0.96f, 1f, 1f);
@@ -73,7 +86,6 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             new Color(0.70f, 1.00f, 0.20f, 1f),     // 3 lime
             new Color(1.00f, 0.60f, 0.10f, 1f),     // 4 orange
         };
-        static readonly string[] PartNames = { "mesh_palm", "mesh_index", "mesh_middle", "mesh_ring", "mesh_pinky", "mesh_thumb" };
         static readonly Bounds FixedBounds = new Bounds(new Vector3(0f, 0f, 0.06f), new Vector3(0.5f, 0.5f, 0.5f));    // wrist space
 
         static Material s_material;         // shared by every capsule hand
@@ -93,10 +105,11 @@ namespace UntitledGuitarApp.Runtime.GhostHand
         CapsuleHandSolver m_solver;
         Transform m_wrist;
         readonly Transform[] m_bones = new Transform[FingerCount * 3];          // finger index * 3 + joint
-        readonly MeshRenderer[] m_renderers = new MeshRenderer[PartCount];
-        readonly Mesh[] m_meshes = new Mesh[PartCount];
-        readonly GhostTubeGeometry[] m_tubes = new GhostTubeGeometry[FingerCount];
-        MaterialPropertyBlock[] m_blocks;
+        GhostHandGeometry m_geometry;
+        Mesh m_mesh;
+        MeshRenderer m_renderer;
+        MaterialPropertyBlock m_block;
+        Color32[] m_fallbackColors;         // the emergency look's baked vertex colours (only when the ghost shader is unusable)
 
         // pose animation
         HandPose m_from, m_to, m_now;
@@ -108,15 +121,16 @@ namespace UntitledGuitarApp.Runtime.GhostHand
         Quaternion m_freeRotation = Quaternion.identity;
 
         // skin (mesh) state
-        readonly Vector3[] m_points = new Vector3[5];
-        readonly float[] m_radii = new float[5];
-        readonly Vector3[] m_drawn = new Vector3[FingerCount * 4];              // the joint positions each skin was last built from
+        readonly Vector3[] m_drawn = new Vector3[FingerCount * 4];              // the joint positions each finger was last built from
         bool m_skinValid;
 
-        // look animation
+        // look animation: per part a brightness and a fingertip glow, one fade for the whole hand
         readonly float[] m_emphasisFrom = new float[PartCount];
         readonly float[] m_emphasisTo = new float[PartCount];
         readonly float[] m_emphasisNow = new float[PartCount];
+        readonly float[] m_glowFrom = new float[PartCount];
+        readonly float[] m_glowTo = new float[PartCount];
+        readonly float[] m_glowNow = new float[PartCount];
         readonly Color[] m_tipColors = new Color[PartCount];
         float m_fadeFrom = 1f, m_fadeTo = 1f, m_fadeNow = 1f;
         float m_lookT = 1f;
@@ -200,46 +214,27 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             }
 
             // ---- look state ----
-            m_blocks = new MaterialPropertyBlock[PartCount];
+            m_block = new MaterialPropertyBlock();
             for (int p = 0; p < PartCount; p++)
             {
-                m_blocks[p] = new MaterialPropertyBlock();
                 m_emphasisFrom[p] = m_emphasisTo[p] = m_emphasisNow[p] = 1f;
+                m_glowFrom[p] = m_glowTo[p] = m_glowNow[p] = 0f;
                 m_tipColors[p] = DefaultTip;
             }
 
-            // ---- the palm: built once ----
-            {
-                Vector3[] v; Vector3[] n; Color32[] c; float[] h; int[] t;
-                GhostPalmGeometry.Build(dims, PalmAround, out v, out n, out c, out h, out t);
-                Mesh mesh = new Mesh();
-                mesh.name = "GhostHand palm";
-                mesh.SetVertices(v);
-                mesh.SetNormals(n);
-                mesh.colors32 = s_fallbackLook ? BakeFallbackColors(c) : c;
-                mesh.triangles = t;
-                mesh.bounds = FixedBounds;
-                m_meshes[0] = mesh;
-                m_renderers[0] = NewRenderer(PartNames[0], mesh, material, layer);
-            }
-
-            // ---- the fingers: one skin each; the topology is fixed, the vertices follow the bones ----
-            for (int f = 0; f < FingerCount; f++)
-            {
-                bool thumb = f == ThumbIndex;
-                GhostTubeGeometry tube = new GhostTubeGeometry(thumb ? 4 : 5, FingerAround, ElbowSteps, CapRows, FadeRows, thumb ? 0.50f : 0.55f, 0.5f, true);
-                m_tubes[f] = tube;
-                Mesh mesh = new Mesh();
-                mesh.name = "GhostHand " + PartNames[f + 1];
-                mesh.MarkDynamic();
-                mesh.SetVertices(tube.vertices);
-                mesh.SetNormals(tube.normals);
-                mesh.colors32 = s_fallbackLook ? BakeFallbackColors(tube.colors) : tube.colors;
-                mesh.triangles = tube.triangles;
-                mesh.bounds = FixedBounds;
-                m_meshes[f + 1] = mesh;
-                m_renderers[f + 1] = NewRenderer(PartNames[f + 1], mesh, material, layer);
-            }
+            // ---- the mesh: palm and five finger skins in one buffer; fixed topology, the vertices follow the bones ----
+            m_geometry = new GhostHandGeometry(dims, FingerAround, PalmAround);
+            if (s_fallbackLook) m_fallbackColors = new Color32[m_geometry.VertexCount];
+            m_mesh = new Mesh();
+            m_mesh.name = leftHand ? "GhostHand left" : "GhostHand right";
+            m_mesh.MarkDynamic();
+            m_mesh.SetVertices(m_geometry.vertices);
+            m_mesh.SetNormals(m_geometry.normals);
+            m_mesh.SetColors(m_geometry.colors);
+            m_mesh.SetUVs(0, m_geometry.control);
+            m_mesh.triangles = m_geometry.triangles;
+            m_mesh.bounds = FixedBounds;
+            m_renderer = NewRenderer("mesh_hand", m_mesh, material, layer);
 
             ApplyFlags(FlagStore.Current);
 
@@ -247,7 +242,7 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             for (int i = 0; i < 4; i++) m_targets[i] = new Vector3(float.NaN, 0f, 0f);
             m_fretting = true;
             Resolve(true);
-            PushBlocks();
+            WriteLook();
         }
 
         static Transform NewChild(string childName, Transform parent, int layer)
@@ -280,7 +275,7 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             gameObject.layer = layer;
             m_wrist.gameObject.layer = layer;
             for (int i = 0; i < m_bones.Length; i++) m_bones[i].gameObject.layer = layer;
-            for (int p = 0; p < PartCount; p++) m_renderers[p].gameObject.layer = layer;
+            m_renderer.gameObject.layer = layer;
         }
 
         // ------------------------------------------------------------------------------------------------ material
@@ -311,19 +306,25 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             return m;
         }
 
-        // The emergency shader only shows vertex colours, so turn the masks into real colours: faint blue, bright tips.
-        static Color32[] BakeFallbackColors(Color32[] masks)
+        // The emergency shader only shows vertex colours times _Color: bake the masks, each part's brightness and its
+        // fingertip glow into real colours (faint blue, bright pressing tips). No allocation.
+        void BakeFallbackColors()
         {
-            Color32[] baked = new Color32[masks.Length];
-            for (int i = 0; i < masks.Length; i++)
+            Color32[] masks = m_geometry.colors;
+            for (int p = 0; p < PartCount; p++)
             {
-                float tip = Mathf.Clamp01((masks[i].r - masks[i].g) / 255f);
-                float cover = 1f - Mathf.Clamp01((masks[i].b - masks[i].g) / 255f);
-                Color c = Color.Lerp(DefaultBlue * 0.38f, DefaultTip, tip) * cover;
-                c.a = 1f;
-                baked[i] = c;
+                int start = m_geometry.partStart[p], end = start + m_geometry.partCount[p];
+                float emphasis = m_emphasisNow[p], glow = m_glowNow[p];
+                Color tipColor = m_tipColors[p];
+                for (int i = start; i < end; i++)
+                {
+                    float tip = Mathf.Clamp01((masks[i].r - masks[i].g) / 255f) * glow;
+                    float cover = 1f - Mathf.Clamp01((masks[i].b - masks[i].g) / 255f);
+                    Color c = Color.Lerp(DefaultBlue * 0.38f, tipColor, tip) * (cover * emphasis);
+                    c.a = 1f;
+                    m_fallbackColors[i] = c;
+                }
             }
-            return baked;
         }
 
         void ApplyFlags(FlagSet flags)
@@ -347,7 +348,7 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             }
             for (int p = 0; p < PartCount; p++)
                 m_tipColors[p] = fingerColors && p >= 1 && p <= 4 ? FingerColors[p - 1] : DefaultTip;
-            if (m_built && m_blocks != null) PushBlocks();
+            if (m_built && m_mesh != null) WriteLook();
         }
 
         void OnFlagsChanged(FlagSet flags)
@@ -355,24 +356,27 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             if (m_built) ApplyFlags(flags);
         }
 
-        void PushBlocks()
+        // The current look into the mesh and the property block: per-part brightness and fingertip glow as per-vertex data,
+        // the fade and the fingertip colours as per-renderer values. No allocation.
+        void WriteLook()
         {
-            for (int p = 0; p < PartCount; p++)
+            for (int p = 0; p < PartCount; p++) m_geometry.SetPartLook(p, 1f - m_emphasisNow[p], m_glowNow[p]);
+            if (s_fallbackLook)
             {
-                MaterialPropertyBlock block = m_blocks[p];
-                if (s_fallbackLook)
-                {
-                    float k = m_emphasisNow[p] * m_fadeNow;
-                    block.SetColor(ColorId, new Color(k, k, k, 1f));
-                }
-                else
-                {
-                    block.SetFloat(EmphasisId, m_emphasisNow[p]);
-                    block.SetFloat(FadeId, m_fadeNow);
-                    block.SetColor(TipColorId, m_tipColors[p]);
-                }
-                m_renderers[p].SetPropertyBlock(block);
+                BakeFallbackColors();
+                m_mesh.SetColors(m_fallbackColors);
+                m_block.SetColor(ColorId, new Color(m_fadeNow, m_fadeNow, m_fadeNow, 1f));
             }
+            else
+            {
+                m_mesh.SetUVs(0, m_geometry.control);
+                m_block.SetFloat(VertexControlId, 1f);
+                m_block.SetFloat(EmphasisId, 1f);
+                m_block.SetFloat(FadeId, m_fadeNow);
+                m_block.SetColor(TipColorId, DefaultTip);
+                for (int k = 0; k < 4; k++) m_block.SetColor(FingerTipColorIds[k], m_tipColors[k + 1]);
+            }
+            m_renderer.SetPropertyBlock(m_block);
         }
 
         // ------------------------------------------------------------------------------------------------ public controls
@@ -387,7 +391,7 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             SetFingertipTargets(targets, false);
         }
 
-        /// <summary>As above; immediate = true jumps to the new pose at once (first placement, edit-mode previews, tests).</summary>
+        /// <summary>As above; immediate = true jumps to the new pose (and look) at once (first placement, edit-mode previews, tests).</summary>
         public void SetFingertipTargets(Vector3[] targets, bool immediate)
         {
             EnsureBuilt();
@@ -426,9 +430,7 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             int active = fingerNumber >= 1 && fingerNumber <= 4 ? fingerNumber : AllFingers;
             if (active == m_activeFinger) return;
             m_activeFinger = active;
-            StartLookChange();
-            for (int p = 0; p < PartCount; p++)
-                m_emphasisTo[p] = active == AllFingers || p == active ? 1f : Mathf.Clamp01(dimmedEmphasis);
+            RetargetLook(false);
         }
 
         public int ActiveFinger { get { return m_activeFinger; } }
@@ -467,9 +469,13 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             {
                 m_lookT = Mathf.Min(1f, m_lookT + step);
                 float e = Smooth(m_lookT);
-                for (int p = 0; p < PartCount; p++) m_emphasisNow[p] = Mathf.Lerp(m_emphasisFrom[p], m_emphasisTo[p], e);
+                for (int p = 0; p < PartCount; p++)
+                {
+                    m_emphasisNow[p] = Mathf.Lerp(m_emphasisFrom[p], m_emphasisTo[p], e);
+                    m_glowNow[p] = Mathf.Lerp(m_glowFrom[p], m_glowTo[p], e);
+                }
                 m_fadeNow = Mathf.Lerp(m_fadeFrom, m_fadeTo, e);
-                PushBlocks();
+                WriteLook();
             }
             UpdateSkins();
         }
@@ -483,9 +489,46 @@ namespace UntitledGuitarApp.Runtime.GhostHand
 
         void StartLookChange()
         {
-            for (int p = 0; p < PartCount; p++) m_emphasisFrom[p] = m_emphasisNow[p];
+            for (int p = 0; p < PartCount; p++)
+            {
+                m_emphasisFrom[p] = m_emphasisNow[p];
+                m_glowFrom[p] = m_glowNow[p];
+            }
             m_fadeFrom = m_fadeNow;
             m_lookT = 0f;
+        }
+
+        float LookEmphasis(int part) { return GhostHandLook.PartEmphasis(part, m_activeFinger, dimmedEmphasis); }
+
+        float LookGlow(int part) { return GhostHandLook.PartTipGlows(part, m_fretting, m_solver.used, m_activeFinger) ? 1f : 0f; }
+
+        // Aim the look at the current rules (active finger, which fingers press a string). immediate = jump there; otherwise
+        // ease over morphSeconds. Does nothing when nothing changed, so a hand placed every frame (SetWristPose) keeps
+        // easing its fade undisturbed.
+        void RetargetLook(bool immediate)
+        {
+            bool changed = false;
+            for (int p = 0; p < PartCount && !changed; p++)
+                changed = LookEmphasis(p) != m_emphasisTo[p] || LookGlow(p) != m_glowTo[p];
+            if (!changed) return;
+            if (immediate || !(morphSeconds > 0f))
+            {   // from = to = now: a fade that is still easing goes on, these values hold still
+                for (int p = 0; p < PartCount; p++)
+                {
+                    m_emphasisFrom[p] = m_emphasisTo[p] = m_emphasisNow[p] = LookEmphasis(p);
+                    m_glowFrom[p] = m_glowTo[p] = m_glowNow[p] = LookGlow(p);
+                }
+                WriteLook();
+            }
+            else
+            {
+                StartLookChange();
+                for (int p = 0; p < PartCount; p++)
+                {
+                    m_emphasisTo[p] = LookEmphasis(p);
+                    m_glowTo[p] = LookGlow(p);
+                }
+            }
         }
 
         // Solve the pose for the current targets (or the free wrist pose) and go there.
@@ -508,6 +551,7 @@ namespace UntitledGuitarApp.Runtime.GhostHand
                 m_to = to;
                 m_poseT = 0f;
             }
+            RetargetLook(immediate);        // which fingertips glow depends on which fingers are used
         }
 
         // Inverse kinematics for the current pose, written to the wrist and the fifteen finger bones.
@@ -537,11 +581,12 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             }
         }
 
-        // Redraw every finger whose bones moved since its skin was last built. Reads the bone transforms, so it follows
-        // whatever poses them. No allocation.
+        // Redraw every finger whose bones moved since it was last built, then upload the mesh once. Reads the bone
+        // transforms, so it follows whatever poses them. No allocation.
         void UpdateSkins()
         {
             CapsuleHandDimensions dims = m_solver.dims;
+            bool changed = false;
             for (int f = 0; f < FingerCount; f++)
             {
                 Transform proximal = m_bones[f * 3], intermediate = m_bones[f * 3 + 1], distal = m_bones[f * 3 + 2];
@@ -556,28 +601,14 @@ namespace UntitledGuitarApp.Runtime.GhostHand
                 int c = f * 4;
                 if (m_skinValid && knuckle == m_drawn[c] && pip == m_drawn[c + 1] && dip == m_drawn[c + 2] && tip == m_drawn[c + 3]) continue;
                 m_drawn[c] = knuckle; m_drawn[c + 1] = pip; m_drawn[c + 2] = dip; m_drawn[c + 3] = tip;
-
-                Vector3 upHint;
-                if (f == ThumbIndex)
-                {
-                    m_points[0] = knuckle; m_points[1] = pip; m_points[2] = dip; m_points[3] = tip;
-                    m_radii[0] = dims.Radius(f, 0); m_radii[1] = dims.Radius(f, 1); m_radii[2] = dims.Radius(f, 2); m_radii[3] = dims.Radius(f, 3);
-                    upHint = -dims.chains[f].curl;
-                }
-                else
-                {
-                    m_points[0] = dims.skinStart[f]; m_points[1] = knuckle; m_points[2] = pip; m_points[3] = dip; m_points[4] = tip;
-                    m_radii[0] = dims.skinStartRadius[f]; m_radii[1] = dims.Radius(f, 0); m_radii[2] = dims.Radius(f, 1);
-                    m_radii[3] = dims.Radius(f, 2); m_radii[4] = dims.Radius(f, 3);
-                    upHint = Vector3.up;
-                }
-
-                GhostTubeGeometry tube = m_tubes[f];
-                tube.Update(m_points, m_radii, upHint);
-                Mesh mesh = m_meshes[f + 1];
-                mesh.SetVertices(tube.vertices);
-                mesh.SetNormals(tube.normals);
-                mesh.bounds = FixedBounds;
+                m_geometry.SetFinger(f, knuckle, pip, dip, tip);
+                changed = true;
+            }
+            if (changed)
+            {
+                m_mesh.SetVertices(m_geometry.vertices);
+                m_mesh.SetNormals(m_geometry.normals);
+                m_mesh.bounds = FixedBounds;
             }
             m_skinValid = true;
         }
@@ -606,12 +637,9 @@ namespace UntitledGuitarApp.Runtime.GhostHand
 
         void OnDestroy()
         {
-            for (int p = 0; p < PartCount; p++)
-            {
-                if (m_meshes[p] == null) continue;
-                if (Application.isPlaying) Destroy(m_meshes[p]); else DestroyImmediate(m_meshes[p]);
-                m_meshes[p] = null;
-            }
+            if (m_mesh == null) return;
+            if (Application.isPlaying) Destroy(m_mesh); else DestroyImmediate(m_mesh);
+            m_mesh = null;
         }
     }
 }

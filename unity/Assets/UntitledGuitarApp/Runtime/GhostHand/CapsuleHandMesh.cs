@@ -21,6 +21,7 @@
 //            x = dim     0 = full brightness .. 1 = off      (finger-by-finger emphasis)
 //            y = hollow  0 = normal fill .. 1 = rim only      (the palm and wrist are drawn lighter than the fingers)
 //            z = tipOff  0 = the fingertip glows .. 1 = no glow   (only fingers that press a string glow)
+//            w = slot    the fingertip colour: 0 = the shader's _TipColor, 1-4 = _TipColor1-4 (fingers 1-4)
 using UnityEngine;
 
 namespace UntitledGuitarApp.Runtime.GhostHand
@@ -285,7 +286,9 @@ namespace UntitledGuitarApp.Runtime.GhostHand
                 byte fadeOut = (byte)Mathf.RoundToInt((1f - Mathf.Clamp01(st[s].alpha)) * 255f);
                 for (int i = 0; i < N; i++)
                 {
-                    float phi = 2f * Mathf.PI * i / N;
+                    // half a step off the sides, so no vertex lies on the plane where the closed end folds flat
+                    // (a vertex there on every row would make flat slivers in that plane)
+                    float phi = 2f * Mathf.PI * (i + 0.5f) / N;
                     float c = Mathf.Cos(phi), sn = Mathf.Sin(phi);
                     float x = Mathf.Sign(c) * Mathf.Pow(Mathf.Abs(c), power) * st[s].halfWidth;
                     float y = Mathf.Sign(sn) * Mathf.Pow(Mathf.Abs(sn), power) * st[s].halfThickness * thickness;
@@ -349,7 +352,7 @@ namespace UntitledGuitarApp.Runtime.GhostHand
         public readonly Vector3[] vertices;
         public readonly Vector3[] normals;
         public readonly Color32[] colors;       // static
-        public readonly Vector4[] control;      // (dim, hollow, tipOff, 0): see the top of this file
+        public readonly Vector4[] control;      // (dim, hollow, tipOff, colour slot): see the top of this file
         public readonly int[] triangles;        // static
         public readonly int[] partStart = new int[PartCount];
         public readonly int[] partCount = new int[PartCount];
@@ -396,6 +399,8 @@ namespace UntitledGuitarApp.Runtime.GhostHand
                 GhostTubeGeometry tube = m_tubes[f];
                 partStart[f + 1] = v; partCount[f + 1] = tube.vertexCount;
                 System.Array.Copy(tube.colors, 0, colors, v, tube.vertexCount);
+                float slot = f == CapsuleHandDimensions.ThumbIndex ? 0f : f + 1;    // fingers 1-4 may get their own tip colour
+                for (int i = 0; i < tube.vertexCount; i++) control[v + i] = new Vector4(0f, 0f, 0f, slot);
                 for (int k = 0; k < tube.triangles.Length; k++) triangles[t + k] = tube.triangles[k] + v;
                 v += tube.vertexCount; t += tube.triangles.Length;
             }
@@ -447,6 +452,30 @@ namespace UntitledGuitarApp.Runtime.GhostHand
                 c.z = off;
                 control[i] = c;
             }
+        }
+    }
+
+    /// <summary>The look rules of the capsule hand as plain functions (so they are tested without Unity).
+    /// Parts: 0 = palm, 1-4 = fingers 1-4 (index .. little), 5 = thumb.</summary>
+    public static class GhostHandLook
+    {
+        /// <summary>Brightness of a part: 1 when the whole hand is lit (activeFinger outside 1-4) or the part is the active
+        /// finger; every other part (the palm and the thumb too) at <paramref name="dimmed"/>.</summary>
+        public static float PartEmphasis(int part, int activeFinger, float dimmed)
+        {
+            bool wholeHand = activeFinger < 1 || activeFinger > 4;
+            return wholeHand || part == activeFinger ? 1f : Mathf.Clamp01(dimmed);
+        }
+
+        /// <summary>Does the fingertip of a part glow? Only fingers 1-4 of a fretting hand, and of those only the ones that
+        /// press a string (used[finger]) or the active finger. The thumb, the palm and a free (strumming) hand never glow:
+        /// where to press is the brightest thing in view, and nothing else is.</summary>
+        public static bool PartTipGlows(int part, bool fretting, bool[] used, int activeFinger)
+        {
+            if (!fretting || part < 1 || part > 4) return false;
+            if (part == activeFinger) return true;
+            int finger = part - 1;
+            return used != null && finger < used.Length && used[finger];
         }
     }
 }

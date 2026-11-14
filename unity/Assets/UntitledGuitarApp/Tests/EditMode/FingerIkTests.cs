@@ -1,5 +1,5 @@
-// EditMode tests for the ghost hand's pure maths: FingerIk (one finger), CapsuleHandSolver (the whole fretting hand) and
-// the finger skin geometry. No scene, no GameObject, no Play Mode, no device.
+// EditMode tests for the ghost hand's pure maths: FingerIk (one finger), CapsuleHandSolver (the whole fretting hand), the
+// one-buffer hand mesh (GhostHandGeometry) and the look rules (GhostHandLook). No scene, no GameObject, no Play Mode, no device.
 //
 // The slice's acceptance criterion is "each fingertip lands within 3 mm of its dot". The tests assert that 3 mm bound, and
 // also the much tighter 0.1 mm the solver actually achieves, so a regression shows up long before it becomes visible.
@@ -399,71 +399,176 @@ namespace UntitledGuitarApp.Tests.EditMode
             Assert.LessOrEqual(Distance(mid.tip2, c.tip2), 1e-6f);
         }
 
-        // ------------------------------------------------------------------------------------------------ the finger skin
+        // ------------------------------------------------------------------------------------------------ the hand mesh
+
+        // The one-buffer hand mesh (palm + five finger skins) for a solved chord, built the way CapsuleHand builds it.
+        static GhostHandGeometry HandMesh(string chord, bool left, out CapsuleHandSolver solver, out FingerIkResult[] fingers)
+        {
+            solver = new CapsuleHandSolver(left);
+            HandPose pose;
+            solver.SolveFretting(Chord(chord), out pose);
+            fingers = new FingerIkResult[5];
+            solver.SolveFingers(pose, fingers);
+            GhostHandGeometry mesh = new GhostHandGeometry(solver.dims, 20, 28);
+            for (int f = 0; f < 5; f++) mesh.SetFinger(f, fingers[f].knuckle, fingers[f].pip, fingers[f].dip, fingers[f].tip);
+            return mesh;
+        }
 
         [Test]
-        public void FingerSkin_FacesOutward_HasUnitNormals_AndStaysInsideTheBudget()
+        public void HandMesh_FacesOutward_HasUnitNormals_AndStaysInsideTheBudget()
         {
-            // The ghost shader culls back faces: a skin wound the wrong way round would be invisible.
-            CapsuleHandSolver solver = new CapsuleHandSolver(true);
-            HandPose pose;
-            solver.SolveFretting(Chord("C"), out pose);
-            FingerIkResult[] fingers = new FingerIkResult[5];
-            solver.SolveFingers(pose, fingers);
-            CapsuleHandDimensions dims = solver.dims;
-
-            int triangles = 0;
-            Vector3[] points = new Vector3[5];
-            float[] radii = new float[5];
-            for (int f = 0; f < 5; f++)
+            // The ghost shader culls back faces: a surface wound the wrong way round would be invisible.
+            foreach (bool left in new[] { true, false })
             {
-                bool thumb = f == CapsuleHandDimensions.ThumbIndex;
-                GhostTubeGeometry tube = new GhostTubeGeometry(thumb ? 4 : 5, 20, 4, 4, 3, thumb ? 0.50f : 0.55f, 0.5f, true);
-                FingerIkResult r = fingers[f];
-                if (thumb)
-                {
-                    points[0] = r.knuckle; points[1] = r.pip; points[2] = r.dip; points[3] = r.tip;
-                    for (int k = 0; k < 4; k++) radii[k] = dims.Radius(f, k);
-                }
-                else
-                {
-                    points[0] = dims.skinStart[f]; points[1] = r.knuckle; points[2] = r.pip; points[3] = r.dip; points[4] = r.tip;
-                    radii[0] = dims.skinStartRadius[f];
-                    for (int k = 0; k < 4; k++) radii[k + 1] = dims.Radius(f, k);
-                }
-                tube.Update(points, radii, thumb ? -dims.chains[f].curl : Vector3.up);
+                CapsuleHandSolver solver;
+                FingerIkResult[] fingers;
+                GhostHandGeometry mesh = HandMesh("C", left, out solver, out fingers);
+                CapsuleHandDimensions dims = solver.dims;
 
-                for (int v = 0; v < tube.vertexCount; v++)
+                for (int v = 0; v < mesh.VertexCount; v++)
                 {
-                    Assert.IsTrue(Finite(tube.vertices[v]) && Finite(tube.normals[v]), "finger " + f + " vertex " + v);
-                    Assert.AreEqual(1f, tube.normals[v].magnitude, 1e-3f, "finger " + f + " normal " + v);
+                    Assert.IsTrue(Finite(mesh.vertices[v]) && Finite(mesh.normals[v]), "vertex " + v);
+                    Assert.AreEqual(1f, mesh.normals[v].magnitude, 1e-3f, "normal " + v);
                 }
+
+                // the palm's core: its long axis, from the forearm end to where its rings start to lean toward the knuckles
+                float coreStart = dims.palm[0].z, coreEnd = dims.palmArcStart;
+                int palmEnd = mesh.partStart[0] + mesh.partCount[0];
                 int facing = 0;
-                for (int k = 0; k < tube.triangles.Length; k += 3)
+                for (int k = 0; k < mesh.triangles.Length; k += 3)
                 {
-                    Vector3 a = tube.vertices[tube.triangles[k]], b = tube.vertices[tube.triangles[k + 1]], c = tube.vertices[tube.triangles[k + 2]];
+                    int ia = mesh.triangles[k], ib = mesh.triangles[k + 1], ic = mesh.triangles[k + 2];
+                    Vector3 a = mesh.vertices[ia], b = mesh.vertices[ib], c = mesh.vertices[ic];
                     Vector3 face = Vector3.Cross(b - a, c - a);     // Unity: the clockwise (front) side
                     double area = Math.Sqrt((double)face.x * face.x + (double)face.y * face.y + (double)face.z * face.z);
-                    if (area < 1e-10) continue;                     // collapsed on the inside of a bend: never drawn
-                    Vector3 n = tube.normals[tube.triangles[k]] + tube.normals[tube.triangles[k + 1]] + tube.normals[tube.triangles[k + 2]];
-                    Assert.Greater(Vector3.Dot(face, n) / area, 1.5, "finger " + f + ": a triangle faces inward");
+                    if (area < 1e-10) continue;                     // collapsed on the inside of a finger's bend: never drawn
+                    if (ia < palmEnd)
+                    {   // the palm (and its closed far end): every face points away from the core
+                        Vector3 centre = (a + b + c) / 3f;
+                        Vector3 core = new Vector3(0f, 0f, Mathf.Clamp(centre.z, coreStart, coreEnd));
+                        Assert.Greater(Vector3.Dot(face, centre - core), 0f, "palm triangle " + (k / 3) + " faces inward");
+                    }
+                    else
+                    {   // a finger: every face agrees with the normals at its corners
+                        Vector3 n = mesh.normals[ia] + mesh.normals[ib] + mesh.normals[ic];
+                        Assert.Greater(Vector3.Dot(face, n) / area, 1.5, "finger triangle " + (k / 3) + " faces inward");
+                    }
                     facing++;
                 }
-                Assert.Greater(facing, tube.triangleCount / 2);
-                triangles += tube.triangleCount;
+                Assert.Greater(facing, mesh.TriangleCount / 2);
+                Assert.Less(mesh.TriangleCount, 6000, "the hand must stay under about 6,000 triangles");
+            }
+        }
+
+        [Test]
+        public void HandMesh_PartsTileTheBuffer_OnlyFingertipsCarryTheGlow_AndPartLookTouchesOnlyItsPart()
+        {
+            CapsuleHandSolver solver;
+            FingerIkResult[] fingers;
+            GhostHandGeometry mesh = HandMesh("G", true, out solver, out fingers);
+            CapsuleHandDimensions dims = solver.dims;
+
+            int next = 0;
+            for (int p = 0; p < GhostHandGeometry.PartCount; p++)
+            {
+                Assert.AreEqual(next, mesh.partStart[p], "part " + p + " starts where the previous one ends");
+                Assert.Greater(mesh.partCount[p], 0, "part " + p);
+                next += mesh.partCount[p];
+            }
+            Assert.AreEqual(mesh.VertexCount, next);
+            Assert.AreEqual(mesh.VertexCount, mesh.control.Length);
+
+            // the palm: no fingertip mask, never a glow, lighter fill (hollow) than the fingers, colour slot 0
+            for (int i = 0; i < mesh.partCount[0]; i++)
+            {
+                Assert.IsTrue(mesh.colors[i].r <= mesh.colors[i].g, "palm vertex " + i + " carries the fingertip mask");
+                Assert.AreEqual(1f, mesh.control[i].z, 1e-6f, "the palm never glows");
+                Assert.That(mesh.control[i].y, Is.InRange(0f, 1f));
+                Assert.AreEqual(0f, mesh.control[i].w, 1e-6f);
+            }
+            Assert.Greater(mesh.control[mesh.partCount[0] / 2].y, 0.3f, "the middle of the palm is mostly rim");
+
+            // the fingers: the tip mask sits only at the fingertip; full fill; slots 1-4 for fingers 1-4, 0 for the thumb
+            for (int f = 0; f < 5; f++)
+            {
+                int start = mesh.partStart[f + 1], tipped = 0;
+                float reach = dims.chains[f].length3 + dims.Radius(f, 2);
+                for (int i = start; i < start + mesh.partCount[f + 1]; i++)
+                {
+                    Assert.AreEqual(0f, mesh.control[i].y, 1e-6f, "finger " + f + " is not hollow");
+                    Assert.AreEqual(f == CapsuleHandDimensions.ThumbIndex ? 0f : f + 1, mesh.control[i].w, 1e-6f, "finger " + f + " colour slot");
+                    if (mesh.colors[i].r <= mesh.colors[i].g) continue;
+                    tipped++;
+                    Assert.LessOrEqual(Distance(mesh.vertices[i], fingers[f].tip), reach, "finger " + f + ": glow mask away from the fingertip");
+                }
+                Assert.Greater(tipped, 0, "finger " + f + " has a fingertip mask");
             }
 
-            Vector3[] pv, pn; Color32[] pc; float[] ph; int[] pt;
-            GhostPalmGeometry.Build(dims, 28, out pv, out pn, out pc, out ph, out pt);
-            for (int k = 0; k < pt.Length; k += 3)
+            // SetPartLook writes dim and tip-off of one part and nothing else
+            Vector4[] before = (Vector4[])mesh.control.Clone();
+            mesh.SetPartLook(2, 0.7f, 0f);
+            int s2 = mesh.partStart[2], e2 = s2 + mesh.partCount[2];
+            for (int i = 0; i < mesh.VertexCount; i++)
             {
-                Vector3 a = pv[pt[k]], b = pv[pt[k + 1]], c = pv[pt[k + 2]];
-                Vector3 face = Vector3.Cross(b - a, c - a);
-                Vector3 outward = new Vector3(a.x + b.x + c.x, a.y + b.y + c.y, 0f);    // away from the palm's long axis
-                Assert.Greater(Vector3.Dot(face, outward), 0f, "a palm triangle faces inward");
+                if (i >= s2 && i < e2)
+                {
+                    Assert.AreEqual(0.7f, mesh.control[i].x, 1e-6f);
+                    Assert.AreEqual(1f, mesh.control[i].z, 1e-6f);
+                    Assert.AreEqual(before[i].y, mesh.control[i].y, 1e-6f);
+                    Assert.AreEqual(before[i].w, mesh.control[i].w, 1e-6f);
+                }
+                else Assert.IsTrue(before[i] == mesh.control[i], "vertex " + i + " outside part 2 changed");
             }
-            triangles += pt.Length / 3;
-            Assert.Less(triangles, 6000, "the hand must stay under about 6,000 triangles");
+        }
+
+        [Test]
+        public void LookRules_OnlyPressingFingersGlow_NeverTheThumb_AndTheActiveFingerLeads()
+        {
+            bool[] g = { true, true, true, false, false };      // G: fingers 1-3 press a string, the little finger hovers
+            for (int part = 0; part < GhostHandGeometry.PartCount; part++)
+            {
+                Assert.AreEqual(part >= 1 && part <= 3, GhostHandLook.PartTipGlows(part, true, g, CapsuleHand.AllFingers), "part " + part);
+                Assert.IsFalse(GhostHandLook.PartTipGlows(part, false, g, CapsuleHand.AllFingers), "a free (strumming) hand never glows");
+                Assert.AreEqual(1f, GhostHandLook.PartEmphasis(part, CapsuleHand.AllFingers, 0.3f), 1e-6f, "the whole hand lit");
+            }
+            Assert.IsFalse(GhostHandLook.PartTipGlows(5, true, new[] { true, true, true, true, true }, CapsuleHand.AllFingers), "the thumb never glows");
+            Assert.IsFalse(GhostHandLook.PartTipGlows(0, true, g, 0), "the palm never glows");
+            Assert.IsFalse(GhostHandLook.PartTipGlows(1, true, null, CapsuleHand.AllFingers), "no targets, no glow");
+
+            // finger-by-finger: the active finger glows (even before it is used) and leads; every other part dims
+            Assert.IsTrue(GhostHandLook.PartTipGlows(4, true, g, 4));
+            Assert.AreEqual(1f, GhostHandLook.PartEmphasis(2, 2, 0.3f), 1e-6f);
+            Assert.AreEqual(0.3f, GhostHandLook.PartEmphasis(1, 2, 0.3f), 1e-6f);
+            Assert.AreEqual(0.3f, GhostHandLook.PartEmphasis(0, 2, 0.3f), 1e-6f, "the palm dims too");
+            Assert.AreEqual(0.3f, GhostHandLook.PartEmphasis(5, 2, 0.3f), 1e-6f, "the thumb dims too");
+        }
+
+        [Test]
+        public void KnuckleArc_PassesThroughEveryKnuckle_MirrorsLeftToRight_AndThePalmEndFollowsIt()
+        {
+            foreach (bool left in new[] { true, false })
+            {
+                CapsuleHandDimensions dims = CapsuleHandDimensions.CreateDefault(left);
+                CapsuleHandDimensions other = CapsuleHandDimensions.CreateDefault(!left);
+                for (int f = 0; f < 4; f++)
+                    Assert.AreEqual(dims.chains[f].knuckle.z, dims.KnuckleArc(dims.chains[f].knuckle.x), 1e-6f, "finger " + f);
+                for (int i = -10; i <= 10; i++)
+                {
+                    float x = i * 0.005f;
+                    Assert.AreEqual(dims.KnuckleArc(x), other.KnuckleArc(-x), 1e-6f, "mirror at x = " + x);
+                }
+
+                // the ring of the palm's last station lies on the arc (the closed end grows out of it)
+                const int around = 28;
+                Vector3[] pv, pn; Color32[] pc; float[] ph; int[] pt;
+                GhostPalmGeometry.Build(dims, around, out pv, out pn, out pc, out ph, out pt);
+                int row = dims.palm.Length - 1;
+                for (int i = 0; i < around; i++)
+                {
+                    Vector3 v = pv[row * around + i];
+                    Assert.AreEqual(dims.KnuckleArc(v.x), v.z, 1e-5f, "palm end vertex " + i);
+                }
+            }
         }
     }
 }
