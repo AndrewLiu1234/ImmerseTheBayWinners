@@ -1288,6 +1288,16 @@ namespace UntitledGuitarApp.Tests.EditMode
                 PlayHudOverlap.Id(PlayHudOverlap.NeckGroup, "FingerNumber0/Text")));
             Assert.IsTrue(PlayHudOverlap.ShouldCompare(PlayHudOverlap.Id(card, "NextChord"),
                 PlayHudOverlap.Id(PlayHudOverlap.NeckGroup, "Dots")));
+            // The ghost hands: the card must not cover them, the rings land on their fingertips, and hand-on-neck is not HUD business.
+            string hand = PlayHudOverlap.HandGroup;
+            Assert.AreEqual(OverlapKind.Problem, PlayHudOverlap.Classify(PlayHudOverlap.Id(card, "ChordPivot/CurrentChord"),
+                PlayHudOverlap.Id(hand, "fretting/Model/Hand"), out why));
+            Assert.AreEqual(OverlapKind.ByDesign, PlayHudOverlap.Classify(PlayHudOverlap.Id(PlayHudOverlap.RingsGroup, "Ring0_1"),
+                PlayHudOverlap.Id(hand, "fretting/Model/Hand"), out why));
+            Assert.IsFalse(PlayHudOverlap.ShouldCompare(PlayHudOverlap.Id(hand, "fretting/Model/Hand"),
+                PlayHudOverlap.Id(PlayHudOverlap.NeckGroup, "Lines")));
+            Assert.IsTrue(PlayHudOverlap.ShouldCompare(PlayHudOverlap.Id(PlayHudOverlap.ResultsGroup, "Score"),
+                PlayHudOverlap.Id(hand, "strumming/Model/Hand")));
         }
 
         // ---------------------------------------------------------------- helpers

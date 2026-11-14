@@ -20,10 +20,14 @@
 // and the head, as in play mode; the ResultsCard head-locked 1 m ahead. The song is driven frame by frame (60 fps) from a
 // song clock, the way a practice session would, so the beat dots, the cursor and the rings have their real history.
 //
-// TRUE TEXT SIZE. HudText draws text about 18% smaller than asked (fixed in another branch). The preview MEASURES that on
-// this machine (a row of "H"s of known size, their lit rows counted) and scales every HUD text up by the measured ratio
-// before the saved render, so the pictures and the overlap check show the layout at the size the fix will draw. Once the
-// fix lands the measured ratio is 1 and nothing is scaled. The ratios are in the report.
+// TEXT SIZE. Texts are drawn as HudText draws them (no correction). The preview still MEASURES the drawn size (a row of
+// "H"s of known size, their lit rows counted) and reports asked / drawn per size; the summary warns when HudText is more
+// than 5% off, because then the pictures do not show the true size.
+//
+// GHOST HANDS. The posed fretting hand (on the neck socket) and the strumming hand (GhostHandsDirector.CreateStrummingHand)
+// are in the picture, holding the chord on the neck, so the check covers HUD-on-hand overlaps. The results state hides
+// the card (NeckHudCard.SetVisible), the hands and the neck's dots, as the session does while results show. Every HUD
+// part must also stay inside the comfortable zone (ink edges within az +-21 and el +-11.4 deg of the eye's centre).
 //
 // THE CHECK. Each visible part is rendered ALONE and its lit pixels become a PixelMask (Runtime/Hud/Play/PlayHudOverlap.cs,
 // unit-tested): two parts overlap when a pixel is lit by both, so discs are judged by their round ink, rings by their
@@ -56,6 +60,7 @@ using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
 using UntitledGuitarApp.Runtime.Flags;
+using UntitledGuitarApp.Runtime.GhostHand;
 using UntitledGuitarApp.Runtime.Hud;
 using UntitledGuitarApp.Runtime.Hud.Play;
 using UntitledGuitarApp.Runtime.Neck;
@@ -89,11 +94,9 @@ namespace UntitledGuitarApp.Editor
         const float WaltzBpm = 90f;
         static readonly string[] WaltzSlots = { "D", "-", "D", "-", "D", "-" };
 
-        // Appendix B2 chord rows, string 6 -> 1 (-1 = x, 0 = open; finger 0 = none).
-        static readonly int[] GFrets = { 3, 2, 0, 0, 0, 3 }, GFingers = { 2, 1, 0, 0, 0, 3 };
-        static readonly int[] CFrets = { -1, 3, 2, 0, 1, 0 }, CFingers = { 0, 3, 2, 0, 1, 0 };
-        static readonly int[] AmFrets = { -1, 0, 2, 2, 1, 0 }, AmFingers = { 0, 0, 2, 3, 1, 0 };
-        static readonly int[] DFrets = { -1, -1, 0, 2, 3, 2 }, DFingers = { 0, 0, 0, 1, 3, 2 };
+        // The comfortable zone of one eye (ink edges at least 2 deg inside the 46.1 x 26.9 deg view; coordinator, Sat 12:25).
+        const float ComfortAzDeg = 21f;
+        const float ComfortElDeg = 11.4f;
 
         static readonly float[] CalibrationCaps = { 1.2f, 2f, 3f, 4f, 5f };
 
@@ -170,6 +173,8 @@ namespace UntitledGuitarApp.Editor
             public Transform Head;
             public Camera Eye;
             public FloatingNeck Neck;
+            public PosedGhostHand Fretting;
+            public PosedGhostHand Strumming;
             public RenderTexture Target;
             public Texture2D Readback;
             public Color32[] Pixels;
@@ -258,11 +263,14 @@ namespace UntitledGuitarApp.Editor
                         .Append(", \"renderedPx\": ").Append(F(c[2])).Append(", \"askedOverRendered\": ").Append(F(c[3])).Append(", \"measured\": ").Append(B(c[4] > 0.5f)).Append("}");
                 }
                 json.Append("\n  ],\n");
-                json.Append("  \"note\": \"Texts are drawn at their ASKED size: each HUD text is scaled by askedOverRendered (interpolated by size) before the saved render and the check.\",\n");
+                json.Append("  \"note\": \"Texts are drawn as HudText draws them (no correction); askedOverRendered = 1 means the pictures show the true size.\",\n");
                 json.Append("  \"states\": [\n");
 
                 summary.AppendLine("HudPlayPreview summary (" + DateTime.Now.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) + ")");
-                summary.AppendLine("text scale measured (asked / rendered): " + DescribeCalibration(calibration));
+                summary.AppendLine("text size measured (asked / drawn): " + DescribeCalibration(calibration));
+                if (!CalibrationNearOne(calibration))
+                    summary.AppendLine("!! HudText draws text more than 5% off its asked size: these pictures do NOT show the true text size");
+                summary.AppendLine("ghost hands: fretting " + HandState(stage.Fretting) + ", strumming " + HandState(stage.Strumming));
                 summary.AppendLine();
 
                 for (int s = 0; s < specs.Count; s++)
@@ -361,13 +369,19 @@ namespace UntitledGuitarApp.Editor
             stage.Eye = eye;
             stage.FocalPx = 0.5f * EyeHeight / Mathf.Tan(0.5f * stage.VerticalFov * Mathf.Deg2Rad);
 
-            NeckLayout layout = DevNeckLayout.Create();
+            NeckLayout layout = CoreNeckLayout.Create(CoreNeckLayout.DefaultGeometry);
             FloatingNeck neck = FloatingNeck.Create(null);
             SceneManager.MoveGameObjectToScene(neck.gameObject, stage.Scene);
             neck.UseOptions(NeckOptions.FromFlags(FlagStore.Current));
             if (!neck.Build(layout)) throw new InvalidOperationException("the dev neck layout was rejected: " + string.Join(" | ", layout.Validate()));
             neck.PlaceFloating(stage.Head);
             stage.Neck = neck;
+
+            // The posed ghost hands, as the play-along presenter has them.
+            var library = new GhostPoseLibrary();
+            library.Reload();
+            stage.Fretting = PosedGhostHand.Create(neck.Socket, GhostPose.HandFretting, library);
+            stage.Strumming = GhostHandsDirector.CreateStrummingHand(neck, library);
 
             stage.Target = RenderTexture.GetTemporary(EyeWidth, EyeHeight, 24, RenderTextureFormat.ARGB32);
             stage.Readback = new Texture2D(EyeWidth, EyeHeight, TextureFormat.RGBA32, false);
@@ -458,6 +472,19 @@ namespace UntitledGuitarApp.Editor
             return calibration[calibration.Count - 1][3];
         }
 
+        static bool CalibrationNearOne(List<float[]> calibration)
+        {
+            for (int i = 0; i < calibration.Count; i++)
+                if (Mathf.Abs(calibration[i][3] - 1f) > 0.05f) return false;
+            return true;
+        }
+
+        static string HandState(PosedGhostHand hand)
+        {
+            if (hand == null) return "missing";
+            return hand.IsAvailable ? "shown" : "UNAVAILABLE (" + hand.UnavailableReason + ")";
+        }
+
         static string DescribeCalibration(List<float[]> calibration)
         {
             var sb = new StringBuilder();
@@ -484,6 +511,8 @@ namespace UntitledGuitarApp.Editor
             play.Results = ResultsCard.Create(play.ResultsHolder.transform, ResultsDistanceM);
             play.Card.Attach(stage.Neck.Socket, stage.Head);
             play.Rings.Attach(stage.Neck.Socket, stage.Head);
+            if (stage.Fretting != null) stage.Fretting.gameObject.SetActive(true);
+            if (stage.Strumming != null) stage.Strumming.gameObject.SetActive(true);
             return play;
         }
 
@@ -510,29 +539,38 @@ namespace UntitledGuitarApp.Editor
             }
         }
 
+        // The chord's dots and X / O marks from Core's shapes, and the fretting hand holding it (the strumming hand at rest).
         static void ShowChordOnNeck(Play play, string chord)
         {
-            int[] frets = GFrets, fingers = GFingers;
-            if (chord == "C") { frets = CFrets; fingers = CFingers; }
-            else if (chord == "Am") { frets = AmFrets; fingers = AmFingers; }
-            else if (chord == "D") { frets = DFrets; fingers = DFingers; }
             for (int i = 0; i < play.Marks.Length; i++) play.Marks[i] = StringMark.None;
-            play.DotCount = DevNeckLayout.FromChordRow(play.Stage.Neck.Layout, frets, fingers, play.Dots, play.Marks);
+            play.DotCount = CoreNeckLayout.ChordMarks(CoreNeckLayout.DefaultGeometry, chord, play.Dots, play.Marks);
             play.Stage.Neck.SetDots(play.Dots, play.DotCount);
             play.Stage.Neck.SetStringMarks(play.Marks);
             play.ChordOnNeck = chord;
+            PoseHands(play.Stage, chord);
+        }
+
+        static void PoseHands(Stage stage, string chord)
+        {
+            if (stage.Fretting != null && stage.Fretting.IsAvailable)
+            {
+                stage.Fretting.SetPose(chord ?? PosedGhostHand.RestPose, true);
+                stage.Fretting.SetFade(1f, true);
+                stage.Fretting.Tick(Frame);
+            }
+            if (stage.Strumming != null && stage.Strumming.IsAvailable)
+            {
+                stage.Strumming.SetPose(PosedGhostHand.RestPose, true);
+                stage.Strumming.Tick(Frame);
+            }
         }
 
         static int TargetsFor(Play play, string chord, Vector3[] into)
         {
-            int[] frets = GFrets, fingers = GFingers;
-            if (chord == "C") { frets = CFrets; fingers = CFingers; }
-            else if (chord == "Am") { frets = AmFrets; fingers = AmFingers; }
-            else if (chord == "D") { frets = DFrets; fingers = DFingers; }
             var dots = new FingertipDot[FloatingNeck.MaxDots];
             var marks = new StringMark[NeckLayout.StringCount];
             NeckLayout layout = play.Stage.Neck.Layout;
-            int n = DevNeckLayout.FromChordRow(layout, frets, fingers, dots, marks);
+            int n = CoreNeckLayout.ChordMarks(CoreNeckLayout.DefaultGeometry, chord, dots, marks);
             for (int i = 0; i < n && i < into.Length; i++) into[i] = new Vector3(dots[i].xMm, layout.stringHeightMm, dots[i].zMm);
             return Mathf.Min(n, into.Length);
         }
@@ -675,8 +713,10 @@ namespace UntitledGuitarApp.Editor
             play.Stage.Neck.SetDots(play.Dots, 0);
             play.Stage.Neck.SetStringMarks(play.Marks);
             play.ChordOnNeck = "(none)";
-            play.Card.gameObject.SetActive(false);
+            play.Card.SetVisible(false);
             play.Rings.Clear();
+            if (play.Stage.Fretting != null) play.Stage.Fretting.gameObject.SetActive(false);
+            if (play.Stage.Strumming != null) play.Stage.Strumming.gameObject.SetActive(false);
             play.Results.Title = "Riptide (loop)";
             play.Results.Show(7, 8, 85f, null);
         }
@@ -740,9 +780,7 @@ namespace UntitledGuitarApp.Editor
                 int unmeasured = 0;
                 foreach (HudText text in HudTexts(play))
                 {
-                    float k = TrueSizeFactor(calibration, AskedCapDegrees(text));
-                    text.transform.localScale *= k;
-                    if (!text.SizeMeasured) unmeasured++;
+                    if (text.Visible && text.Text.Length > 0 && !text.SizeMeasured) unmeasured++;   // shown but never sized
                 }
 
                 RenderCamera(stage);
@@ -789,14 +827,27 @@ namespace UntitledGuitarApp.Editor
                     }
                 }
 
-                // Parts cut by the frame edge, crowded texts, sizes.
-                int cut = 0;
+                // Parts cut by the frame edge or outside the comfortable zone, crowded texts, sizes.
+                int cut = 0, outside = 0;
                 var cutList = new StringBuilder();
                 var partsJson = new StringBuilder();
                 for (int i = 0; i < parts.Count; i++)
                 {
                     Part p = parts[i];
-                    bool hud = PlayHudOverlap.Group(p.Id) != PlayHudOverlap.NeckGroup;
+                    string group = PlayHudOverlap.Group(p.Id);
+                    bool hud = group != PlayHudOverlap.NeckGroup && group != PlayHudOverlap.HandGroup;
+                    if (hud && !p.Mask.IsEmpty && !p.Mask.TouchesEdge)
+                    {
+                        float l = PxToDegX(stage, p.Mask.MinX - 0.5f), r = PxToDegX(stage, p.Mask.MaxX + 0.5f);
+                        float bo = PxToDegY(stage, p.Mask.MinY - 0.5f), to = PxToDegY(stage, p.Mask.MaxY + 0.5f);
+                        if (l < -ComfortAzDeg || r > ComfortAzDeg || bo < -ComfortElDeg || to > ComfortElDeg)
+                        {
+                            problems++;
+                            outside++;
+                            sum.AppendLine("   !! OUTSIDE THE COMFORTABLE ZONE (az +-" + F(ComfortAzDeg) + ", el +-" + F(ComfortElDeg) + "): " + p.Label + " "
+                                + BoxDeg(stage, p.Mask.MinX, p.Mask.MinY, p.Mask.MaxX, p.Mask.MaxY) + " deg");
+                        }
+                    }
                     if (hud && p.Mask.TouchesEdge)
                     {
                         cut++;
@@ -856,7 +907,7 @@ namespace UntitledGuitarApp.Editor
                 {
                     sum.AppendLine("   " + problems + " problem(s), " + cut + " cut, " + notes + " note(s), " + byDesign + " by design; " + parts.Count + " parts");
                 }
-                if (unmeasured > 0) sum.AppendLine("   !! " + unmeasured + " text(s) whose glyph size HudText could not measure (fallback scale)");
+                if (unmeasured > 0) sum.AppendLine("   !! " + unmeasured + " shown text(s) that were never given a size");
 
                 json.Append("    {\n      \"name\": ").Append(Q(spec.Name)).Append(", \"png\": ").Append(Q(Path.GetFileName(pngPath)))
                     .Append(", \"description\": ").Append(Q(spec.Description)).Append(", \"planted\": ").Append(B(play.Planted)).Append(",\n");
@@ -865,7 +916,7 @@ namespace UntitledGuitarApp.Editor
                 json.Append("      \"litPixels\": ").Append(all.Count).Append(", \"litAreaDeg\": ")
                     .Append(all.IsEmpty ? "null" : BoxDeg(stage, all.MinX, all.MinY, all.MaxX, all.MaxY)).Append(",\n");
                 json.Append("      \"problems\": ").Append(problems).Append(", \"cutByFrameEdge\": ").Append(cut).Append(", \"notes\": ").Append(notes)
-                    .Append(", \"byDesign\": ").Append(byDesign).Append(", \"unmeasuredTexts\": ").Append(unmeasured).Append(",\n");
+                    .Append(", \"byDesign\": ").Append(byDesign).Append(", \"outsideComfortZone\": ").Append(outside).Append(", \"unmeasuredTexts\": ").Append(unmeasured).Append(",\n");
                 if (play.Planted)
                     json.Append("      \"plantedDetected\": {\"textOnText\": ").Append(B(plantedHudOnHud)).Append(", \"hudOnNeck\": ").Append(B(plantedHudOnNeck)).Append("},\n");
                 json.Append("      \"cut\": [").Append(cutList).Append("],\n");
@@ -936,10 +987,17 @@ namespace UntitledGuitarApp.Editor
             AddParts(parts, play.Rings.transform, PlayHudOverlap.RingsGroup);
             AddParts(parts, play.Results.transform, PlayHudOverlap.ResultsGroup);
             AddParts(parts, play.Stage.Neck.transform, PlayHudOverlap.NeckGroup);
+            if (play.Stage.Fretting != null) AddParts(parts, play.Stage.Fretting.transform, PlayHudOverlap.HandGroup, "fretting/");
+            if (play.Stage.Strumming != null) AddParts(parts, play.Stage.Strumming.transform, PlayHudOverlap.HandGroup, "strumming/");
             return parts;
         }
 
         static void AddParts(List<Part> parts, Transform root, string group)
+        {
+            AddParts(parts, root, group, string.Empty);
+        }
+
+        static void AddParts(List<Part> parts, Transform root, string group, string prefix)
         {
             if (root == null) return;
             foreach (Renderer renderer in root.GetComponentsInChildren<Renderer>(false))
@@ -947,7 +1005,7 @@ namespace UntitledGuitarApp.Editor
                 if (!renderer.enabled || !renderer.gameObject.activeInHierarchy) continue;
                 HudText text = renderer.GetComponent<HudText>();
                 if (text != null && (!text.Visible || text.Text.Length == 0)) continue;
-                string path = PathBelow(root, renderer.transform);
+                string path = prefix + PathBelow(root, renderer.transform);
                 if (group == PlayHudOverlap.NeckGroup && !(path == "Lines" || path == "Dots" || path.StartsWith("FingerNumber", StringComparison.Ordinal))) continue;
                 string id = PlayHudOverlap.Id(group, path);
                 parts.Add(new Part { Id = id, Label = id + (text != null ? " \"" + text.Text + "\"" : string.Empty), Renderer = renderer, Text = text });
