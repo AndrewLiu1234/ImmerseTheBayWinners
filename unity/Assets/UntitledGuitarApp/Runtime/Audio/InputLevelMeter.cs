@@ -9,7 +9,7 @@ namespace UntitledGuitarApp.Runtime.Audio
     /// falls slower still. The time constants are measured in AUDIO time (frames / sample rate), so the meter behaves the
     /// same at 30 fps and at 90 fps.
     /// </summary>
-    public sealed class LevelMeter
+    public sealed class InputLevelMeter
     {
         /// <summary>RMS rise time constant (seconds): about 30 ms, so a pluck registers within a couple of frames.</summary>
         public const float RmsAttackSec = 0.03f;

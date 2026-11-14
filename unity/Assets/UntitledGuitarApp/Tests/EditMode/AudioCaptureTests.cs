@@ -960,17 +960,17 @@ namespace UntitledGuitarApp.Tests.EditMode
         }
 
         // =============================================================================================================
-        // LevelMeter
+        // InputLevelMeter
         // =============================================================================================================
 
         [Test]
         public void Meter_Measure_GivesSumOfSquaresAndPeak()
         {
             double sq; float peak;
-            LevelMeter.Measure(new float[] { 0.5f, -1f, 0.25f, 0f }, 0, 4, out sq, out peak);
+            InputLevelMeter.Measure(new float[] { 0.5f, -1f, 0.25f, 0f }, 0, 4, out sq, out peak);
             Assert.AreEqual(0.25 + 1.0 + 0.0625, sq, 1e-9);
             Assert.AreEqual(1f, peak);
-            LevelMeter.Measure(new float[] { 9f, 0.5f, -0.5f }, 1, 2, out sq, out peak);
+            InputLevelMeter.Measure(new float[] { 9f, 0.5f, -0.5f }, 1, 2, out sq, out peak);
             Assert.AreEqual(0.5, sq, 1e-9);
             Assert.AreEqual(0.5f, peak);
         }
@@ -978,7 +978,7 @@ namespace UntitledGuitarApp.Tests.EditMode
         [Test]
         public void Meter_RisesToTheSignalLevel_AndPeakJumpsAtOnce()
         {
-            LevelMeter m = new LevelMeter();
+            InputLevelMeter m = new InputLevelMeter();
             m.Add(960 * 0.25, 0.5f, 960, 48000);                           // 20 ms of a 0.5 square wave
             Assert.Greater(m.Rms, 0.1f);
             Assert.Less(m.Rms, 0.5f, "RMS is smoothed, it does not jump");
@@ -991,11 +991,11 @@ namespace UntitledGuitarApp.Tests.EditMode
         [Test]
         public void Meter_Falls_WhenNoSamplesArrive_AndSettlesAtZero()
         {
-            LevelMeter m = new LevelMeter();
+            InputLevelMeter m = new InputLevelMeter();
             for (int i = 0; i < 50; i++) m.Add(960 * 0.25, 0.5f, 960, 48000);
             for (int i = 0; i < 10; i++) m.Idle(0.1f);                     // one second of "deaf"
-            Assert.AreEqual(0.5 * Math.Exp(-1.0 / LevelMeter.RmsReleaseSec), m.Rms, 1e-3);
-            Assert.AreEqual(0.5 * Math.Exp(-1.0 / LevelMeter.PeakReleaseSec), m.Peak, 1e-3);
+            Assert.AreEqual(0.5 * Math.Exp(-1.0 / InputLevelMeter.RmsReleaseSec), m.Rms, 1e-3);
+            Assert.AreEqual(0.5 * Math.Exp(-1.0 / InputLevelMeter.PeakReleaseSec), m.Peak, 1e-3);
             for (int i = 0; i < 100; i++) m.Idle(0.1f);
             Assert.AreEqual(0f, m.Rms);
             Assert.AreEqual(0f, m.Peak);
@@ -1004,7 +1004,7 @@ namespace UntitledGuitarApp.Tests.EditMode
         [Test]
         public void Meter_QuietBlocksPullTheLevelDown_AndBadInputIsHarmless()
         {
-            LevelMeter m = new LevelMeter();
+            InputLevelMeter m = new InputLevelMeter();
             for (int i = 0; i < 50; i++) m.Add(960 * 0.25, 0.5f, 960, 48000);
             float loud = m.Rms;
             m.Add(0.0, 0f, 960, 48000);

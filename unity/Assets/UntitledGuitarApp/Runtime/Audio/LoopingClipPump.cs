@@ -149,7 +149,7 @@ namespace UntitledGuitarApp.Runtime.Audio
                 }
 
                 double s2; float p;
-                LevelMeter.Measure(mono, 0, size, out s2, out p);
+                InputLevelMeter.Measure(mono, 0, size, out s2, out p);
                 sumSq += s2;
                 if (p > peak) peak = p;
                 _sink.Write(mono, 0, size);

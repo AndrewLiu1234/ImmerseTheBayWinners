@@ -72,7 +72,7 @@ namespace UntitledGuitarApp.Runtime.Audio
         readonly Func<FlagSet> _flags;
         readonly string _streamingAssetsPath;
         readonly WavLoader _wavLoader;
-        readonly LevelMeter _meter = new LevelMeter();
+        readonly InputLevelMeter _meter = new InputLevelMeter();
         readonly LoopingClipPump _pump = new LoopingClipPump();
         readonly float[] _scratch = new float[4096];
 
@@ -372,7 +372,7 @@ namespace UntitledGuitarApp.Runtime.Audio
             while ((n = _replay.Read(_scratch, 0, _scratch.Length)) > 0)
             {
                 double s; float p;
-                LevelMeter.Measure(_scratch, 0, n, out s, out p);
+                InputLevelMeter.Measure(_scratch, 0, n, out s, out p);
                 sumSq += s;
                 if (p > peak) peak = p;
                 total += n;
