@@ -33,6 +33,10 @@ namespace UntitledGuitarApp.Runtime
         Skip,
         /// <summary>Re-centre the head pose (straight ahead = now).</summary>
         Recenter,
+        /// <summary>Put the virtual neck on the real guitar: 4 glances (NeckAligner). Goes to idle first.</summary>
+        Align,
+        /// <summary>One glance at the nut to re-anchor an aligned neck (any mode).</summary>
+        Reanchor,
     }
 
     /// <summary>What a command changed, so the caller knows whether to restart the active mode.</summary>
@@ -45,6 +49,10 @@ namespace UntitledGuitarApp.Runtime
         TempoForNextPlay,
         Skip,
         Recenter,
+        /// <summary>Start the 4-glance alignment (the mode is now Idle; restarted if it was not).</summary>
+        Align,
+        /// <summary>Start the one-glance re-anchor.</summary>
+        Reanchor,
     }
 
     public sealed class DemoState
@@ -131,6 +139,15 @@ namespace UntitledGuitarApp.Runtime
                     return DemoChange.Skip;
                 case DemoCommand.Recenter:
                     return DemoChange.Recenter;
+                case DemoCommand.Align:
+                    if (Mode != DemoMode.Idle)
+                    {
+                        Mode = DemoMode.Idle;   // align from the walking skeleton: stop a song or a lesson first
+                        Generation++;
+                    }
+                    return DemoChange.Align;
+                case DemoCommand.Reanchor:
+                    return DemoChange.Reanchor;
                 default:
                     return DemoChange.None;
             }

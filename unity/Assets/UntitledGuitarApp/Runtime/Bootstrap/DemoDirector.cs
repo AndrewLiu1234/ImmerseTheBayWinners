@@ -50,6 +50,7 @@ namespace UntitledGuitarApp.Runtime
         string _lastPlayChord = LearnChords.DefaultChord;
         string _statusText = "";
         int _statusKey = int.MinValue;
+        bool _pendingAlign;
 
         public DemoState State { get; private set; }
         /// <summary>The Blender-posed strumming hand on the neck's strum zone, or null when its FBX/poses are missing.</summary>
@@ -130,6 +131,11 @@ namespace UntitledGuitarApp.Runtime
             DemoCommand command = DemoKeys.Poll();
             if (command != DemoCommand.None) Handle(command);
             if (State.Generation != _appliedGeneration) Enter();
+            if (_pendingAlign)
+            {
+                _pendingAlign = false;   // started only now, after Enter() has put the rig in idle
+                if (_boot.Aligner == null || !_boot.Aligner.Begin()) UGALog.Warn("demo_align", "the alignment could not start");
+            }
 
             float dt = Time.deltaTime;
             if (State.Mode == DemoMode.Play) TickPlay(dt);
@@ -140,7 +146,18 @@ namespace UntitledGuitarApp.Runtime
 
         void Handle(DemoCommand command)
         {
+            NeckAligner aligner = _boot.Aligner;
+            if (command == DemoCommand.Idle && aligner != null && aligner.IsRunning) aligner.Cancel();   // Esc/I stops the glances
             DemoChange change = State.Apply(command);
+            if (change == DemoChange.Align)
+            {
+                _pendingAlign = true;
+            }
+            else if (change == DemoChange.Reanchor)
+            {
+                if (aligner == null || !aligner.BeginReanchor())
+                    UGALog.Warn("demo_align", "re-anchor did not start (align first with A, while the head is tracked)");
+            }
             UGALog.Event("demo_key", "command", command.ToString(), "change", change.ToString(), "why", State.LastRefusal ?? "");
             if (change == DemoChange.Skip)
             {
@@ -374,12 +391,15 @@ namespace UntitledGuitarApp.Runtime
             int phase = 0;
             if (State.Mode == DemoMode.Play && PlayAlong != null) phase = (int)PlayAlong.Phase;
             else if (State.Mode == DemoMode.Learn && Learn != null) phase = (int)Learn.Stage;
-            int key = (_appliedGeneration * 31 + (int)State.Mode) * 31 + phase;
+            bool aligning = _boot.Aligner != null && _boot.Aligner.IsRunning;
+            int key = ((_appliedGeneration * 31 + (int)State.Mode) * 31 + phase) * 2 + (aligning ? 1 : 0);
             if (key == _statusKey) return;
             _statusKey = key;
             FlagSet flags = FlagStore.Current;
             string what;
-            if (State.Mode == DemoMode.Play)
+            if (aligning)
+                what = "ALIGNING: the wearer glances at each point and holds still (Esc cancels)";
+            else if (State.Mode == DemoMode.Play)
                 what = "PLAY " + ItemName(flags) + " x" + CurrentTempo().ToString("0.##", CultureInfo.InvariantCulture) +
                        (PlayAlong != null ? " · " + PlayAlong.Phase : "");
             else if (State.Mode == DemoMode.Learn)

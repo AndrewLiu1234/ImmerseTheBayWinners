@@ -109,6 +109,34 @@ namespace UntitledGuitarApp.Tests.EditMode
         }
 
         [Test]
+        public void Align_FromPlay_GoesIdleWithARestart_FromIdle_DoesNotRestart()
+        {
+            DemoState s = Make();
+            int g = s.Generation;
+            Assert.AreEqual(DemoChange.Align, s.Apply(DemoCommand.Align));
+            Assert.AreEqual(DemoMode.Idle, s.Mode);
+            Assert.AreEqual(g, s.Generation, "already idle: nothing to restart");
+            s.Apply(DemoCommand.Play);
+            g = s.Generation;
+            Assert.AreEqual(DemoChange.Align, s.Apply(DemoCommand.Align));
+            Assert.AreEqual(DemoMode.Idle, s.Mode, "the song stops before the glances");
+            Assert.AreEqual(g + 1, s.Generation);
+        }
+
+        [Test]
+        public void Reanchor_KeepsTheMode()
+        {
+            DemoState s = Make();
+            s.Apply(DemoCommand.Play);
+            int g = s.Generation;
+            Assert.AreEqual(DemoChange.Reanchor, s.Apply(DemoCommand.Reanchor));
+            Assert.AreEqual(DemoMode.Play, s.Mode);
+            Assert.AreEqual(g, s.Generation);
+            Assert.AreEqual(DemoCommand.Align, DemoKeys.CommandFor(k => k == KeyCode.A));
+            Assert.AreEqual(DemoCommand.Reanchor, DemoKeys.CommandFor(k => k == KeyCode.Z));
+        }
+
+        [Test]
         public void SetIndices_Clamps_AndChangesNeitherModeNorGeneration()
         {
             DemoState s = Make(songs: 3, chords: 5, tempos: 2, startTempo: 0);

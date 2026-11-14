@@ -15,16 +15,17 @@ namespace UntitledGuitarApp.Runtime
         public static readonly KeyCode[] Keys =
         {
             KeyCode.L, KeyCode.P, KeyCode.I, KeyCode.Escape, KeyCode.N, KeyCode.LeftBracket, KeyCode.RightBracket, KeyCode.S, KeyCode.R,
+            KeyCode.A, KeyCode.Z,
         };
 
         public static readonly DemoCommand[] Commands =
         {
             DemoCommand.Learn, DemoCommand.Play, DemoCommand.Idle, DemoCommand.Idle, DemoCommand.Next, DemoCommand.TempoDown,
-            DemoCommand.TempoUp, DemoCommand.Skip, DemoCommand.Recenter,
+            DemoCommand.TempoUp, DemoCommand.Skip, DemoCommand.Recenter, DemoCommand.Align, DemoCommand.Reanchor,
         };
 
         /// <summary>One line for the operator (spectator screen or log): what each key does.</summary>
-        public const string Legend = "L learn · P play · N next · [ ] tempo · S skip · R recenter · I/Esc idle";
+        public const string Legend = "L learn · P play · N next · [ ] tempo · S skip · A align · Z re-anchor · R recenter · I/Esc idle";
 
         /// <summary>The first command whose key <paramref name="pressedThisFrame"/> reports as pressed; None if none is.</summary>
         public static DemoCommand CommandFor(Func<KeyCode, bool> pressedThisFrame)
