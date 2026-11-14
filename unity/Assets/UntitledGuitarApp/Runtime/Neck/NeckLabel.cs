@@ -2,9 +2,8 @@
 //
 // SEAM: this is the ONLY text code in Runtime/Neck, kept small on purpose. The HUD worker's HudText (Runtime/Hud) does the
 // same job and has the same five members (Create(parent, name), SetText, SetAngularHeight(capDegrees, distanceM), Color,
-// Visible), but do NOT swap it in yet: in the full-app frame of 14 Nov (docs/img/walking-skeleton-sbs.png) its text also
-// comes out at about 0.8 of the asked height (the chord name "G", asked for 4 degrees by ChordLabel.CurrentDegrees,
-// measures 3.28 including the G's overshoot). Swap only once HudText draws text at the size it is asked for.
+// Visible). Since 14 Nov ~12:45 both are sized from constants measured in the same calibration run
+// (Editor/HudTextCalibration.cs), so either can be used.
 //
 // SOURCES (Unity 2021.3.3f1, read offline under /Applications/Unity/Hub/Editor/2021.3.3f1/):
 //  * Built-in font name: "Arial.ttf". Unity.app/Contents/Resources/PackageManager/BuiltInPackages/com.unity.ugui/Runtime/UI/
@@ -16,7 +15,8 @@
 //    also set the texture of the font material": the MeshRenderer gets font.material.
 //  * Documentation/en/ScriptReference/TextMesh-characterSize.html says only "The size of each character (This scales the
 //    whole text)": the docs give NO formula from fontSize / characterSize to world units. So the size comes from a
-//    MEASUREMENT in Unity's own renders (DigitUnitsPerFontSize below), and the transform is scaled to fit.
+//    MEASUREMENT in Unity's own renders (DigitUnitsPerFontSize below, by Editor/HudTextCalibration.cs), and the transform
+//    is scaled to fit.
 //  * NOT used any more: Renderer.localBounds (Documentation/en/ScriptReference/Renderer-localBounds.html). In the 14 Nov
 //    previews the old code got two sizes for the same request from it: before anything had been drawn it fell back to the
 //    community figure (digits at 0.769 of the asked size); in the left-handed preview, made after three renders, it used
@@ -37,12 +37,19 @@ namespace UntitledGuitarApp.Runtime.Neck
 
         /// <summary>
         /// MEASURED, not documented: how tall a digit is in the TextMesh's own units, per unit of fontSize, at characterSize 1.
-        /// The usual community figure (0.1 unit per font pixel, times Arial's digit height of 0.716 em) gives 0.0716, but in
-        /// the Unity renders of 14 Nov (build/previews/neck, 10:07, and docs/img/walking-skeleton-sbs.png) a "1" sized with
-        /// that figure came out at 0.769 of the asked size: 14.50 mm instead of 18.85 mm, from its 50% edges, at its real
-        /// distance from the eye (0.869 m). The three renders agree within half a percent. 0.0716 x 0.769 = 0.0551.
+        /// Source: Editor/HudTextCalibration.cs, run in the user's editor on 14 Nov ~12:40 (Unity 2021.3.3f1, Metal;
+        /// build/previews/hudtext/hudtext-calibration.json): a NeckLabel "1" at 1.2 / 2 / 3 / 4 degrees and 1.0 / 1.2 m, measured
+        /// from the area-method 50% edges of its flat top and bottom with a glasses-eye camera, gave 0.071842 to 0.071881 (mean
+        /// 0.071867); a control quad of known height read 0.999 by the same code. Arial Bold's "1" is 1472 font units tall
+        /// against the "H"'s 1466, and the same run measured the "H" at 0.071521: 0.071521 x 1472 / 1466 = 0.07181, 0.1% from
+        /// the digit's own value. The textbook figure (0.1 unit per font pixel x 0.716 em = 0.0716) is within 0.4%.
+        /// WHY THE EARLIER VALUE (0.0551) WAS WRONG: it came from a reading of the 10:07 neck render that put a "1" sized with
+        /// 0.0716 at 0.769 of its request (14.50 mm for 18.85). That reading was off by a factor of about 1.30, the size of
+        /// the error itself: with 0.0551 the digits were drawn 1.30 times too big, both in the calibration (1.304, all eight
+        /// cases within 0.1%) and in the 11:38 player frame (the "1" under the G chord: 71.3 px at 0.853 m = 27.0 mm for a
+        /// 20.4 mm request, 1.32). Where the 1.30 entered that reading is not recorded in its notes.
         /// </summary>
-        public const float DigitUnitsPerFontSize = 0.0551f;
+        public const float DigitUnitsPerFontSize = 0.07187f;
 
         /// <summary>A digit's height in font pixels per unit of fontSize, if one TextMesh unit is ten font pixels (the usual figure).</summary>
         const float DigitPixelsPerFontSize = DigitUnitsPerFontSize * 10f;
