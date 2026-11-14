@@ -1,6 +1,8 @@
 // HardeningTests.cs: EditMode tests for the demo-hardening fixes (Sat 2026-11-14).
 //   MonitorLayoutTests   the maths behind "UGA/Glasses Game View" on macOS (NSScreen lines -> editor screen space -> the glasses)
 //   ReplayFixtureTests   the shipped WAV-replay file (header, length, level) and every wavReplayFile the flag files name exists
+//   EditorSimHeadTests   the mouse-look maths; in Unity also: the component can be added, and it runs after ImuHeadPose and
+//                        before every other Runtime behaviour (those two need UNITY_EDITOR, so the offline runner skips them)
 // No Play Mode, no device, no network, no sleeping.
 using System;
 using System.Collections.Generic;
@@ -9,6 +11,7 @@ using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using NUnit.Framework;
 using UntitledGuitarApp.Runtime.Audio;
+using UntitledGuitarApp.Runtime.Head;
 using UntitledGuitarApp.Runtime.Render;
 
 namespace UntitledGuitarApp.Tests.EditMode
@@ -364,5 +367,82 @@ namespace UntitledGuitarApp.Tests.EditMode
                 Assert.Greater(editor[0].Height, 0.0);
             }
         }
+    }
+
+    [TestFixture]
+    public class EditorSimHeadTests
+    {
+        [Test]
+        public void Look_MouseRightTurnsRight_MouseUpLooksUp()
+        {
+            float yaw = 10f, pitch = 0f;
+            SimHeadLook.ApplyLook(ref yaw, ref pitch, 100f, 0f, 0.15f, 85f, false);
+            Assert.AreEqual(25f, yaw, 1e-4f);
+            SimHeadLook.ApplyLook(ref yaw, ref pitch, 0f, 100f, 0.15f, 85f, false);
+            Assert.AreEqual(-15f, pitch, 1e-4f, "up = negative pitch about X in Unity");
+            SimHeadLook.ApplyLook(ref yaw, ref pitch, 0f, 100f, 0.15f, 85f, true);
+            Assert.AreEqual(0f, pitch, 1e-4f, "inverted: the same movement looks down");
+        }
+
+        [Test]
+        public void Look_PitchIsClamped_YawWraps()
+        {
+            float yaw = 350f, pitch = 0f;
+            SimHeadLook.ApplyLook(ref yaw, ref pitch, 100f, 10000f, 0.15f, 85f, false);
+            Assert.AreEqual(5f, yaw, 1e-3f, "350 + 15 wraps to 5");
+            Assert.AreEqual(-85f, pitch, 1e-4f);
+            SimHeadLook.ApplyLook(ref yaw, ref pitch, -100f, -20000f, 0.15f, 85f, false);
+            Assert.AreEqual(350f, yaw, 1e-3f);
+            Assert.AreEqual(85f, pitch, 1e-4f);
+        }
+
+#if UNITY_EDITOR
+        static int OrderOf(Type t)
+        {
+            UnityEngine.DefaultExecutionOrder a = (UnityEngine.DefaultExecutionOrder)Attribute.GetCustomAttribute(t, typeof(UnityEngine.DefaultExecutionOrder));
+            return a != null ? a.order : 0;
+        }
+
+        // Relational: ImuHeadPose writes the head, then the sim head overwrites it, then everything else (all readers) runs.
+        [Test]
+        public void SimHead_RunsAfterImuHeadPose_AndBeforeEveryOtherRuntimeBehaviour()
+        {
+            Type sim = typeof(UntitledGuitarApp.Runtime.Head.EditorSimHead);
+            Type imu = typeof(UntitledGuitarApp.Runtime.Head.ImuHeadPose);
+            Assert.AreEqual(UntitledGuitarApp.Runtime.Head.EditorSimHead.ExecutionOrder, OrderOf(sim));
+            Assert.Less(OrderOf(imu), OrderOf(sim), "the sim head must write after ImuHeadPose (which resets the head every Update)");
+            List<string> early = new List<string>();
+            foreach (Type t in imu.Assembly.GetTypes())
+            {
+                if (t == sim || t == imu || t.IsAbstract || !typeof(UnityEngine.MonoBehaviour).IsAssignableFrom(t)) continue;
+                if (OrderOf(t) <= OrderOf(sim)) early.Add(t.FullName + " (" + OrderOf(t) + ")");
+            }
+            Assert.IsEmpty(early, "these run before the sim head; if one reads the head it sees last frame's pose: " + string.Join(", ", early.ToArray()));
+        }
+
+        // The bug this replaces: an Editor-assembly MonoBehaviour cannot be added ("Can't add script behaviour ... editor script").
+        [Test]
+        public void SimHead_CanBeAddedToAGameObject_AndRemovedAgain()
+        {
+            UnityEngine.GameObject go = new UnityEngine.GameObject("Head (EditorSimHeadTests)");
+            try
+            {
+                string error;
+                UntitledGuitarApp.Runtime.Head.EditorSimHead rig = UntitledGuitarApp.Runtime.Head.EditorSimHead.Attach(go.transform, out error);
+                Assert.IsNotNull(rig, "AddComponent refused it: " + error);
+                Assert.IsNull(error);
+                Assert.AreSame(rig, UntitledGuitarApp.Runtime.Head.EditorSimHead.Attach(go.transform, out error), "a second attach returns the same rig");
+                Assert.IsTrue(UntitledGuitarApp.Runtime.Head.EditorSimHead.IsAttached(go.transform));
+                Assert.IsTrue(UntitledGuitarApp.Runtime.Head.EditorSimHead.Detach(go.transform));
+                Assert.IsFalse(UntitledGuitarApp.Runtime.Head.EditorSimHead.IsAttached(go.transform));
+                Assert.IsNull(UntitledGuitarApp.Runtime.Head.EditorSimHead.Attach(null, out error));
+                Assert.IsNotNull(error);
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+#endif
     }
 }
