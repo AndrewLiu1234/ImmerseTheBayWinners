@@ -4,32 +4,32 @@
   "name": "Em",
   "units": "mm",
   "space": "neck-local-unity",
-  "source": { "blend": "ghost_hands.blend", "date": "2026-11-14T18:08:24Z", "exporter": "export_poses.py 1.1.0", "blender": "5.2.2 LTS" },
+  "source": { "blend": "ghost_hands.blend", "date": "2026-11-14T18:10:24Z", "exporter": "export_poses.py 1.1.0", "blender": "5.2.2 LTS" },
   "rootPositionMm": { "x": 37.004, "y": -53.906, "z": 117.967 },
   "bones": [
     { "name": "wrist", "rotation": { "x": -0.123648, "y": 0.913033, "z": 0.379519, "w": 0.083944 } },
     { "name": "thumb_proximal", "rotation": { "x": -0.122689, "y": 0.00061, "z": -0.334435, "w": 0.934398 } },
     { "name": "thumb_intermediate", "rotation": { "x": 0.103994, "y": 0.023107, "z": -0.040769, "w": 0.993473 } },
     { "name": "thumb_distal", "rotation": { "x": -0.003922, "y": 0.075416, "z": 0.034627, "w": 0.996543 } },
-    { "name": "index_proximal", "rotation": { "x": -0.005108, "y": -0.052244, "z": -0.00549, "w": 0.998606 } },
-    { "name": "index_intermediate", "rotation": { "x": 0.35328, "y": 0, "z": -0.037131, "w": 0.934781 } },
-    { "name": "index_distal", "rotation": { "x": 0.183959, "y": 0, "z": -0.019335, "w": 0.982744 } },
+    { "name": "index_proximal", "rotation": { "x": 0.052414, "y": -0.031571, "z": -0.007313, "w": 0.9981 } },
+    { "name": "index_intermediate", "rotation": { "x": 0.263004, "y": 0, "z": -0.027643, "w": 0.964399 } },
+    { "name": "index_distal", "rotation": { "x": 0.153314, "y": 0, "z": -0.016114, "w": 0.988046 } },
     { "name": "middle_proximal", "rotation": { "x": 0.075914, "y": -0.122803, "z": -0.005994, "w": 0.989505 } },
     { "name": "middle_intermediate", "rotation": { "x": 0.483537, "y": 0, "z": -0.012662, "w": 0.875232 } },
     { "name": "middle_distal", "rotation": { "x": 0.265138, "y": 0, "z": -0.006943, "w": 0.964185 } },
     { "name": "ring_proximal", "rotation": { "x": 0.046459, "y": 0.116443, "z": 0.010517, "w": 0.992054 } },
     { "name": "ring_intermediate", "rotation": { "x": 0.493519, "y": 0, "z": 0.03451, "w": 0.86905 } },
     { "name": "ring_distal", "rotation": { "x": 0.289566, "y": 0, "z": 0.020248, "w": 0.956944 } },
-    { "name": "pinky_proximal", "rotation": { "x": -0.005707, "y": -0.007733, "z": -0.001929, "w": 0.999952 } },
-    { "name": "pinky_intermediate", "rotation": { "x": 0.364548, "y": 0, "z": 0.064279, "w": 0.928963 } },
-    { "name": "pinky_distal", "rotation": { "x": 0.175218, "y": 0, "z": 0.030896, "w": 0.984045 } }
+    { "name": "pinky_proximal", "rotation": { "x": -0.087702, "y": -0.012449, "z": -0.018035, "w": 0.995906 } },
+    { "name": "pinky_intermediate", "rotation": { "x": 0.464106, "y": 0, "z": 0.081834, "w": 0.881991 } },
+    { "name": "pinky_distal", "rotation": { "x": 0.243987, "y": 0, "z": 0.043021, "w": 0.968824 } }
   ],
   "fingertips": [
     { "bone": "thumb_distal", "positionMm": { "x": 10.867, "y": -29.74, "z": -3 } },
-    { "bone": "index_distal", "positionMm": { "x": 32.856, "y": 17.5, "z": -21.994 } },
+    { "bone": "index_distal", "positionMm": { "x": 31.419, "y": 17.5, "z": -27.716 } },
     { "bone": "middle_distal", "positionMm": { "x": 62.116, "y": 1.5, "z": -11.018 } },
     { "bone": "ring_distal", "positionMm": { "x": 62.116, "y": 1.5, "z": -3.673 } },
-    { "bone": "pinky_distal", "positionMm": { "x": 90.128, "y": 17.5, "z": 12.272 } }
+    { "bone": "pinky_distal", "positionMm": { "x": 87.738, "y": 17.5, "z": 19.321 } }
   ],
   "bind": {
     "joints": [

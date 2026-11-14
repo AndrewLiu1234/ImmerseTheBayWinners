@@ -37,7 +37,7 @@ def _new_material(name):
     return mat
 
 
-def make_ghost_material(name="GhostHand", fill=0.07, rim=1.7, tips=2.2, rim_power=2.4):
+def make_ghost_material(name="GhostHand", fill=0.05, rim=1.5, tips=2.0, rim_power=3.4):
     """Additive emission: fill + facing-ratio rim + fingertip glow, faded toward the forearm stub."""
     mat = _new_material(name)
     nt = mat.node_tree

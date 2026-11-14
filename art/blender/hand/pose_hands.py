@@ -321,14 +321,14 @@ def solve_fretting(model, neck, name, targets):
     unit = MM * model.scale
     lane = {"index": -19.0 * unit, "middle": 0.0, "ring": 18.5 * unit, "pinky": 36.0 * unit}
     hover = name == "rest"
-    if hover:   # fingers loosely over their home frets, 2 cm above the strings
+    if hover:   # the palm sits as for a chord over frets 1-3 on the middle strings, then backs off; no finger touches
         goals = {}
-        for finger, string_no in (("index", 3), ("middle", 3), ("ring", 3), ("pinky", 4)):
+        for finger in ("index", "middle", "ring"):
             x = neck.target_x(HOME_FRET[finger])
-            goals[finger] = Vector((x, neck.string_y(string_no, x), neck.string_height + 20.0 * MM))
-        style = HOVER_STYLE
+            goals[finger] = Vector((x, neck.string_y(3, x), neck.string_height))
     else:
-        goals, style = dict(targets), FINGER_STYLE
+        goals = dict(targets)
+    style = FINGER_STYLE
     beta = 62.0 * DEG   # the palm faces up and a little back toward the player; the knuckles are in front of the fretboard
     f = Vector((0.0, -math.cos(beta), math.sin(beta)))
     p = Vector((0.0, -math.sin(beta), -math.cos(beta)))
@@ -363,6 +363,13 @@ def solve_fretting(model, neck, name, targets):
     best, _value = nelder_mead(evaluate, [0.0] * 6, [0.12, 0.12, 0.12, 0.008, 0.008, 0.008], iterations=320)
     best, value = nelder_mead(evaluate, best, [0.05, 0.05, 0.05, 0.004, 0.004, 0.004], iterations=200)
     cost, wrist, solved, thumb = evaluate(best, full=True)
+    loose = {"index": (18.0, 42.0, 24.0), "middle": (22.0, 48.0, 28.0), "ring": (25.0, 52.0, 30.0), "pinky": (28.0, 55.0, 32.0)}
+    if hover:
+        wrist = wrist.copy()
+        wrist.translation = wrist.translation + Vector((0.0, 5.0 * MM, 14.0 * MM))
+        solved = {}
+        tgt, pref, pad = thumb_goal(model, neck, wrist)
+        thumb = solve_digit(model, "thumb", wrist, tgt + Vector((0.0, 0.0, -6.0 * MM)), THUMB_STYLE, pref_dir=pref, pad_dir=pad)
 
     mats = {"wrist": wrist}
     report = dict(cost=cost, fingers={}, wrist=wrist)
@@ -374,7 +381,7 @@ def solve_fretting(model, neck, name, targets):
     for fg in rig.FINGERS:      # unused fingers: a loose curl, lifted clear of the strings
         if fg in solved:
             continue
-        curled, tip = curl_digit(model, fg, wrist, (22.0, 48.0, 28.0))
+        curled, tip = curl_digit(model, fg, wrist, loose[fg])
         floor = neck.string_height + 13.0 * MM
         if tip.z < floor and abs(tip.y) < neck.half_width(tip.x) + 8.0 * MM:
             res = solve_digit(model, fg, wrist, Vector((tip.x, tip.y, floor + 3.0 * MM)), HOVER_STYLE)
