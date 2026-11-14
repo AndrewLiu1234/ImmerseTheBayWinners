@@ -5,7 +5,7 @@
 // When Core/Contracts and Core's PlayAlongSession land, an adapter fills this same struct and the dev driver is deleted;
 // nothing that consumes the struct changes. Plain data, no UnityEngine types, no allocation when copied.
 //
-// Units: beats and seconds. Beat 0 is the first downbeat of the song; the count-in runs on negative beats.
+// Units: beats and seconds. Beat 0 is the downbeat of bar 1 (after any pickup); the count-in and a pickup run on negative beats.
 // Chord names are the pose / chord-library names: "G", "C", "D", "Em", "Am" (StreamingAssets/poses/fretting-<name>.pose.json).
 // Strum slots are song.json's strum.slots strings ("D" down, "U" up, "-" no stroke), docs/SONGS.md.
 namespace UntitledGuitarApp.Runtime.Practice
@@ -42,7 +42,12 @@ namespace UntitledGuitarApp.Runtime.Practice
         /// <summary>One bar of the song's strumming pattern (song.json strum.slots). Shared and read-only: never modify. Null = none.</summary>
         public string[] StrumSlots;
 
-        /// <summary>Pattern slots per beat: strum.subdivision / 4 in x/4 time (8 gives 2). At least 1 whenever StrumSlots is set.</summary>
+        /// <summary>
+        /// Pattern slots per beat = slots per bar / beats per bar. song.json's strum.subdivision IS the slot count per bar (Core's
+        /// Practice/PatternClock: "Pattern.Subdivision = slots per bar"): Riptide 8 slots / 4 beats = 2, Happy Birthday (3/4)
+        /// 6 / 3 = 2. Never subdivision / 4. At least 1 whenever StrumSlots is set. Slot 0 is bar 1's downbeat (Beat 0); a pickup
+        /// and the count-in are on negative beats and are not patterned (no strokes), as in PatternClock.
+        /// </summary>
         public int SlotsPerBeat;
 
         /// <summary>Nothing to play: inactive, no chords, no pattern.</summary>
