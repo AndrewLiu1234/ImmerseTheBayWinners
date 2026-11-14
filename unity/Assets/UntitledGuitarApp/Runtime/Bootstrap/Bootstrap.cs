@@ -3,9 +3,12 @@ using UnityEngine;
 using UntitledGuitarApp.Runtime.Audio;
 using UntitledGuitarApp.Runtime.Flags;
 using UntitledGuitarApp.Runtime.Gaze;
+using UntitledGuitarApp.Runtime.GhostHand;
 using UntitledGuitarApp.Runtime.Head;
 using UntitledGuitarApp.Runtime.Hud;
 using UntitledGuitarApp.Runtime.Logging;
+using UntitledGuitarApp.Runtime.Neck;
+using UntitledGuitarApp.Runtime.Neck.Dev;
 using UntitledGuitarApp.Runtime.Render;
 using UntitledGuitarApp.Runtime.Spectator;
 
@@ -17,24 +20,32 @@ namespace UntitledGuitarApp.Runtime
     /// makes the scene. Composition order: flags and the session recorder, the stereo rig (its Head is the wearer's head),
     /// IMU head pose driving that head (head-locked when packets stop), the spectator view on the Mac screen, the
     /// head-locked HUD (chord label, mic meter, SIMULATED badge), audio capture (mic, or WAV replay when flags say
-    /// audioSource = wav), and gaze-dwell input with its reticle. Keys: R recenters the IMU heading (Space is gaze confirm).
-    /// In the editor, menu UGA > Editor Sim Rig on the Head gives mouse-look; it writes the head's world rotation after the
-    /// IMU (execution order 10000 vs -100), so it simply wins while attached.
-    /// Not wired yet (their modules are still being built): the floating neck, the ghost hands.
+    /// audioSource = wav), gaze-dwell input with its reticle, and the floating neck with the G chord's fingertip dots and the
+    /// capsule fretting ghost hand forming G on it. Keys: R recenters the IMU heading and re-places the neck (Space is gaze
+    /// confirm). In the editor, menu UGA > Editor Sim Rig on the Head gives mouse-look; it writes the head's world rotation
+    /// after the IMU (execution order 10000 vs -100), so it simply wins while attached.
+    /// TEMPORARY: the neck layout and the G dots come from Neck/Dev/DevNeckLayout until Core's FretboardGeometry and
+    /// ChordLibrary land (Person 2); then this file maps Core's data instead and DevNeckLayout is deleted.
+    /// Not wired yet: neck alignment (needs Core's NeckSolver), the Blender-posed hands, the strumming hand, Core events.
     /// Smoke run of a built player (no window, quits by itself, writes Player.log):
     ///   build/UntitledGuitarApp.app/Contents/MacOS/"Untitled Guitar App" -batchmode -nographics -ugaSmokeSeconds 5 -logFile build/smoke.log
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class Bootstrap : MonoBehaviour
     {
-        // Head-locked placement for the walking skeleton, in degrees from the view centre at HudDistanceM. They sit to the
-        // lower left, where the floating neck will hang; the neck HUD card replaces them once the neck and play-along HUD land.
+        // Head-locked placement for the walking skeleton, in degrees from the view centre at HudDistanceM (the view is about
+        // 46 x 27 degrees). The floating neck hangs lower left, roughly 2 to 6 degrees below centre, so the chord name sits
+        // above it ("next" is drawn under the current chord) and the mic meter lower right, inside the frame. The neck HUD
+        // card (Hud/Play) takes over the chord name once Core's practice events drive it. Checked on a -ugaSnapshot frame.
         const float HudDistanceM = 1f;
-        const float ChordAzimuthDeg = -12f, ChordElevationDeg = -4f;
-        const float MeterAzimuthDeg = -18f, MeterElevationDeg = -12f;
+        const float ChordAzimuthDeg = -14f, ChordElevationDeg = 8f;
+        const float MeterAzimuthDeg = 8f, MeterElevationDeg = -8f;   // its label hangs ~4 degrees below this anchor
         const float BadgeAzimuthDeg = 0f, BadgeElevationDeg = 11f;
         const float StatusIntervalSec = 0.5f;
         const string SmokeArgument = "-ugaSmokeSeconds";
+        // With -ugaSnapshot <file.png>, the smoke run renders both eye cameras into one side-by-side frame (what the glasses
+        // show) and writes it before quitting. Needs graphics: use -batchmode without -nographics.
+        const string SnapshotArgument = "-ugaSnapshot";
 
         /// <summary>The live instance (one per app). Null before Awake and after the object is destroyed.</summary>
         public static Bootstrap Instance { get; private set; }
@@ -50,13 +61,22 @@ namespace UntitledGuitarApp.Runtime
         public MicCapture Mic { get; private set; }
         public GazeDwell Gaze { get; private set; }
         public Reticle Reticle { get; private set; }
+        public FloatingNeck Neck { get; private set; }
+        /// <summary>The fretting ghost hand (procedural capsule hand), parented to the neck's socket: neck frame, metres.</summary>
+        public CapsuleHand FrettingHand { get; private set; }
 
+        readonly FingertipDot[] _dots = new FingertipDot[FloatingNeck.MaxDots];
+        readonly StringMark[] _marks = new StringMark[6];
+        readonly Vector3[] _fingertipTargets = new Vector3[4];
+        int _dotCount;
+        bool _neckFollowsHead;
         float _nextStatusAt;
         int _shownSampleRate = -1;
         int _statusFps = -1, _statusRate = -1, _statusImuHz = -1;
         bool _statusCapturing, _statusReplay, _statusStereo, _statusTracking;
         string _statusDevice = "";
         float _smokeQuitAt = -1f;
+        string _snapshotPath;
         bool _composed;
 
         void Awake()
@@ -126,7 +146,53 @@ namespace UntitledGuitarApp.Runtime
             Reticle.Gaze = Gaze;
             Reticle.Head = Rig.Head;
 
-            UGALog.Event("boot_done", "stereo", Rig.IsStereo, "display", Rig.TargetDisplay, "displays", Display.displays.Length);
+            ComposeNeckAndHand(flags);
+
+            // (stereo.apply already logs the target display; UGALog.Event takes at most three key/value pairs)
+            UGALog.Event("boot_done", "stereo", Rig.IsStereo, "displays", Display.displays.Length, "dots", _dotCount);
+        }
+
+        /// <summary>
+        /// The floating neck with the G chord and the fretting ghost hand on it. Head-locked (follows the head) when flags say
+        /// anchorMode = headLocked; otherwise placed once in front of the head and left in the world, so it can be looked at
+        /// while the IMU tracks (neck alignment, the real "aligned" mode, needs Core's NeckSolver and comes later).
+        /// </summary>
+        void ComposeNeckAndHand(FlagSet flags)
+        {
+            Neck = FloatingNeck.Create(transform);
+            NeckLayout layout = DevNeckLayout.Create();   // TEMPORARY dev data (see the class summary)
+            _dotCount = DevNeckLayout.GChord(layout, _dots, _marks);
+            if (!Neck.Build(layout))
+            {
+                UGALog.Warn("neck_layout_invalid", "the dev neck layout failed NeckLayout.Validate; see the warnings above");
+                return;
+            }
+            Neck.SetDots(_dots, _dotCount);
+            Neck.SetStringMarks(_marks);
+            _neckFollowsHead = string.Equals(flags.anchorMode, "headLocked", StringComparison.Ordinal);
+            Neck.PlaceFloating(Rig.Head, _neckFollowsHead);
+
+            // Left hand for a right-handed player; for a left-handed player the neck's mirrored socket mirrors the hand too.
+            FrettingHand = CapsuleHand.Create(Neck.Socket, true);
+            FrettingHand.SetFingertipTargets(FingertipTargets(_dots, _dotCount, _fingertipTargets), true);
+        }
+
+        /// <summary>
+        /// Fingers 1-4 (index .. pinky) to the socket-local points their pads should touch: each dot's (x, z) in the neck frame,
+        /// millimetres to metres, on the fretboard plane (the hand hovers above it by itself). A finger with no dot gets a NaN x,
+        /// which CapsuleHand reads as "not used".
+        /// </summary>
+        public static Vector3[] FingertipTargets(FingertipDot[] dots, int count, Vector3[] result)
+        {
+            for (int f = 0; f < result.Length; f++)
+                result[f] = new Vector3(float.NaN, 0f, 0f);
+            for (int i = 0; i < count && i < dots.Length; i++)
+            {
+                int finger = dots[i].finger;
+                if (finger < 1 || finger > result.Length) continue;
+                result[finger - 1] = new Vector3(dots[i].xMm * 0.001f, 0f, dots[i].zMm * 0.001f);
+            }
+            return result;
         }
 
         void Update()
@@ -135,6 +201,7 @@ namespace UntitledGuitarApp.Runtime
             if (HeadPose != null && Input.GetKeyDown(KeyCode.R))
             {
                 HeadPose.Recenter();   // the current heading becomes "forward" (logs imu_recenter)
+                if (Neck != null && Rig != null) Neck.PlaceFloating(Rig.Head, _neckFollowsHead);
             }
             if (Meter != null && Mic != null)
             {
@@ -155,6 +222,7 @@ namespace UntitledGuitarApp.Runtime
             if (_smokeQuitAt >= 0f && now >= _smokeQuitAt)
             {
                 _smokeQuitAt = -1f;
+                if (!string.IsNullOrEmpty(_snapshotPath)) WriteSnapshot(_snapshotPath);
                 UGALog.Event("smoke_done", "composed", _composed, "seconds", now);
                 Application.Quit(_composed ? 0 : 1);
             }
@@ -189,6 +257,11 @@ namespace UntitledGuitarApp.Runtime
             string[] args = Environment.GetCommandLineArgs();
             for (int i = 0; i + 1 < args.Length; i++)
             {
+                if (string.Equals(args[i], SnapshotArgument, StringComparison.Ordinal))
+                {
+                    _snapshotPath = args[i + 1];
+                    continue;
+                }
                 if (!string.Equals(args[i], SmokeArgument, StringComparison.Ordinal)) continue;
                 float seconds;
                 if (float.TryParse(args[i + 1], System.Globalization.NumberStyles.Float,
@@ -197,7 +270,47 @@ namespace UntitledGuitarApp.Runtime
                     _smokeQuitAt = Time.unscaledTime + seconds;
                     UGALog.Event("smoke_start", "seconds", seconds);
                 }
-                return;
+            }
+        }
+
+        /// <summary>
+        /// Renders the eye cameras into one side-by-side texture (their viewport rects split it into halves, exactly as on
+        /// display 2) and writes it as PNG. Test aid for smoke runs; never called in normal use.
+        /// APIs: Camera.targetTexture / Camera.Render, RenderTexture, Texture2D.ReadPixels, ImageConversion.EncodeToPNG.
+        /// </summary>
+        void WriteSnapshot(string path)
+        {
+            if (Rig == null) return;
+            int width = Rig.IsStereo ? 3840 : 1920, height = 1080;
+            var rt = new RenderTexture(width, height, 24);
+            var tex = new Texture2D(width, height, TextureFormat.RGB24, false);
+            RenderTexture previous = RenderTexture.active;
+            try
+            {
+                Camera[] eyes = { Rig.LeftEye, Rig.RightEye };
+                foreach (Camera eye in eyes)
+                {
+                    if (eye == null || !eye.enabled) continue;
+                    eye.targetTexture = rt;
+                    eye.Render();
+                    eye.targetTexture = null;
+                }
+                RenderTexture.active = rt;
+                tex.ReadPixels(new Rect(0, 0, width, height), 0, 0);
+                tex.Apply();
+                System.IO.File.WriteAllBytes(path, tex.EncodeToPNG());
+                UGALog.Event("snapshot", "path", path, "width", width, "height", height);
+            }
+            catch (Exception e)
+            {
+                UGALog.Error("snapshot_failed", e.Message);
+            }
+            finally
+            {
+                RenderTexture.active = previous;
+                rt.Release();
+                Destroy(rt);
+                Destroy(tex);
             }
         }
 
