@@ -20,10 +20,16 @@ namespace UntitledGuitarApp.Runtime.Neck
         /// <summary>Eye to nut, in metres. 0.8 to 1.0.</summary>
         public float distanceM;
 
-        /// <summary>Direction of the nut, degrees to the right of straight ahead (negative = left). -20 to -5: lower-left of view.</summary>
+        /// <summary>
+        /// Direction of the nut, degrees to the right of straight ahead (negative = left). -18 to -5: lower-left of view, with
+        /// the X / O row beyond the nut still inside the 46 degree wide view.
+        /// </summary>
         public float azimuthDeg;
 
-        /// <summary>Direction of the nut, degrees above straight ahead (negative = below). -12 to -1.</summary>
+        /// <summary>
+        /// Direction of the nut, degrees above straight ahead (negative = below). -7 to -1, so the X / O row (about 9 degrees
+        /// tall, centred on the neck) and the finger numbers stay inside the 27 degree tall view.
+        /// </summary>
         public float elevationDeg;
 
         /// <summary>
@@ -54,8 +60,8 @@ namespace UntitledGuitarApp.Runtime.Neck
             return new FloatingPlacement
             {
                 distanceM = ClampOr(distanceM, 0.8f, 1.0f, d.distanceM),
-                azimuthDeg = ClampOr(azimuthDeg, -20f, -5f, d.azimuthDeg),
-                elevationDeg = ClampOr(elevationDeg, -12f, -1f, d.elevationDeg),
+                azimuthDeg = ClampOr(azimuthDeg, -18f, -5f, d.azimuthDeg),
+                elevationDeg = ClampOr(elevationDeg, -7f, -1f, d.elevationDeg),
                 tiltDeg = ClampOr(tiltDeg, 0f, 60f, d.tiltDeg),
                 scale = ClampOr(scale, 1.0f, 1.2f, d.scale),
             };
