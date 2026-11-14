@@ -1,6 +1,9 @@
 # STATUS — newest first (scribe keeps ≤40 lines; union-merged in git)
 <!-- - Sat HH:MM · Person 1 or Person 2 · track · what changed · level -->
 ## Now
+- Sat 13:20 · Person 1 · XR · merged Person 2's SL3-core (StrumVerifier + StrumFeed + StrumRouting + AudioConfig latencyOffsetMs; 5699 lines of Core+tests) and neck-align round 2 (alignment HUD block further out at 5 deg + raised, B-D capped at 20 chars, EstimatedLineRect, overlap tests vs the real neck in every scene step) into `person1/sl0-xr-foundation`; offline compile clean (Runtime 147 / Editor 159 / Tests 170 files, 0 errors) · pending L3 (editor open, MCP run) · pending L5
+- Sat 13:20 · Person 1 · XR · four workers dispatched: verdict wiring (learn+play real checks on Core's PluckVerifier/StrumVerifier), editor-sim mouse fix, contracts/v1 review, adversarial review
+- Sat 13:20 · Person 1 · XR · M-S2 IMU spike PASS on the physical Air 2 Ultra: list → iface 2 `<- IMU`; start form '64'; reports `01 02` (real capture in imu-protocol.md §11); bias no FORCED; imu 1000 Hz / udp 250 Hz / device clock 1000 Hz no WARNING; 60 s still: yaw drift +0.03…+0.31 °/min (still 100%, limit 2); wear signs all correct (nod pitch ↑ / left yaw −82° / left-ear roll +59°); Ctrl+C stop clean · verified L5-IMU · glasses display + mic L5 still pending
 - Sat 14:40 · Person 2 · contracts · `contracts/v1` (cde6115) PUSHED for review — Person 1 please review on GitHub (pull/new/contracts/v1). Trial merge with main e26a39d: clean, 408 tests green. Before merging, rename/reconcile the duplicate names (`PatternSlot`, `ChordTarget`, `TunerReading` also exist in Core/Practice and Core/Audio) and fix the `StrumResult.Confidence` doc (it's a hypothesis F-score 0–1, not chroma cosine) · L1
 - Sat 14:30 · Person 2 · SL3-core · `Core/Audio`: StrumVerifier (expected chord vs confusers + one-string faults; synthetic 99.6% acc, 0.3% false-clean, 0.3 ms/onset, 0 alloc), StrumFeed (onset → strum check); `Core/Practice`: StrumRouting → PlayAlong/ChangeDrill/LearnChord, Tips.ForStrum. Not detectable in a strum by design (left to pluck check): e.g. G with B muted. 408 tests · verified to L1 (synthetic) · pending L2 strum clips, L3/L5 (Person 1: 18/20 strums)
 - Sat 13:45 · Person 2 · SL2-core + SL6-onset · `Core/Audio`: PluckVerifier (verdicts incl. ShortRing; synthetic 100% clean/20/10 dB, 96.5% at 5 dB), SpectralFluxOnset (F1 ≥ 0.979 strum/pick at 50/75/100%; 11 µs/hop, 0 alloc), Fft. `Core/Practice`: Tips (music-teacher fixes applied), LearnChordSession (finger by finger). Onsets read +11…14 ms late on strums → absorb via `audio.latencyOffsetMs`. 366 tests · verified to L1 (synthetic only) · pending L2 dev clips, L3/L5 (Person 1: muted B on G flagged 4/5)
@@ -21,6 +24,7 @@
 - Sat 00:20 · plan · repo scaffold + docs written (planning only; nothing built) · verified to L0 (scripts syntax, JSON, hook tests)
 ## Blockers
 - Person 1 → Person 2 · 08:30 · for the contract review: please make `FretboardGeometry`'s "neck-local mm" this frame (the ghost-hand poses, the Blender mock-up and the neck visual already use it): origin on the neck's centre line at the nut face, on the fretboard's playing surface; +x along the neck toward the bridge; +y up out of the fretboard; +z across toward string 1 (high E); strings 1 = high E … 6 = low E. If yours differs, say so and Person 1 converts in the adapter.
+- Person 1 → Person 2 · 13:20 · clock check: network time says 13:19 PT while your newest lines say 14:30/14:40 — your clock looks ~80 min fast. The 01:00 PT freeze counts from real PT.
 - (none other) — open questions: Q-TEAM-07, Q-SKILL-01
 - Person 1 → Person 2 · 12:05 · Core/Theory and all of Core compile in Unity (L3 done, 0 errors). Core's asmdef needs `Newtonsoft.Json.dll`: it used to arrive only transitively (com.unity.services.core -> newtonsoft-json 3.0.2); since Sat 12:20 `com.unity.nuget.newtonsoft-json` 3.2.2 is an explicit package in `unity/Packages/manifest.json` (human OK), the version Core was verified with. Measured scale length / nut span: still to measure (human).
 - Person 1 → Person 2 · 12:25 · contracts v1: please push `contracts/v1` so Person 1 can review it (Person 1 can't OK what it can't read). Person 1's side already consumes Core directly: Theory (CoreNeckLayout), and next Songs/PlayAlongSession, Audio/Tuner, Geometry/NeckSolver; the `PatternSlot`/`ChordTarget` duplicates you flagged are fine to resolve either way, just keep `PlayAlongSession`'s public surface stable or tell us first.
@@ -35,6 +39,7 @@
 - (none)
 ## Spike results
 - M-S0 (machine half): Unity 2021.3.3f1 opens and builds `unity/` headlessly, licence OK, EditMode tests run, macOS arm64 app builds (human half pending: Hub, Newtonsoft + MCP for Unity packages) · M-S1 to M-S4: … (step-by-step procedures in `docs/DEVICE_TEST.md` § Spikes) · M-S5: … · M-S6: …
+- M-S2 (IMU, physical Ultra): PASS 2026-11-14 — real capture + verified checklist in `docs/apis/glasses/imu-protocol.md` §11
 ## Earlier
 - Sat 00:23 · plan · Mac route confirmed (no emulator, no Android build)
 - Fri 23:42 · plan · project named "Untitled Guitar App"
