@@ -437,6 +437,7 @@ namespace UntitledGuitarApp.Runtime.GhostHand
         readonly Quaternion[] _current = new Quaternion[GhostPose.BoneCount];     // the pose on screen (parent-relative, H axes)
         readonly Quaternion[] _from = new Quaternion[GhostPose.BoneCount];        // where the running morph started
         readonly Quaternion[] _local = new Quaternion[GhostPose.BoneCount];       // Solve output
+        readonly Quaternion[] _scratch = new Quaternion[GhostPose.BoneCount];     // BlendLinearToward's target
         readonly List<string> _missing = new List<string>();
         readonly GhostRigSolver _solver = new GhostRigSolver();
         Transform _root;
@@ -621,6 +622,29 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             _target = null;
             _morphing = false;
             _hasPose = true;
+            Write();
+            return true;
+        }
+
+        /// <summary>
+        /// Moves what is on screen the fraction <paramref name="follow"/> (0..1) of the way toward the blend of a and b at u
+        /// (u used as it is, like BlendLinear): per bone a slerp, the wrist on a straight line. follow = 1 is exactly
+        /// BlendLinear; less, called every frame with follow = 1 - exp(-dt / tau), it is a short low-pass that catches up
+        /// with a moving target instead of jumping to it (GhostHandsDirector uses it after a held pose hands over to a
+        /// beat-locked one). Stops a running morph. Allocation-free.
+        /// </summary>
+        public bool BlendLinearToward(GhostPose a, GhostPose b, float u, float follow)
+        {
+            if (!(follow < 1f) || !_hasPose) return BlendLinear(a, b, u);
+            if (!Ready(a) || !Ready(b)) return false;
+            Vector3 root;
+            if (!GhostPose.BlendLinear(a, b, u, _scratch, out root)) return false;
+            float w = follow > 0f ? follow : 0f;
+            for (int i = 0; i < GhostPose.BoneCount; i++) _current[i] = GhostPose.Slerp(_current[i], _scratch[i], w);
+            Vector3 c = _currentRootMm;
+            _currentRootMm = new Vector3(c.x + (root.x - c.x) * w, c.y + (root.y - c.y) * w, c.z + (root.z - c.z) * w);
+            _target = null;
+            _morphing = false;
             Write();
             return true;
         }
