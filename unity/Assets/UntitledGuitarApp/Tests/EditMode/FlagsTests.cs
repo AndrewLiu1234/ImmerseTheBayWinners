@@ -1012,6 +1012,7 @@ namespace UntitledGuitarApp.Tests.EditMode
         [Test]
         public void Poll_AnEmptyFile_IsIgnoredWithoutAWarning_UntilContentArrives()
         {
+            Put(_defaults, J("{ 'profile':'dev' }"), 1);                  // so that the start-up itself is warning-free
             Put(_override, J("{ 'profile':'one' }"), 1);
             FlagLoader loader = new FlagLoader(_defaults, _override);
             loader.LoadInitial();
@@ -1044,6 +1045,7 @@ namespace UntitledGuitarApp.Tests.EditMode
         [Test]
         public void Poll_ADeletedFile_KeepsThePreviousValues_WarnsOnce_AndLoadsWhenItReturns()
         {
+            Put(_defaults, J("{ 'profile':'dev' }"), 1);                  // so that the start-up itself is warning-free
             Put(_override, J("{ 'profile':'one' }"), 1);
             FlagLoader loader = new FlagLoader(_defaults, _override);
             loader.LoadInitial();
@@ -1256,6 +1258,37 @@ namespace UntitledGuitarApp.Tests.EditMode
             FlagStore.ResetForTests();
             Assert.AreEqual("dev", FlagStore.Current.profile);
             Assert.IsFalse(FlagStore.IsInitialized);
+        }
+
+        // The Initialize() that Bootstrap calls: StreamingAssets/flags.default.json, then persistentDataPath/flags.json. What
+        // is in the developer's own flags.json is not under test (it is whatever profile they last switched to), so this only
+        // checks the wiring: the right two paths, the shipped defaults file is found and valid, and Changed fires once.
+        [Test]
+        public void Store_Initialize_ReadsStreamingAssetsAndPersistentDataPath()
+        {
+            StackTraceLogType stackBefore = Application.GetStackTraceLogType(LogType.Log);
+            int raised = 0;
+            Action<FlagSet> handler = delegate { raised++; };
+            FlagStore.Changed += handler;
+            try
+            {
+                FlagStore.Initialize();                                   // also calls UGALog.Configure(), restored below
+                Assert.AreEqual(Path.Combine(Application.streamingAssetsPath, "flags.default.json"), FlagStore.DefaultsPath);
+                Assert.AreEqual(Path.Combine(Application.persistentDataPath, "flags.json"), FlagStore.OverridePath);
+                Assert.IsTrue(File.Exists(FlagStore.DefaultsPath), "flags.default.json must be in StreamingAssets so it ships with the build");
+            }
+            finally
+            {
+                FlagStore.Changed -= handler;
+                Application.SetStackTraceLogType(LogType.Log, stackBefore);
+            }
+            Assert.AreEqual(1, raised);
+            Assert.IsTrue(FlagStore.IsInitialized);
+            Assert.IsNotNull(FlagStore.Current);
+            Assert.AreEqual(0, Warnings("flags_defaults_missing"));
+            lock (_log)
+                foreach (KeyValuePair<LogType, string> e in _log)
+                    Assert.IsFalse(e.Value.Contains("flags.default.json is not valid"), "the shipped defaults file must parse: " + e.Value);
         }
     }
 
