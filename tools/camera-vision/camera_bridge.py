@@ -27,6 +27,9 @@ PART_BYTES = 6000
 STATUS_EVERY_S = 5.0
 MAX_FRAME_PARTS = 64
 STALE_FRAME_S = 2.0
+WINDOW_NAME = "XREAL live (q or Esc quits)"
+AXIS_MM = 40.0
+DISPLAY_SCALE = 2
 
 
 def _cv2():
@@ -174,6 +177,53 @@ def quat_to_rmat(q):
         [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]], dtype=np.float64)
 
 
+# ------------------------------------------------------------------------------------------------
+# Display (pure functions; unit-tested) — the live feed for human verification
+# ------------------------------------------------------------------------------------------------
+
+def project_point(p_mm, rmat, t_mm, fx, cx, cy):
+    """Project one marker-frame point (mm) through the marker pose to pixel coords.
+    Returns (u, v) floats, or None when the point is at/behind the camera plane."""
+    import numpy as np
+    cam = rmat @ np.asarray(p_mm, dtype=np.float64) + np.asarray(t_mm, dtype=np.float64)
+    if cam[2] <= 0:
+        return None
+    return (float(fx * cam[0] / cam[2] + cx), float(fx * cam[1] / cam[2] + cy))
+
+
+def annotate_frame(gray, marker_id=None, pos_mm=None, quat=None, fx=DEFAULT_FX, cx=DEFAULT_CX, cy=DEFAULT_CY,
+                   fps=None, scale=DISPLAY_SCALE):
+    """Upscale a grayscale camera frame to BGR and overlay the marker pose + status text.
+    Pure function (no GUI); the returned uint8 BGR image is ready for cv2.imshow."""
+    import cv2
+    big = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_NEAREST)
+    bgr = cv2.cvtColor(big, cv2.COLOR_GRAY2BGR)
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    if fps is not None:
+        cv2.putText(bgr, "XREAL live  %.1f fps" % fps, (8, 22), font, 0.6, (0, 255, 255), 2, cv2.LINE_AA)
+    if pos_mm is not None and quat is not None:
+        rmat = quat_to_rmat(quat)
+        pts = ([0.0, 0.0, 0.0], [AXIS_MM, 0.0, 0.0], [0.0, AXIS_MM, 0.0], [0.0, 0.0, AXIS_MM])
+        px = [project_point(p, rmat, pos_mm, fx, cx, cy) for p in pts]
+        if all(p is not None for p in px):
+            o, xa, ya, za = [(u * scale, v * scale) for (u, v) in px]
+            origin = (int(round(o[0])), int(round(o[1])))
+            for end, color in ((xa, (0, 0, 255)), (ya, (0, 255, 0)), (za, (255, 0, 0))):
+                cv2.line(bgr, origin, (int(round(end[0])), int(round(end[1]))), color, 2, cv2.LINE_8)
+        cv2.putText(bgr, "marker %d  pos %.0f,%.0f,%.0f mm" %
+                    ((marker_id if marker_id is not None else -1), pos_mm[0], pos_mm[1], pos_mm[2]),
+                    (8, 46), font, 0.6, (255, 255, 255), 2, cv2.LINE_AA)
+    else:
+        cv2.putText(bgr, "no marker - aim at the sticker", (8, 46), font, 0.6,
+                    (0, 255, 255), 2, cv2.LINE_AA)
+    return bgr
+
+
+def decode_gray(jpeg):
+    import numpy as np
+    return _cv2().imdecode(np.frombuffer(jpeg, dtype=np.uint8), _cv2().IMREAD_GRAYSCALE)
+
+
 class FrameAssembler(object):
     """Reassembles chunked frames from datagrams; drops stale/incomplete frames."""
 
@@ -249,6 +299,17 @@ def run_bridge(args):
     stats = {"frames": 0, "det": 0, "sent": 0, "last_det": 0.0, "bad": 0}
     last_status = time.monotonic()
     last_pose = None
+    fps = 0.0
+
+    if args.display:
+        try:
+            import numpy as np
+            ph = np.full((int(args.cy * 2), int(args.cx * 2)), 40, dtype=np.uint8)
+            cv2.imshow(WINDOW_NAME, annotate_frame(ph, fps=0.0))
+            cv2.waitKey(1)
+        except cv2.error as e:
+            print("camera-bridge: display unavailable (%s); continuing headless" % e)
+            args.display = False
 
     print("camera-bridge: listening on UDP 127.0.0.1:%d -> 127.0.0.1:%d (cv2 %s, marker %d mm, fx=%.1f)"
           % (args.in_port, args.out_port, cv2.__version__, args.marker_mm, args.fx))
@@ -274,6 +335,7 @@ def run_bridge(args):
                     break
                 fid, jpeg = item
                 stats["frames"] += 1
+                mid = pos = quat = None
                 res = detect_pose(jpeg, marker_mm=args.marker_mm, marker_id=args.marker_id,
                                   fx=args.fx, cx=args.cx, cy=args.cy)
                 if res is not None:
@@ -287,6 +349,18 @@ def run_bridge(args):
                     out = {"t": round(time.time(), 3), "det": 0}
                 sock_out.sendto(json.dumps(out).encode("utf-8"), ("127.0.0.1", args.out_port))
                 stats["sent"] += 1
+                if args.display:
+                    gray = decode_gray(jpeg)
+                    if gray is not None:
+                        try:
+                            cv2.imshow(WINDOW_NAME, annotate_frame(gray, marker_id=mid, pos_mm=pos, quat=quat,
+                                                                   fx=args.fx, cx=args.cx, cy=args.cy, fps=fps))
+                            if cv2.waitKey(1) & 0xFF in (ord("q"), ord("Q"), 27):
+                                print("camera-bridge: display closed (q/Esc); stopping.")
+                                raise KeyboardInterrupt
+                        except cv2.error as e:
+                            print("camera-bridge: display window lost (%s); continuing headless" % e)
+                            args.display = False
             now = time.monotonic()
             if now - last_status >= STATUS_EVERY_S:
                 since = now - last_status
@@ -298,6 +372,8 @@ def run_bridge(args):
                 last_status = now
     except KeyboardInterrupt:
         print("camera-bridge: stopped.")
+        if args.display:
+            cv2.destroyAllWindows()
 
 
 def self_test():
@@ -327,7 +403,7 @@ def self_test():
     return 0
 
 
-def main(argv=None):
+def build_parser():
     ap = argparse.ArgumentParser(description="ArUco marker pose bridge for the SL12 camera anchor")
     ap.add_argument("--in-port", type=int, default=IN_PORT, help="UDP port Unity sends JPEG chunks to (default 47801)")
     ap.add_argument("--out-port", type=int, default=OUT_PORT, help="UDP port pose JSON goes to (default 47802)")
@@ -336,9 +412,15 @@ def main(argv=None):
     ap.add_argument("--fx", type=float, default=DEFAULT_FX, help="camera focal length px (default %.1f)" % DEFAULT_FX)
     ap.add_argument("--cx", type=float, default=DEFAULT_CX, help="camera principal point x (default %.1f)" % DEFAULT_CX)
     ap.add_argument("--cy", type=float, default=DEFAULT_CY, help="camera principal point y (default %.1f)" % DEFAULT_CY)
+    ap.add_argument("--display", action="store_true",
+                    help="show the live camera view in a window (marker overlay + status; q/Esc quits)")
     ap.add_argument("--self-test", action="store_true", help="synthetic-marker round trip, then exit")
     ap.add_argument("--write-marker", metavar="PNG", help="write the marker PNG (300 DPI, with quiet zone) and exit")
-    args = ap.parse_args(argv)
+    return ap
+
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
     if args.self_test:
         return self_test()
     if args.write_marker:

@@ -154,5 +154,67 @@ class MarkerImageTest(unittest.TestCase):
         self.assertIn(7, [int(i[0]) for i in ids])
 
 
+class ProjectPointTest(unittest.TestCase):
+    def test_marker_origin_projects_to_principal_point(self):
+        import numpy as np
+        u, v = cb.project_point([0.0, 0.0, 0.0], np.eye(3), [0.0, 0.0, 100.0], fx=754.0, cx=320.0, cy=120.0)
+        self.assertAlmostEqual(u, 320.0, places=6)
+        self.assertAlmostEqual(v, 120.0, places=6)
+
+    def test_positive_x_projects_right_of_center(self):
+        import numpy as np
+        u, v = cb.project_point([10.0, 0.0, 0.0], np.eye(3), [0.0, 0.0, 100.0], fx=754.0, cx=320.0, cy=120.0)
+        self.assertGreater(u, 320.0)
+        self.assertAlmostEqual(v, 120.0, places=6)
+
+    def test_point_behind_camera_returns_none(self):
+        import numpy as np
+        self.assertIsNone(cb.project_point([0.0, 0.0, 0.0], np.eye(3), [0.0, 0.0, -100.0],
+                                           fx=754.0, cx=320.0, cy=120.0))
+
+
+class AnnotateFrameTest(unittest.TestCase):
+    def test_returns_scaled_bgr_and_preserves_gray(self):
+        import numpy as np
+        gray = np.full((241, 640), 100, dtype=np.uint8)
+        out = cb.annotate_frame(gray, fps=25.0)
+        self.assertEqual(out.shape, (241 * 2, 640 * 2, 3))
+        self.assertEqual(out.dtype, np.uint8)
+        # bottom-right corner is untouched by text/axis: grayscale value carried into all channels
+        for c in range(3):
+            self.assertTrue(np.all(out[-10:, -10:, c] == 100))
+
+    def test_draws_colored_axis_when_pose_present(self):
+        import numpy as np
+        gray = np.full((241, 640), 100, dtype=np.uint8)
+        out = cb.annotate_frame(gray, marker_id=7, pos_mm=[0.0, 0.0, 400.0], quat=(0.0, 0.0, 0.0, 1.0),
+                                fps=26.0)
+        red = (out[:, :, 0] == 0) & (out[:, :, 1] == 0) & (out[:, :, 2] == 255)
+        self.assertGreater(int(red.sum()), 10)
+
+    def test_no_marker_shows_no_axis_and_does_not_crash(self):
+        import numpy as np
+        gray = np.full((241, 640), 100, dtype=np.uint8)
+        out = cb.annotate_frame(gray, fps=0.0)
+        red = (out[:, :, 0] == 0) & (out[:, :, 1] == 0) & (out[:, :, 2] == 255)
+        self.assertEqual(int(red.sum()), 0)
+
+    def test_marker_behind_camera_does_not_crash(self):
+        import numpy as np
+        gray = np.full((241, 640), 100, dtype=np.uint8)
+        out = cb.annotate_frame(gray, marker_id=7, pos_mm=[0.0, 0.0, -100.0], quat=(0.0, 0.0, 0.0, 1.0))
+        self.assertEqual(out.shape, (241 * 2, 640 * 2, 3))
+
+
+class ArgsTest(unittest.TestCase):
+    def test_display_flag_defaults_off(self):
+        args = cb.build_parser().parse_args([])
+        self.assertFalse(args.display)
+
+    def test_display_flag_on(self):
+        args = cb.build_parser().parse_args(["--display"])
+        self.assertTrue(args.display)
+
+
 if __name__ == "__main__":
     unittest.main()
