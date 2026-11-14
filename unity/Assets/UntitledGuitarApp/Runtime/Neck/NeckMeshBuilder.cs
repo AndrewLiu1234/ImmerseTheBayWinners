@@ -73,7 +73,7 @@ namespace UntitledGuitarApp.Runtime.Neck
             // Strings: thin, bright, cool white; the low strings thicker, as on the real guitar. Each one follows its own gain
             // group, so a string that is not played can be dimmed without rebuilding the mesh.
             Color32 str = NeckStyle.Dim(NeckStyle.CoolWhite, NeckStyle.StringIntensity * ribbon);
-            float patchFade = sizes.tailMm;
+            float patchFade = sizes.strumFadeMm;
             float patchFrom = options.strumZoneXMm - sizes.strumHalfMm;
             float patchTo = options.strumZoneXMm + sizes.strumHalfMm;
             float patchStart = Mathf.Max(patchFrom - patchFade, tailEnd);            // never run back into the neck part: leave the break

@@ -24,6 +24,7 @@ namespace UntitledGuitarApp.Runtime.Neck
         public float edgeMm;            // fretboard edge line width
         public float tailMm;            // strings and edges fade out over this length beyond the last fret
         public float strumHalfMm;       // half length of the string patch drawn under the strumming hand
+        public float strumFadeMm;       // the patch fades in and out over this length
         public float dotRadiusMm;       // fingertip dot core
         public float haloRadiusMm;      // soft glow around the dot
         public float hotRadiusMm;       // white-hot centre
@@ -53,8 +54,8 @@ namespace UntitledGuitarApp.Runtime.Neck
         public const float FretDeg = 0.075f;
         public const float NutDeg = 0.25f;               // a bar, 10 px
         public const float EdgeDeg = 0.075f;
-        public const float MarkStrokeDeg = 0.085f;
-        public const float BeadDeg = 0.09f;              // diameter of one leader bead
+        public const float MarkStrokeDeg = 0.095f;
+        public const float BeadDeg = 0.10f;              // diameter of one leader bead (4 px)
         public const float BeadPitchDeg = 0.19f;
         public const float MinDotDeg = 0.40f;            // a fingertip dot is never smaller than this across (16 px)
 
@@ -66,18 +67,18 @@ namespace UntitledGuitarApp.Runtime.Neck
 
         // ---- sizes tied to the string spacing (fractions of the string pitch at the nut) -----------------------------------
         public const float DotRadiusPitch = 0.46f;       // the dot just fits between its neighbours
-        public const float HaloRadiusPitch = 1.05f;
+        public const float HaloRadiusPitch = 1.20f;
         public const float HotRadiusPitch = 0.24f;
-        public const float MarkRadiusPitch = 0.40f;
+        public const float MarkRadiusPitch = 0.44f;
 
         // ---- brightness (0..1 of full white) ------------------------------------------------------------------------------
         public const float StringIntensity = 0.80f;
         public const float FretIntensity = 0.34f;
         public const float NutIntensity = 1.00f;
-        public const float EdgeIntensity = 0.20f;
-        public const float HaloIntensity = 0.50f;
-        public const float BeadIntensity = 0.55f;
-        public const float LabelIntensity = 0.92f;       // a little under the dots, which stay the brightest thing in view
+        public const float EdgeIntensity = 0.24f;
+        public const float HaloIntensity = 0.60f;
+        public const float BeadIntensity = 0.65f;
+        public const float LabelIntensity = 0.80f;       // under the dots: the numbers are big, and the dots must stay the brightest thing in view
 
         /// <summary>Everything that is not the active finger is shown at this brightness (GHOST_HANDS section 1).</summary>
         public const float InactiveGain = 0.30f;
@@ -169,7 +170,8 @@ namespace UntitledGuitarApp.Runtime.Neck
             s.nutMm = AngleToLocalMm(NutDeg, viewDistanceM, scale);
             s.edgeMm = AngleToLocalMm(EdgeDeg, viewDistanceM, scale);
             s.tailMm = 0.7f * lastFretSpacing;
-            s.strumHalfMm = 55f;
+            s.strumHalfMm = 40f;
+            s.strumFadeMm = 18f;
             s.dotRadiusMm = Mathf.Max(DotRadiusPitch * pitch, 0.5f * AngleToLocalMm(MinDotDeg, viewDistanceM, scale));
             s.haloRadiusMm = s.dotRadiusMm * (HaloRadiusPitch / DotRadiusPitch);
             s.hotRadiusMm = s.dotRadiusMm * (HotRadiusPitch / DotRadiusPitch);

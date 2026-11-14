@@ -65,9 +65,9 @@ Shader "UntitledGuitarApp/NeckOverlay"
             struct v2f
             {
                 float4 vertex : SV_POSITION;
-                float4 color : COLOR;
                 float4 shape : TEXCOORD0;
                 float softness : TEXCOORD1;
+                float4 color : TEXCOORD2;   // not COLOR: the value may exceed 1 (_Intensity) and must not be clamped
             };
 
             float4 _Color;
