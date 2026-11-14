@@ -54,6 +54,13 @@ namespace UntitledGuitarApp.Runtime.Neck
         /// <summary>How long the result stays up (and Space retries after a failure).</summary>
         public const float ResultSeconds = 8f;
 
+        /// <summary>
+        /// Longest HUD line at the 1.6 degree prompt size. Estimate (not measured): an average character of mixed-case Arial is
+        /// roughly 0.7 of the cap height wide, so about 1.1 degrees, and 30 characters about 34 of the 46 degrees of view.
+        /// Longer messages are split in two at a space. Check it in align_result frames.
+        /// </summary>
+        public const int MaxLineChars = 30;
+
         static readonly Color TitleColor = new Color(0.55f, 0.90f, 1.00f, 1f);
         static readonly Color PromptColor = new Color(1.00f, 1.00f, 1.00f, 1f);
         static readonly Color HintColor = new Color(0.75f, 0.88f, 1.00f, 1f);
@@ -293,7 +300,7 @@ namespace UntitledGuitarApp.Runtime.Neck
         {
             if (_head == null) return "no head transform: alignment cannot run";
             if (RespectAnchorModeFlag && (_anchor != null ? _anchor.HeadLockedMode : HeadLockedFlag())) return "anchorMode is headLocked (flag): alignment is off";
-            if (!HeadTrackedNow()) return "no head tracking: start the IMU bridge (alignment needs the glasses' IMU)";
+            if (!HeadTrackedNow()) return "no head tracking: start the IMU bridge first";
             return null;
         }
 
@@ -381,9 +388,10 @@ namespace UntitledGuitarApp.Runtime.Neck
             if (outcome == null) return;
             if (outcome.Success && !outcome.Reanchor)
             {
+                // Honest: the fit error is NOT the nut error (Person 2's G1 caution), so the player is asked to check the nut.
                 SetLines("Neck aligned", "fit error " + outcome.ResidualRmsMm.ToString("0") + " mm (max " + outcome.ResidualMaxMm.ToString("0") + " mm)",
-                         "nut " + (outcome.NutDistanceM * 100f).ToString("0") + " cm away: check it sits on the real nut",
-                         "Look around: it should stay on your guitar", GoodColor, PromptColor);
+                         "nut " + (outcome.NutDistanceM * 100f).ToString("0") + " cm away",
+                         "Check: is it on the real nut?", GoodColor, PromptColor);
                 _retryOffered = false;
             }
             else if (outcome.Success)
@@ -395,7 +403,7 @@ namespace UntitledGuitarApp.Runtime.Neck
             else
             {
                 string first, second;
-                SplitInTwo(outcome.Failure ?? "unknown error", 34, out first, out second);
+                SplitInTwo(outcome.Failure ?? "unknown error", MaxLineChars, out first, out second);
                 bool kept = _anchor != null && _anchor.HasAlignment;
                 SetLines(kept ? "Alignment failed: kept the old one" : "Alignment failed: floating neck", first, second,
                          ConfirmKey != KeyCode.None ? "Press " + ConfirmKey + " to try again" : string.Empty, BadColor, BadColor);

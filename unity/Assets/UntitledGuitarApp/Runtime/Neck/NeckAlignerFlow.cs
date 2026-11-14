@@ -428,10 +428,10 @@ namespace UntitledGuitarApp.Runtime.Neck
             FillPose(outcome, AlignMath.FromCore(result.Pose, _pivot, _leftHanded, _stringHeightMm));
 
             if (!(result.ResidualRmsMm <= MaxResidualRmsMm))
-                outcome.Failure = "fit error " + result.ResidualRmsMm.ToString("0") + " mm is above " + MaxResidualRmsMm.ToString("0") +
-                                  " mm: hold still on each point and redo the 4 glances";
+                outcome.Failure = "fit error " + result.ResidualRmsMm.ToString("0") + " mm (needs " + MaxResidualRmsMm.ToString("0") +
+                                  " or less): hold still and redo";
             else if (LooksMirrored(outcome.Pose, outcome.ViewerElevationDeg, _leftHanded))
-                outcome.Failure = "the fit is upside down: were the two nut glances swapped? Low E is the thick top string";
+                outcome.Failure = "the fit is upside down: were the 2 nut glances swapped?";
             else
                 outcome.Success = true;
         }
