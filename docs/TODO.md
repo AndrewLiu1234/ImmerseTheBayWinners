@@ -69,12 +69,12 @@ ticks only the boxes their half proves; Person 1 sets `done` after the device ch
 **Acceptance (device):** - [ ] 5 chords × 4 strums: at least 18 of 20 judged right
 **Max time:** 3h.
 
-## SL5 — Songs + play-along (+ setup and library)   [track: CORE+XR] [owner: Person 2 (Core) · Person 1 (HUD)] [status: todo] [depends: SL3]
+## SL5 — Songs + play-along (+ setup and library)   [track: CORE+XR] [owner: Person 2 (Core) · Person 1 (HUD)] [status: doing] [depends: SL3]
 **User-visible outcome:** pick a song, pick a tempo, play along with wait mode; lyrics shown above-chord style when the song has them.
 **Owned paths:** Person 2: `Core/Songs/**`, `Core/Practice/PlayAlongSession*`, `StreamingAssets/songs/**` · Person 1: neck HUD, lyric strip, library, approach rings
 **Acceptance (automated):**
-- [ ] AllSongsValid passes for the 3 songs (incl. `chords-only` rules and the 3/4 pickup in Happy Birthday)
-- [ ] timeline tests at every tempo preset; wait mode incl. the escape hatch; best-onset scoring
+- [x] AllSongsValid passes for the 3 songs (incl. `chords-only` rules and the 3/4 pickup in Happy Birthday) — Person 2: core-tests/Songs/SongTests.cs, L1
+- [x] timeline tests at every tempo preset; wait mode incl. the escape hatch; best-onset scoring — Person 2: core-tests/Songs/SongTimelineTests.cs + core-tests/Practice/PlayAlongSessionTests.cs, L1
 **Acceptance (device):** - [ ] Happy Birthday at 75% with wait mode completes with both ghost hands animating
 **Max time:** 3h. (Core part can start right after SL0.)
 
