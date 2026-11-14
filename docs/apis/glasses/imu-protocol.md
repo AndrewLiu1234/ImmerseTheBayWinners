@@ -1205,8 +1205,8 @@ calibration file's coordinate system"). The bridge does not read it; it estimate
 
 **Wire format (pinned).** One UDP datagram to `127.0.0.1:<port>` (default 47800) = one UTF-8 JSON object
 `{"t": <seconds since the bridge started, float>, "q": [x, y, z, w]}`. The bridge appends `"seq"` (a
-counter) and `"src"` (`"imu"` or `"fake"`) after `t` and `q`; receivers ignore them. Example:
-`{"t":12.345678,"q":[0.0123457,-0.1234568,0.0012346,0.9922681],"seq":3086,"src":"imu"}`.
+counter) and `"src"` (`"imu"` or `"fake"`) after `t` and `q`; receivers ignore them. A datagram captured
+from a `--fake` run: `{"t":2.996300,"q":[-0.0160335,0.2056157,-0.0462472,0.9774080],"seq":749,"src":"fake"}`.
 
 **Meaning of `q`.** A unit quaternion in Unity's frame (left-handed: +X right, +Y up, +Z forward) that
 rotates head-local vectors into a gravity-aligned world frame. Identity = the glasses are level and face

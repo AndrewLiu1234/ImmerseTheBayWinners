@@ -707,6 +707,18 @@ h_hidapi_read(struct h_hid_device *ohdev, uint8_t *data, size_t length, int mill
 }
 ```
 
+## Observed on this Mac (2026-11-14, no glasses plugged in)
+
+`hid.enumerate()` returned 22 entries; every `path` had the `DevSrvsID:<number>` form and every
+`usage_page`/`usage` was filled. The only entry with the USB transport (`bus_type` 1) was an internal
+Apple device (vid `0x05ac`, pid `0x0000`) with `interface_number` −1, so `interface_number` on a real
+USB device has **not** been observed here yet. Evidence that it works for XREAL glasses on macOS is
+indirect: ar-drivers-rs selects the IMU and MCU interfaces with `device.interface_number()` from the
+Rust `hidapi` crate (its `Cargo.toml`: `hidapi = { version = "2.4.1", optional = true }`), and
+bevy-xreal-ar-demo, built on ar-drivers-rs, says it works on macOS with older Airs (`imu-protocol.md`
+§10). If `--list` shows `iface=-1` for every XREAL entry, open the IMU entry with
+`bridge.py --path '<path>'`.
+
 ## Other notes
 
 - `hid.enumerate(0x3318, 0)` lists every XREAL interface; `bridge.py --list` prints `interface_number`,
