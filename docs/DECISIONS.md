@@ -1,5 +1,9 @@
 # DECISIONS — newest first (append-only; union-merged in git)
 <!-- D-<QID> · answer · who (Person 1 | Person 2) · HH:MM PT · reversible: yes|no · affects: docs/slices -->
+- D-P2-RENAME · Core-side duplicates of Contracts names renamed (PatternClockSlot, PlayAlongTarget, TunerState); Contracts untouched · Person 2 · Sat 14:55 PT · reversible: yes · affects: Core/Practice, Core/Audio
+- D-P2-TIPS · Tip rules per music-teacher: fretted muted string → "press finger N's tip", arch tip only for open strings; WrongFret → "one fret higher/lower" · Person 2 · Sat 13:45 PT · reversible: yes · affects: Core/Practice/Tips, SL2
+- D-P2-PLAYALONG · Wait-mode defaults: hold at every change incl. chord 0, escape after 8 s or 6 wrong strums or Skip, 0.3 s early grace; timing on-time ±60 ms, match window ±150 ms; drill clean = ≤3 s · Person 2 · Sat 12:45 PT · reversible: yes · affects: SL5, SL6, SL7
+- D-P2-COACH · Coach model claude-haiku-5-5, 3 s timeout, rule-based fallback; Core builds prompt/parses reply, Runtime does HTTP · Person 2 · Sat 12:45 PT · reversible: yes · affects: SL10
 - D-TEAM-labels · The two people are **Person 1** (XR: Unity + glasses) and **Person 2** (Core) in every doc, hook and agent prompt (older entries relabelled). Each clone sets its person with `./scripts/set-person.sh`; a hook blocks edits in the other person's lane · Person 1 · Sat 01:00 PT · reversible: yes · affects: `docs/WORKSPLIT.md`, CLAUDE.md, `.claude/**`
 - D-Q-EMU-01 · Keep the Mac route: no Android emulator, no Android build for the demo · Person 1 · Sat 00:23 PT · reversible: no (this weekend) · affects: docs/HOW_IT_WORKS.md §6
 - D-Q-PLAN-REPO · All planning delivered as GitHub-ready .md files + the Appendix A harness, unpacked · Person 1 · Sat 00:00 PT · reversible: — · affects: README
