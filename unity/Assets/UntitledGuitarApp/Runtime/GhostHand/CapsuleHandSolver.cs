@@ -247,6 +247,10 @@ namespace UntitledGuitarApp.Runtime.GhostHand
         /// <summary>The neck normal as used by the last solve (unit, parent space).</summary>
         public Vector3 Normal { get { return m_n; } }
 
+        /// <summary>For diagnostics and tests: what the last fit did to the nominal posture. index 0-2 = knuckle-centre shift
+        /// (metres) along the neck, out of the board and toward the palm side; 3-5 = palm turn (radians) about those axes.</summary>
+        public double FitParameter(int index) { return index >= 0 && index < ParamCount ? m_xBest[index] : 0.0; }
+
         /// <summary>How far above its target a fingertip centre is placed (metres, parent space).</summary>
         public float TipLift(int finger)
         {
