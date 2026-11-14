@@ -17,14 +17,16 @@
 //  * Documentation/en/Manual/class-TextMesh.html: "set the component's font property and also set the texture of the font
 //    material", so the MeshRenderer gets font.material.
 //  * Documentation/en/ScriptReference/TextMesh-characterSize.html says only "The size of each character (This scales the whole
-//    text)". There is NO documented formula from characterSize/fontSize to world units. So the world size is MEASURED at run
-//    time (Renderer.localBounds, Documentation/en/ScriptReference/Renderer-localBounds.html, checked against the glyph metrics
-//    from Font.GetCharacterInfo) and the transform scale is set from that; a clearly-labelled fallback constant is used only if
-//    the measurement fails, and then a warning is logged.
+//    text)". There is NO documented formula from characterSize/fontSize to world units. So the size comes from a constant
+//    MEASURED in Unity's own renders (CapUnitsPerFontSize below; Editor/HudTextCalibration.cs measures it) and the transform
+//    is scaled to fit. The same size every time, from the first frame: nothing is measured at run time.
 //  * Font.CreateDynamicFontFromOSFont(string[] fontnames, int size): Documentation/en/ScriptReference/Font.CreateDynamicFontFromOSFont.html.
 //
-// UNVERIFIED (nobody has run this in Unity yet): that localBounds is fresh immediately after TextMesh.text changes. If it is
-// not, the measurement fails the staleness check below, a warning is logged, and the fallback constant is used.
+// WHY NOT A RUN-TIME MEASUREMENT (the code before 14 Nov 12:00): it read Renderer.localBounds of an "H" against
+// Font.GetCharacterInfo, with an unverified fallback (0.1 unit per font pixel). In the full-app frame of 14 Nov 11:38 the
+// chord name "G", asked for 4.0 degrees, measured 3.28 (0.82 of the request; 0.79 for the cap height once the G's overshoot,
+// 1516 vs 1466 font units in Arial Bold, is taken out). NeckLabel (Runtime/Neck) had the same fault: its bounds gave 0.64 of
+// the request after a few renders and its fallback 0.769 before any, so one request gave two sizes depending on the frame.
 using System;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -55,16 +57,21 @@ namespace UntitledGuitarApp.Runtime.Hud
         public const int MinFontSize = 24;
         public const int MaxFontSize = 256;
 
-        // Arial cap height is 1467/2048 em. Only used to pick a font raster size (sharpness); the world size is measured.
+        /// <summary>
+        /// MEASURED, not documented: the cap height of a bold "H" (Arial Bold, the built-in font) in the TextMesh's own units,
+        /// per unit of fontSize, at characterSize 1. World cap height = fontSize * CapUnitsPerFontSize * localScale * parent scale.
+        /// PROVISIONAL VALUE (round 1, 14 Nov ~12:15): NeckLabel.DigitUnitsPerFontSize (0.0551, measured from 50% edges of a bold
+        /// "1" in three Unity renders of 14 Nov, at its real distance from the eye) times Arial Bold's H / 1 height ratio,
+        /// 1466 / 1472 font units (the 'glyf' table of /System/Library/Fonts/Supplemental/Arial Bold.ttf, read with fontTools)
+        /// = 0.0549. Editor/HudTextCalibration.cs renders "H" at 1.2 to 4 degrees and 1.0 / 1.2 m with a glasses-eye camera and
+        /// measures it; this value is replaced by that measurement (see the calibration JSON named in the commit).
+        /// </summary>
+        public const float CapUnitsPerFontSize = 0.0549f;
+
+        // Arial cap height is 1466/2048 em. Only used to pick a font raster size (sharpness), not the world size.
         const float CapHeightEm = 0.716f;
 
-        // UNVERIFIED fallback for the legacy TextMesh scale (one font pixel = 0.1 world units at characterSize 1). Used only
-        // when the run-time measurement fails; a warning is logged when that happens.
-        const float FallbackWorldPerFontPixel = 0.1f;
-
         const float MaxAngularDegrees = 170f;
-        const int MaxMeasureFrames = 3;
-        const string ReferenceGlyph = "H";
 
         static readonly string[] BuiltinFontNames = { "Arial.ttf", "LegacyRuntime.ttf" };
         static readonly string[] OsFontNames = { "Arial", "Helvetica Neue", "Helvetica" };
@@ -78,9 +85,6 @@ namespace UntitledGuitarApp.Runtime.Hud
         Color _color = Color.white;
         int _fontSize;
         float _targetCapM;
-        float _capLocalUnit;
-        int _measureFrames;
-        bool _measured;
 
         // ------------------------------------------------------------------ creation
 
@@ -122,9 +126,6 @@ namespace UntitledGuitarApp.Runtime.Hud
             _fontSize = FontSizeForCapDegrees(MinTextDegrees, DefaultPixelsPerDegree);
             _mesh.fontSize = _fontSize;
             _mesh.text = string.Empty;
-
-            // The component's enabled flag is used only to run LateUpdate while a size measurement is still pending.
-            enabled = false;
         }
 
         // ------------------------------------------------------------------ the font
@@ -235,8 +236,12 @@ namespace UntitledGuitarApp.Runtime.Hud
         /// <summary>The cap height this text was last asked to have, in metres of world space.</summary>
         public float CapHeightMeters { get { return _targetCapM; } }
 
-        /// <summary>True once the cap height was measured from the real rendered glyphs (false = fallback constant in use).</summary>
-        public bool SizeMeasured { get { return _measured; } }
+        /// <summary>
+        /// True once a size has been applied. The size always comes from <see cref="CapUnitsPerFontSize"/>, a constant measured
+        /// in Unity's renders, so it is right from the first frame and never changes afterwards; there is no fallback any more.
+        /// (Kept for the preview scripts that report it.)
+        /// </summary>
+        public bool SizeMeasured { get { return _targetCapM > 0f; } }
 
         // ------------------------------------------------------------------ size
 
@@ -261,92 +266,7 @@ namespace UntitledGuitarApp.Runtime.Hud
                 _fontSize = size;
                 _mesh.fontSize = size;
             }
-
-            // Best guess first, so nothing is ever shown at an absurd size while the measurement is pending.
-            _capLocalUnit = FallbackCapLocal(_fontSize);
-            _measured = false;
             ApplyScale();
-
-            _measureFrames = 0;
-            if (TryMeasureCap(out float measured))
-            {
-                _capLocalUnit = measured;
-                _measured = true;
-                ApplyScale();
-                enabled = false;
-            }
-            else
-            {
-                enabled = true;
-            }
-        }
-
-        void LateUpdate()
-        {
-            // Only runs while a measurement is pending (see SetAngularHeight); otherwise this component is disabled.
-            _measureFrames++;
-            if (TryMeasureCap(out float measured))
-            {
-                _capLocalUnit = measured;
-                _measured = true;
-                ApplyScale();
-                enabled = false;
-            }
-            else if (_measureFrames >= MaxMeasureFrames)
-            {
-                UGALog.Warn("hud_text", name + ": cap height could not be measured; using the unverified fallback scale");
-                enabled = false;
-            }
-        }
-
-        static float FallbackCapLocal(int fontSize)
-        {
-            return fontSize * FallbackWorldPerFontPixel * CapHeightEm;
-        }
-
-        // Cap height of the reference glyph in the TextMesh's local units (at localScale 1, characterSize 1, current fontSize).
-        bool TryMeasureCap(out float capLocal)
-        {
-            capLocal = 0f;
-            Font font = _mesh.font;
-            if (font == null) return false;
-
-            // Glyph metrics from the font itself (pixels at this size): the quad the TextMesh builds for "H" must have these proportions.
-            bool haveInfo = false;
-            float glyphW = 0f, glyphH = 0f;
-            font.RequestCharactersInTexture(ReferenceGlyph, _fontSize, FontStyle.Bold);
-            if (font.GetCharacterInfo(ReferenceGlyph[0], out CharacterInfo info, _fontSize, FontStyle.Bold))
-            {
-                glyphW = Mathf.Abs(info.maxX - info.minX);
-                glyphH = Mathf.Abs(info.maxY - info.minY);
-                haveInfo = glyphW > 0.5f && glyphH > 0.5f;
-            }
-
-            // A hidden text (renderer disabled) may not refresh its bounds, so enable the renderer for the length of this
-            // synchronous call: nothing can render in between, and the real text is put back before returning.
-            bool wasVisible = _renderer.enabled;
-            if (!wasVisible) _renderer.enabled = true;
-            string real = _text;
-            _mesh.text = ReferenceGlyph;
-            Vector3 size = _renderer.localBounds.size;
-            _mesh.text = real;
-            if (!wasVisible) _renderer.enabled = false;
-
-            if (!IsUsable(size.x) || !IsUsable(size.y)) return false;
-
-            if (haveInfo)
-            {
-                // Staleness check: a bounds box left over from some other text would not have the proportions of an "H".
-                float measuredRatio = size.x / size.y;
-                float expectedRatio = glyphW / glyphH;
-                if (Mathf.Abs(measuredRatio / expectedRatio - 1f) > 0.3f) return false;
-                capLocal = size.x / glyphW * glyphH;   // world units per glyph pixel, from the width; immune to line padding in the height
-            }
-            else
-            {
-                capLocal = size.y;
-            }
-            return IsUsable(capLocal);
         }
 
         void ApplyScale()
@@ -355,11 +275,11 @@ namespace UntitledGuitarApp.Runtime.Hud
             Transform parent = transform.parent;
             if (parent != null)
             {
-                float ps = parent.lossyScale.y;
+                float ps = Mathf.Abs(parent.lossyScale.y);
                 if (ps > 1e-6f) parentScale = ps;
             }
-            float s = _targetCapM / (_capLocalUnit * parentScale);
-            if (IsUsable(s)) transform.localScale = new Vector3(s, s, s);
+            float s = ScaleForCap(_targetCapM, _fontSize, parentScale);
+            if (s > 0f) transform.localScale = new Vector3(s, s, s);
         }
 
         static bool IsUsable(float v)
@@ -368,6 +288,25 @@ namespace UntitledGuitarApp.Runtime.Hud
         }
 
         // ------------------------------------------------------------------ pure helpers (unit-tested)
+
+        /// <summary>The cap height of the text in the TextMesh's own units at characterSize 1 and this font size (the measured constant).</summary>
+        public static float CapHeightUnits(int fontSize)
+        {
+            return fontSize * CapUnitsPerFontSize;
+        }
+
+        /// <summary>
+        /// The uniform localScale that gives capital letters a world height of <paramref name="capMeters"/> at this font size,
+        /// under a parent whose world (lossy) scale is <paramref name="parentScale"/>: capMeters / (fontSize * CapUnitsPerFontSize
+        /// * parentScale). A pure function of its arguments, so a request always gives the same size, from the first frame.
+        /// Returns 0 for a non-positive or non-finite input (the caller then leaves the scale alone).
+        /// </summary>
+        public static float ScaleForCap(float capMeters, int fontSize, float parentScale)
+        {
+            if (!IsUsable(capMeters) || fontSize <= 0 || !IsUsable(parentScale)) return 0f;
+            float s = capMeters / (CapHeightUnits(fontSize) * parentScale);
+            return IsUsable(s) ? s : 0f;
+        }
 
         /// <summary>
         /// World height in metres of something that spans <paramref name="degrees"/> of view at <paramref name="distanceM"/>

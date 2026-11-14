@@ -130,6 +130,93 @@ namespace UntitledGuitarApp.Tests.EditMode
             Assert.Less(HudText.FontSizeForCapDegrees(2f, 40f), HudText.FontSizeForCapDegrees(3f, 40f));
         }
 
+        // ---------------------------------------------------------------- the size constant (no run-time measurement)
+
+        [Test]
+        public void CapConstant_IsTheCalibratedValue()
+        {
+            // Changing this number needs a new Editor/HudTextCalibration.cs run (the JSON named in the commit), not a guess.
+            Assert.AreEqual(0.0549f, HudText.CapUnitsPerFontSize, 1e-7);
+            Assert.AreEqual(223 * 0.0549f, HudText.CapHeightUnits(223), 1e-5);
+        }
+
+        // Expected values computed here from the definition, independently of HudText's own code path:
+        // cap metres = 2 d tan(deg / 2); font size = round(deg * 40 / 0.716); scale = metres / (fontSize * constant * parent).
+        [TestCase(1.2f, 1.0f, 67)]
+        [TestCase(2f, 1.0f, 112)]
+        [TestCase(3f, 1.2f, 168)]
+        [TestCase(4f, 1.0f, 223)]
+        [TestCase(4f, 1.2f, 223)]
+        public void CapScale_IsWhatTheConstantSays(float degrees, float distanceM, int fontSize)
+        {
+            double meters = 2.0 * distanceM * System.Math.Tan(degrees * 0.5 * System.Math.PI / 180.0);
+            Assert.AreEqual(fontSize, HudText.FontSizeForCapDegrees(degrees, HudText.DefaultPixelsPerDegree));
+            float scale = HudText.ScaleForCap(HudText.SizeForAngularHeight(degrees, distanceM), fontSize, 1f);
+            Assert.AreEqual(meters / (fontSize * (double)HudText.CapUnitsPerFontSize), scale, 1e-7);
+            // and the drawn cap height (font units x constant x scale) is the asked one
+            Assert.AreEqual(meters, fontSize * HudText.CapUnitsPerFontSize * scale, 1e-6);
+        }
+
+        [Test]
+        public void CapScale_ParentScaleDividesOut()
+        {
+            float one = HudText.ScaleForCap(0.05f, 168, 1f);
+            Assert.AreEqual(one / 2f, HudText.ScaleForCap(0.05f, 168, 2f), 1e-7);
+            Assert.AreEqual(one * 4f, HudText.ScaleForCap(0.05f, 168, 0.25f), 1e-6);
+        }
+
+        [Test]
+        public void CapScale_IsTheSameOnEveryCall()
+        {
+            // The old code measured Renderer.localBounds and changed its answer once the text had been drawn; this is a pure function.
+            float first = HudText.ScaleForCap(0.0698408f, 223, 1f);
+            for (int i = 0; i < 5; i++) Assert.AreEqual(first, HudText.ScaleForCap(0.0698408f, 223, 1f));
+        }
+
+        [TestCase(0f, 223, 1f)]
+        [TestCase(-0.05f, 223, 1f)]
+        [TestCase(float.NaN, 223, 1f)]
+        [TestCase(float.PositiveInfinity, 223, 1f)]
+        [TestCase(0.05f, 0, 1f)]
+        [TestCase(0.05f, -5, 1f)]
+        [TestCase(0.05f, 223, 0f)]
+        [TestCase(0.05f, 223, float.NaN)]
+        public void CapScale_BadInputIsZero(float capMeters, int fontSize, float parentScale)
+        {
+            Assert.AreEqual(0f, HudText.ScaleForCap(capMeters, fontSize, parentScale));
+        }
+
+        [Test]
+        public void HudText_SizeIsSetAtOnce_WithNoFrame()
+        {
+            // Needs the engine (GameObject, TextMesh): run in Unity's EditMode tests. No frame is rendered or advanced here, so a
+            // size that depended on a measurement after drawing would fail this.
+            var parent = new GameObject("HudTextTestParent");
+            try
+            {
+                parent.transform.localScale = new Vector3(2f, 2f, 2f);
+                HudText text = HudText.Create(parent.transform, "HudTextTest");
+                text.SetAngularHeight(4f, 1f);
+                float meters = HudText.SizeForAngularHeight(4f, 1f);
+                float expected = HudText.ScaleForCap(meters, HudText.FontSizeForCapDegrees(4f, HudText.DefaultPixelsPerDegree), 2f);
+                Assert.Greater(expected, 0f);
+                Assert.AreEqual(expected, text.transform.localScale.y, 1e-7);
+                Assert.AreEqual(meters, text.CapHeightMeters, 1e-7);
+                Assert.IsTrue(text.SizeMeasured);
+
+                text.SetText("G");                                   // new words: the size must not move
+                Assert.AreEqual(expected, text.transform.localScale.y, 1e-7);
+                text.SetAngularHeight(4f, 1f);                       // the same request again: the same size
+                Assert.AreEqual(expected, text.transform.localScale.y, 1e-7);
+                text.SetAngularHeight(0.5f, 1f);                     // below the minimum: raised to 1.2 degrees
+                Assert.AreEqual(HudText.SizeForAngularHeight(HudText.MinTextDegrees, 1f), text.CapHeightMeters, 1e-7);
+            }
+            finally
+            {
+                Object.DestroyImmediate(parent);
+            }
+        }
+
         // ---------------------------------------------------------------- change detection ("rebuild only when the words change")
 
         [TestCase("G", "G", false)]
@@ -179,6 +266,63 @@ namespace UntitledGuitarApp.Tests.EditMode
             Assert.AreEqual(0.061f, ChordLabel.NextOffsetMeters(0.05f, 0.02f), 1e-5);
             Assert.Less(ChordLabel.NextOffsetMeters(0.05f, 0.02f), ChordLabel.NextOffsetMeters(0.06f, 0.02f));
             Assert.Less(ChordLabel.NextOffsetMeters(0.05f, 0.02f), ChordLabel.NextOffsetMeters(0.05f, 0.03f));
+        }
+
+        [Test]
+        public void NextBeside_IsWhereTheDefinitionPutsIt()
+        {
+            // 4 and 1.8 degree caps at 1 m: 0.0698408 and 0.0314191 m (2 tan(deg / 2)); computed here, not by the label's code.
+            Vector2 o = ChordLabel.NextLocalOffset(0.0698408f, 0.0314191f);
+            Assert.AreEqual((2.26 / 2 + 0.25) * 0.0698408, o.x, 1e-6);        // 0.0963803 m: right of the widest name
+            Assert.AreEqual(-0.485 * (0.0698408 - 0.0314191), o.y, 1e-6);    // -0.0186345 m: baselines on one line
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void NextBeside_ClearsTheWidestNameAndSharesItsBaseline(bool largeText)
+        {
+            float s = HudText.TextScale(largeText);
+            float c = HudText.SizeForAngularHeight(ChordLabel.CurrentDegrees * s, 1f);
+            float n = HudText.SizeForAngularHeight(ChordLabel.NextDegrees * s, 1f);
+            Vector2 off = ChordLabel.NextLocalOffset(c, n);
+            float nameRight = 0.5f * ChordLabel.WidestNameCaps * c;              // the current chord is centred on the origin
+            Assert.GreaterOrEqual(off.x - nameRight, 0.2f * c, "clear space between the widest name and \"next\"");
+            float currentBaseline = -ChordLabel.AnchorAboveBaselineCaps * c;
+            float nextBaseline = off.y - ChordLabel.AnchorAboveBaselineCaps * n;
+            Assert.AreEqual(currentBaseline, nextBaseline, 1e-6);
+        }
+
+        [Test]
+        public void WidestNameCaps_CoversTheChordNamesWeShow()
+        {
+            // Arial Bold advance widths in font units ('hmtx'), cap height 1466: A 1479, D 1479, E 1366, G 1593, m 1821.
+            Assert.GreaterOrEqual(ChordLabel.WidestNameCaps, (1479 + 1821) / 1466f);   // "Am", "Dm": 2.251
+            Assert.GreaterOrEqual(ChordLabel.WidestNameCaps, (1366 + 1821) / 1466f);   // "Em": 2.174
+            Assert.GreaterOrEqual(ChordLabel.WidestNameCaps, 1593 / 1466f);            // "G": 1.087
+        }
+
+        [Test]
+        public void ChordLabel_PutsNextBesideTheName_FromTheFirstFrame()
+        {
+            // Needs the engine (GameObject, TextMesh): run in Unity's EditMode tests.
+            var root = new GameObject("ChordLabelTest");
+            try
+            {
+                ChordLabel label = ChordLabel.Create(root.transform, 1f);
+                label.SetChords("G", "C");
+                Transform next = label.transform.Find("NextChord");
+                Assert.IsNotNull(next);
+                float s = HudText.TextScale(UntitledGuitarApp.Runtime.Flags.FlagStore.Current.largeText);
+                Vector2 o = ChordLabel.NextLocalOffset(HudText.SizeForAngularHeight(ChordLabel.CurrentDegrees * s, 1f),
+                                                       HudText.SizeForAngularHeight(ChordLabel.NextDegrees * s, 1f));
+                Assert.AreEqual(o.x, next.localPosition.x, 1e-6);
+                Assert.AreEqual(o.y, next.localPosition.y, 1e-6);
+                Assert.AreEqual(TextAnchor.MiddleLeft, next.GetComponent<TextMesh>().anchor);
+            }
+            finally
+            {
+                Object.DestroyImmediate(root);
+            }
         }
 
         // ---------------------------------------------------------------- mic meter: dB to bar
