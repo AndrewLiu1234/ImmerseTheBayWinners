@@ -62,8 +62,14 @@ namespace UntitledGuitarApp.Runtime
         public GazeDwell Gaze { get; private set; }
         public Reticle Reticle { get; private set; }
         public FloatingNeck Neck { get; private set; }
-        /// <summary>The fretting ghost hand (procedural capsule hand), parented to the neck's socket: neck frame, metres.</summary>
+        /// <summary>The fallback fretting ghost hand (procedural capsule hand), parented to the neck's socket: neck frame, metres.
+        /// Hidden while the Blender-modelled hand (<see cref="PosedFrettingHand"/>) is available.</summary>
         public CapsuleHand FrettingHand { get; private set; }
+        /// <summary>The Blender-modelled fretting hand driven by the exported pose files, or null when its FBX or poses are
+        /// missing (then the capsule hand shows: still a hand, never dots only).</summary>
+        public PosedGhostHand PosedFrettingHand { get; private set; }
+        /// <summary>Every pose file in StreamingAssets/poses (12 from Blender: fretting rest/G/C/D/Em/Am, six strumming).</summary>
+        public GhostPoseLibrary Poses { get; private set; }
 
         readonly FingertipDot[] _dots = new FingertipDot[FloatingNeck.MaxDots];
         readonly StringMark[] _marks = new StringMark[6];
@@ -175,6 +181,23 @@ namespace UntitledGuitarApp.Runtime
             // Left hand for a right-handed player; for a left-handed player the neck's mirrored socket mirrors the hand too.
             FrettingHand = CapsuleHand.Create(Neck.Socket, true);
             FrettingHand.SetFingertipTargets(FingertipTargets(_dots, _dotCount, _fingertipTargets), true);
+
+            // The Blender-modelled hand takes over when its FBX (Resources/GhostHand/ghost_hand_fretting) and the pose files
+            // are present; PosedGhostHand logs one warning and reports IsAvailable = false otherwise, and the capsule stays.
+            Poses = new GhostPoseLibrary();
+            Poses.Reload();
+            PosedGhostHand posed = PosedGhostHand.Create(Neck.Socket, GhostPose.HandFretting, Poses);
+            if (posed != null && posed.IsAvailable && posed.SetPose("G", true))
+            {
+                PosedFrettingHand = posed;
+                FrettingHand.gameObject.SetActive(false);
+            }
+            else if (posed != null)
+            {
+                Destroy(posed.gameObject);
+            }
+            UGALog.Event("ghost_hand", "posed", PosedFrettingHand != null, "poses", Poses.Count,
+                         "reason", posed != null && !posed.IsAvailable ? posed.UnavailableReason : "");
         }
 
         /// <summary>
