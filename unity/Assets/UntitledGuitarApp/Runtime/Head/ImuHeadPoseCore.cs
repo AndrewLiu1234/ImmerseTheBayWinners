@@ -9,8 +9,9 @@
 // udpPort restarts the receiver on the new port.
 //
 // Logging (UGALog, main thread only, never per frame): imu_listening, imu_state (the starting state once, then each
-// change, with a reason), imu_recenter, imu_stopped, and warnings imu_bind_failed (once per failure episode),
-// imu_bad_port (once per bad value), imu_packets_rejected (at most one per 5 s while datagrams keep failing to parse).
+// change, with a reason), imu_rate (once per tracking episode, a second in), imu_recenter, imu_stopped, and warnings:
+// imu_bind_failed (once per failure episode), imu_bad_port (once per bad value), imu_packets_rejected (at most one per
+// 5 s while datagrams keep failing to parse).
 
 using System;
 using UnityEngine;
@@ -24,6 +25,7 @@ namespace UntitledGuitarApp.Runtime.Head
         public const int DefaultUdpPort = 47800;
         const string AnchorModeHeadLocked = "headLocked";
         const double RejectReportIntervalSec = 5.0;
+        const double RateLogDelaySec = 1.0;
 
         readonly HeadPoseFilter _filter = new HeadPoseFilter();
         ImuUdpReceiver _receiver;
@@ -34,6 +36,8 @@ namespace UntitledGuitarApp.Runtime.Head
         bool _anchorHeadLocked;
         HeadTrackingState _state = HeadTrackingState.HeadLocked;
         bool _stateLogged;
+        double _trackingSinceSec;
+        bool _rateLogged;
         Quaternion _rotation = Quaternion.identity;
         float _packetRateHz;
         long _reportedRejected;
@@ -179,14 +183,29 @@ namespace UntitledGuitarApp.Runtime.Head
             HeadTrackingState state = _anchorHeadLocked ? HeadTrackingState.HeadLocked : _filter.GetState(nowSec);
             _rotation = state == HeadTrackingState.Tracking ? _filter.GetRotation(nowSec) : Quaternion.identity;
             _packetRateHz = _filter.GetPacketRateHz(nowSec);
-            if (state == _state && _stateLogged) return false;
 
             // One line per change, plus one for the state we start in (so a log always says why the head is locked,
             // even when anchorMode forces it from the first frame and the state never "changes").
             bool changed = state != _state;
-            _state = state;
-            _stateLogged = true;
-            UGALog.Event("imu_state", "state", state == HeadTrackingState.Tracking ? "Tracking" : "HeadLocked", "reason", Reason(state));
+            if (changed || !_stateLogged)
+            {
+                _state = state;
+                _stateLogged = true;
+                if (state == HeadTrackingState.Tracking)
+                {
+                    _trackingSinceSec = nowSec;
+                    _rateLogged = false;
+                }
+                UGALog.Event("imu_state", "state", state == HeadTrackingState.Tracking ? "Tracking" : "HeadLocked", "reason", Reason(state));
+            }
+
+            // Once per tracking episode, a second after it began: the measured packet rate, so "is the bridge delivering
+            // about 200 Hz?" can be read from the log without code.
+            if (state == HeadTrackingState.Tracking && !_rateLogged && _packetRateHz > 0f && nowSec - _trackingSinceSec >= RateLogDelaySec)
+            {
+                _rateLogged = true;
+                UGALog.Event("imu_rate", "hz", Math.Round(_packetRateHz));
+            }
             return changed;
         }
 
