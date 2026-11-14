@@ -1,6 +1,6 @@
 // NeckHudCard: the play-along card that floats by the neck (docs/MASTER_PLAN.md section 17: "about 8 cm above the neck
 // near fret 5, angled toward the eyes"). It holds the current chord (large), the next chord with the beat-dot countdown,
-// the strum or picking strip, and (optional) the lyric strip. There is no plate and no frame: on the additive glasses a
+// the strum or picking strip, the count-in and (optional) the lyric strip. There is no plate and no frame: on the additive glasses a
 // "card" is only a group of bright things that move together.
 //
 // PLACEMENT. The card is not a child of the neck: it reads the neck socket and the head every frame and sets its own world
@@ -58,6 +58,8 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
         BeatDots _beats;
         PatternStrip _pattern;
         LyricStrip _lyrics;
+        CountIn _countIn;
+        bool _countInShown;
 
         string _currentRaw = string.Empty;
         string _nextRaw = string.Empty;
@@ -89,6 +91,9 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
 
         /// <summary>The lyric strip (chords above the words, or the chord sequence of a chords-only song). Optional: leave it unfed and it shows nothing.</summary>
         public LyricStrip Lyrics { get { return _lyrics; } }
+
+        /// <summary>The 4-3-2-1 count-in. While it shows, it takes the place of the "next chord" block.</summary>
+        public CountIn CountIn { get { return _countIn; } }
 
         /// <summary>The current chord as last set.</summary>
         public string CurrentChord { get { return _currentRaw; } }
@@ -157,6 +162,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
             _beats = BeatDots.Create(transform, d);
             _pattern = PatternStrip.Create(transform, d);
             _lyrics = LyricStrip.Create(transform, d);
+            _countIn = CountIn.Create(transform, d);
 
             var wait = new GameObject("WaitCue");
             wait.transform.SetParent(transform, false);
@@ -225,6 +231,12 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
             {
                 _large = large;
                 ApplyLayout();
+            }
+
+            if (_countIn.IsShowing != _countInShown)
+            {
+                _countInShown = _countIn.IsShowing;
+                ApplyVisibility();
             }
 
             UpdatePose();
@@ -319,7 +331,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
         void ApplyVisibility()
         {
             bool cue = _waitLevel > 0.5f;
-            bool hasNext = _nextRaw.Length > 0;
+            bool hasNext = _nextRaw.Length > 0 && !_countInShown;
             _nextWord.Visible = hasNext && !cue;
             _nextChord.Visible = hasNext && !cue;
             _beats.Visible = !cue;
@@ -354,6 +366,9 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
 
             _pattern.transform.localPosition = new Vector3(left, PlayHudLayout.Offset(PlayHudLayout.PatternRowDeg * scale, d), 0f);
             _lyrics.transform.localPosition = new Vector3(left, PlayHudLayout.Offset(PlayHudLayout.LyricRowDeg * scale, d), 0f);
+            _countIn.transform.localPosition = new Vector3(
+                left + PlayHudLayout.Offset((PlayHudLayout.CountInXDeg - PlayHudLayout.ColumnLeftDeg) * scale, d),
+                PlayHudLayout.Offset(PlayHudLayout.CountInRowDeg * scale, d), 0f);
 
             // Wait cue: a pause mark (two upright bars) and "strum G", on the dots row.
             float cueDeg = PlayHudLayout.TextDeg(PlayHudLayout.WaitCueCapDeg, _large);
