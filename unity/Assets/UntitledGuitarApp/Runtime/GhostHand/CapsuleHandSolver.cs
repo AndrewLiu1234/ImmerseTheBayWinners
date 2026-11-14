@@ -5,15 +5,20 @@
 // COORDINATES
 //   "parent" = the local space of the transform the hand hangs under (for a fretting hand: the neck frame), metres.
 //   "palm"   = the palm's own frame at scale 1 (see CapsuleHandDimensions); the wrist transform carries the scale.
+//   "neck"   = (along, out, side): a point's components along u, n and t below. All the fitting is done in these.
 //
 // THE NECK FRAME (pinned for the project)
 //   origin on the neck's centre line at the nut, on the fretboard's playing surface
 //   u = neckAxis    (+x) along the neck from the nut toward the bridge
 //   n = neckNormal  (+y) up out of the fretboard
 //   t = the palm side: cross(u, n) for a left hand (= +z, toward string 1, the treble side) and the opposite for a
-//       right hand (its mirror image through the plane z = 0); flipPalmSide swaps it.
-//   The palm hangs on the t side of the neck with its fingers reaching up and over the fretboard, the index finger
-//   nearest the nut, and the thumb resting behind the neck.
+//       right hand.
+//   The palm hangs on the t side of the neck, below its edge, with the fingers curling up and over the fretboard, the
+//   index finger nearest the nut, and the thumb resting behind the neck.
+//
+// LEFT AND RIGHT: every fretting pose is solved as a LEFT hand in neck coordinates and, for a right hand, mirrored at the
+// very end. A right hand is therefore exactly the mirror image (through the plane t = 0) of the left hand with mirrored
+// targets, by construction.
 //
 // A HAND POSE (HandPose) is the palm's position and rotation in parent space plus one fingertip-centre target per finger
 // in PALM space. Blending two poses therefore moves the palm and curls the fingers smoothly, and every in-between pose is
@@ -171,21 +176,26 @@ namespace UntitledGuitarApp.Runtime.GhostHand
         public const int ThumbIndex = CapsuleHandDimensions.ThumbIndex;
 
         public readonly bool leftHand;
+        /// <summary>The proportions of this hand (left or right).</summary>
         public readonly CapsuleHandDimensions dims;
 
         // ---- placement tunables (public so the integrator can fit them to the real guitar) ----
         public float scale = 1f;                    // uniform hand size; 1 = adult
         public Vector3 neckAxis = Vector3.right;    // parent-space u: nut -> bridge
         public Vector3 neckNormal = Vector3.up;     // parent-space n: out of the fretboard
-        public bool flipPalmSide;                   // true if the palm ends up on the wrong side of the neck
-        public float palmTiltDegrees = 30f;         // the fingers leave the palm this far toward the bass side of straight up
-        public float palmHeight = 0.050f;           // knuckles this far above the fingertip centres (metres, times scale)
-        public float palmSideOffset = 0.045f;       // knuckles this far toward the palm side of the fingertips (times scale)
+        public float palmTiltDegrees = 25f;         // the palm leans this far over the neck (0 = it stands straight up beside it)
+        public float palmHeight = 0.004f;           // knuckles this far above the fingertip centres (metres, times scale)
+        public float palmSideOffset = 0.040f;       // knuckles this far toward the palm side of the fingertips (times scale)
         public float neckDepth = 0.022f;            // fretboard surface to the back of the neck (not scaled)
+        public float neckHalfWidth = 0.023f;        // half the width of the neck where the hand is (the palm stays outside it)
         public float fingertipHover = 0.006f;       // the pad hovers this far above its target (not scaled)
-        public float thumbAlongNeck = -0.012f;      // the thumb sits this far along +u from the fingertips (negative = toward the nut)
+        public float hoverRaise = 0.016f;           // a finger that is not used hovers this far above the fretting height
+        public float thumbAlongNeck = -0.010f;      // the thumb sits this far along +u from the fingertips (negative = toward the nut)
         public float thumbAcrossNeck = 0f;          // the thumb's place across the back of the neck (+ = toward the palm side)
         public Vector3 restCentroid = new Vector3(0.062f, 0f, 0f);   // where the fingers hover while nothing is fretted (parent space)
+
+        /// <summary>Steps of the palm fit (see FitPalm). 0 = keep the nominal posture: cheaper, but fingertips can miss by a centimetre.</summary>
+        public int fitIterations = 14;
 
         // ---- facts about the last SolveFretting ----
         /// <summary>Per finger (index, middle, ring, little, thumb): did the caller give it a target?</summary>
@@ -193,34 +203,37 @@ namespace UntitledGuitarApp.Runtime.GhostHand
         /// <summary>Per finger: how far (metres) the fingertip ends from where it was asked to be. 0 = on the target.</summary>
         public readonly float[] reachError = new float[FingerCount];
 
-        /// <summary>Steps of the palm fit (see FitPalm). 0 = keep the nominal posture: cheaper, but fingertips can miss by a centimetre.</summary>
-        public int fitIterations = 14;
-
         // ---- the palm fit: 6 unknowns, damped least squares, fixed work, no allocation ----
-        const int ParamCount = 6;               // knuckle-centre offset along u, n, t (metres); rotation vector along u, n, t (radians)
+        const int ParamCount = 6;               // knuckle-centre offset along, out, side (metres); rotation vector about those axes (radians)
         const int PerFinger = 6;                // residuals per finger: reach error x y z, swing, first-joint comfort, second-joint comfort
-        const int ResidualCount = 4 * PerFinger + 3 + ParamCount;
+        const int ResidualCount = 4 * PerFinger + 3 + ParamCount + 2;
         const double ReachWeight = 100.0;       // per metre: 1 mm off a target outweighs every comfort term together
-        const double ThumbWeight = 15.0;        // the thumb behind the neck matters less than the fretting fingers
-        const double SwingWeight = 0.06;        // per radian of sideways swing
+        const double ThumbWeight = 12.0;        // the thumb behind the neck matters less than the fretting fingers
+        const double SwingWeight = 0.05;        // per radian of sideways swing
         const double McpWeight = 0.03, PipWeight = 0.03;
-        const double McpComfort = 0.95, PipComfort = 1.25;      // the curl a fretting finger likes (radians)
+        const double McpComfort = 0.45, PipComfort = 1.40;      // the curl a fretting finger likes (radians)
         const double PositionWeight = 1.0;      // per metre away from the nominal knuckle position
         const double RotationWeight = 0.05;     // per radian away from the nominal palm rotation
-        const double MaxShift = 0.06, MaxTurn = 0.8;
+        const double YawComfort = 0.10;         // the forearm comes from the bridge side: a small positive turn about n
+        const double BackwardYawWeight = 0.30;  // extra cost per radian of turning the other way (elbow beyond the headstock)
+        const double ClearanceWeight = 25.0;    // per metre of the knuckles entering the neck
         const double FitTolerance = 0.0005;     // a fit whose worst fingertip is within 0.5 mm needs no second start
+
+        static readonly double[] ParamMin = { -0.06, -0.06, -0.06, -0.8, -0.35, -0.8 };
+        static readonly double[] ParamMax = { 0.06, 0.06, 0.06, 0.8, 0.8, 0.8 };
 
         // other starting points tried (in this order) only when the first fit leaves a fingertip off its target
         static readonly double[][] Restarts =
         {
             new[] { 0.0, 0.0, 0.0, 0.0, 0.30, 0.0 },
-            new[] { 0.0, 0.0, 0.0, 0.0, -0.30, 0.0 },
             new[] { 0.0, 0.012, 0.0, 0.0, 0.0, 0.0 },
-            new[] { 0.0, -0.010, -0.010, 0.0, 0.0, 0.0 },
+            new[] { 0.0, -0.008, 0.012, 0.0, 0.0, 0.0 },
             new[] { 0.0, 0.0, 0.0, 0.25, 0.0, 0.0 },
             new[] { 0.0, 0.0, 0.0, -0.25, 0.0, 0.0 },
+            new[] { 0.0, 0.0, 0.0, 0.0, -0.25, 0.0 },
         };
 
+        readonly CapsuleHandDimensions m_left;  // the fit always works on a left hand (see LEFT AND RIGHT above)
         readonly double[] m_x = new double[ParamCount];
         readonly double[] m_xTry = new double[ParamCount];
         readonly double[] m_xBest = new double[ParamCount];
@@ -232,16 +245,17 @@ namespace UntitledGuitarApp.Runtime.GhostHand
         readonly double[] m_g = new double[ParamCount];
         readonly double[] m_d = new double[ParamCount];
 
-        readonly Vector3[] m_centre = new Vector3[FingerCount];     // fingertip-centre targets, parent space
+        readonly Vector3[] m_centre = new Vector3[FingerCount];     // fingertip-centre targets, neck coordinates
         Vector3 m_u = Vector3.right, m_n = Vector3.up, m_t = Vector3.forward;
-        Vector3 m_knuckleNominal, m_knuckleMean, m_thumbTarget;
+        Vector3 m_knuckleNominal, m_knuckleMean, m_thumbTarget;     // neck, palm (left), neck
         Quaternion m_rotNominal = Quaternion.identity;
-        float m_handSign = 1f, m_s = 1f;
+        float m_s = 1f;
 
         public CapsuleHandSolver(bool leftHand)
         {
             this.leftHand = leftHand;
             dims = CapsuleHandDimensions.CreateDefault(leftHand);
+            m_left = leftHand ? dims : CapsuleHandDimensions.CreateDefault(true);
         }
 
         /// <summary>The neck normal as used by the last solve (unit, parent space).</summary>
@@ -267,8 +281,17 @@ namespace UntitledGuitarApp.Runtime.GhostHand
                 n = alt - u * Vector3.Dot(alt, u);
             }
             n = CapsuleHandMath.SafeNormalize(n, Vector3.up);
-            m_handSign = (leftHand ? 1f : -1f) * (flipPalmSide ? -1f : 1f);
-            m_u = u; m_n = n; m_t = Vector3.Cross(u, n) * m_handSign;
+            m_u = u; m_n = n; m_t = Vector3.Cross(u, n) * (leftHand ? 1f : -1f);
+        }
+
+        Vector3 ToNeck(Vector3 parentPoint)
+        {
+            return new Vector3(Vector3.Dot(parentPoint, m_u), Vector3.Dot(parentPoint, m_n), Vector3.Dot(parentPoint, m_t));
+        }
+
+        Vector3 FromNeck(Vector3 neckPoint)
+        {
+            return m_u * neckPoint.x + m_n * neckPoint.y + m_t * neckPoint.z;
         }
 
         /// <summary>
@@ -281,9 +304,8 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             UpdateNeckFrame();
             float s = Mathf.Max(scale, 0.05f);
             m_s = s;
-            Vector3 u = m_u, n = m_n, t = m_t;
 
-            // ---- which fingers are used, and where their fingertip centres go ----
+            // ---- which fingers are used, and where their fingertip centres go (neck coordinates from here on) ----
             int count = targets == null ? 0 : targets.Length;
             int usedCount = 0;
             Vector3 sum = Vector3.zero;
@@ -294,7 +316,7 @@ namespace UntitledGuitarApp.Runtime.GhostHand
                 if (i < ThumbIndex && i < count && CapsuleHandMath.IsFinite(targets[i]))
                 {
                     used[i] = true;
-                    m_centre[i] = targets[i] + n * TipLift(i);
+                    m_centre[i] = ToNeck(targets[i]) + new Vector3(0f, TipLift(i), 0f);
                     sum += m_centre[i];
                     usedCount++;
                 }
@@ -303,65 +325,78 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             if (usedCount > 0)
             {
                 centroid = sum / usedCount;
-                restCentroid = centroid - n * TipLift(1);       // remember where along and across the neck the hand is
+                restCentroid = FromNeck(centroid - new Vector3(0f, TipLift(1), 0f));    // remember where on the neck the hand is
             }
-            else centroid = restCentroid + n * TipLift(1);
+            else centroid = ToNeck(restCentroid) + new Vector3(0f, TipLift(1), 0f);
 
-            // ---- the nominal fretting posture: the palm stands beside the neck, the knuckles above the board ----
+            // ---- the nominal fretting posture: the palm hangs beside the neck, leaning over it, knuckles at string height ----
             float phi = palmTiltDegrees * Mathf.Deg2Rad;
             float cp = Mathf.Cos(phi), sp = Mathf.Sin(phi);
-            Vector3 axisZ = n * cp - t * sp;            // wrist -> knuckles: up out of the board, leaning toward the bass side
-            Vector3 axisY = t * cp + n * sp;            // back of the hand: away from the neck
-            Vector3 axisX = Vector3.Cross(axisY, axisZ);
+            Vector3 axisZ = new Vector3(0f, cp, -sp);       // wrist -> knuckles: up out of the board, leaning over the neck
+            Vector3 axisY = new Vector3(0f, sp, cp);        // back of the hand: away from the neck
+            Vector3 axisX = new Vector3(-1f, 0f, 0f);       // = cross(axisY, axisZ): a left hand's thumb side points at the nut
             m_rotNominal = CapsuleHandMath.BasisToQuaternion(axisX, axisY, axisZ);
 
             Vector3 kUsed = Vector3.zero, kAll = Vector3.zero;
             for (int i = 0; i < ThumbIndex; i++)
             {
-                kAll += dims.chains[i].knuckle * 0.25f;
-                if (used[i]) kUsed += dims.chains[i].knuckle;
+                kAll += m_left.chains[i].knuckle * 0.25f;
+                if (used[i]) kUsed += m_left.chains[i].knuckle;
             }
             m_knuckleMean = usedCount > 0 ? kUsed / usedCount : kAll;
-            m_knuckleNominal = centroid + t * (palmSideOffset * s) + n * (palmHeight * s);
+            m_knuckleNominal = centroid + new Vector3(0f, palmHeight * s, palmSideOffset * s);
 
             // the thumb: behind the neck, roughly opposite the first two fingers
-            m_thumbTarget = u * (Vector3.Dot(centroid, u) + thumbAlongNeck) + t * thumbAcrossNeck - n * (neckDepth + TipLift(ThumbIndex));
+            m_thumbTarget = new Vector3(centroid.x + thumbAlongNeck, -(neckDepth + TipLift(ThumbIndex)), thumbAcrossNeck);
 
             // ---- fit the palm so that every used fingertip reaches its target ----
             for (int j = 0; j < ParamCount; j++) m_xBest[j] = 0.0;
+            m_xBest[4] = YawComfort;
             if (usedCount > 0 && fitIterations > 0) FitPalm();
 
             Vector3 palmPosition;
             Quaternion palmRotation;
             PoseFromParams(m_xBest, out palmPosition, out palmRotation, out axisX, out axisY, out axisZ);
-            pose.palmPosition = palmPosition;
-            pose.palmRotation = palmRotation;
-            pose.tip0 = pose.tip1 = pose.tip2 = pose.tip3 = pose.tip4 = Vector3.zero;
 
-            // ---- the fingers and the thumb: each pose stores the point its fingertip actually reaches ----
+            // ---- the fingers and the thumb (as a left hand): each pose stores the point its fingertip actually reaches ----
+            pose = default(HandPose);
             FingerIkResult r;
             for (int i = 0; i < FingerCount; i++)
             {
-                if (i < ThumbIndex && !used[i]) { pose.SetTip(i, dims.hoverTip[i]); continue; }
-                Vector3 goal = i == ThumbIndex ? m_thumbTarget : m_centre[i];
+                Vector3 goal;
+                if (i == ThumbIndex) goal = m_thumbTarget;
+                else if (used[i]) goal = m_centre[i];
+                else
+                {   // not used: hover over the strings, straight ahead of its own knuckle, a little above the fretting height
+                    Vector3 k = m_left.chains[i].knuckle;
+                    Vector3 knuckle = palmPosition + (axisX * k.x + axisY * k.y + axisZ * k.z) * s;
+                    goal = new Vector3(knuckle.x, centroid.y + hoverRaise, centroid.z * 0.5f);
+                }
                 Vector3 local = ToPalm(goal - palmPosition, axisX, axisY, axisZ) / s;
-                FingerIk.Solve(dims.chains[i], local, out r);
-                pose.SetTip(i, r.tip);
-                reachError[i] = r.error * s;
+                FingerIk.Solve(m_left.chains[i], local, out r);
+                Vector3 tip = r.tip;
+                if (!leftHand) tip.x = -tip.x;
+                pose.SetTip(i, tip);
+                if (i == ThumbIndex || used[i]) reachError[i] = r.error * s;
             }
+
+            // ---- out of neck coordinates; a right hand is the mirror image, so its palm x axis flips ----
+            pose.palmPosition = FromNeck(palmPosition);
+            Vector3 outX = FromNeck(axisX), outY = FromNeck(axisY), outZ = FromNeck(axisZ);
+            if (!leftHand) outX = -outX;
+            pose.palmRotation = CapsuleHandMath.BasisToQuaternion(outX, outY, outZ);
         }
 
-        // The palm pose for a parameter vector: the knuckle centre moves by (x0, x1, x2) along (u, n, t) and the palm turns
-        // about the knuckle centre by the rotation vector (x3, x4, x5) along (u, n, t). The rotation vector is multiplied
-        // by the hand sign so that a left hand and its mirror image have the SAME parameters.
+        // The palm pose (neck coordinates, left hand) for a parameter vector: the knuckle centre moves by (x0, x1, x2) and the
+        // palm turns about the knuckle centre by the rotation vector (x3, x4, x5).
         void PoseFromParams(double[] x, out Vector3 palmPosition, out Quaternion rotation, out Vector3 axisX, out Vector3 axisY, out Vector3 axisZ)
         {
-            Vector3 turn = (m_u * (float)x[3] + m_n * (float)x[4] + m_t * (float)x[5]) * m_handSign;
+            Vector3 turn = new Vector3((float)x[3], (float)x[4], (float)x[5]);
             rotation = CapsuleHandMath.Normalized(CapsuleHandMath.FromRotationVector(turn) * m_rotNominal);
             axisX = rotation * Vector3.right;
             axisY = rotation * Vector3.up;
             axisZ = rotation * Vector3.forward;
-            Vector3 knuckleCentre = m_knuckleNominal + m_u * (float)x[0] + m_n * (float)x[1] + m_t * (float)x[2];
+            Vector3 knuckleCentre = m_knuckleNominal + new Vector3((float)x[0], (float)x[1], (float)x[2]);
             palmPosition = knuckleCentre - (axisX * m_knuckleMean.x + axisY * m_knuckleMean.y + axisZ * m_knuckleMean.z) * m_s;
         }
 
@@ -381,7 +416,7 @@ namespace UntitledGuitarApp.Runtime.GhostHand
                     continue;
                 }
                 Vector3 local = ToPalm(m_centre[i] - p, aX, aY, aZ) / m_s;
-                FingerIk.Solve(dims.chains[i], local, out r);
+                FingerIk.Solve(m_left.chains[i], local, out r);
                 Vector3 e = (r.tip - local) * m_s;
                 res[k++] = ReachWeight * e.x; res[k++] = ReachWeight * e.y; res[k++] = ReachWeight * e.z;
                 res[k++] = SwingWeight * r.swing;
@@ -390,11 +425,18 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             }
             {
                 Vector3 local = ToPalm(m_thumbTarget - p, aX, aY, aZ) / m_s;
-                FingerIk.Solve(dims.chains[ThumbIndex], local, out r);
+                FingerIk.Solve(m_left.chains[ThumbIndex], local, out r);
                 Vector3 e = (r.tip - local) * m_s;
                 res[k++] = ThumbWeight * e.x; res[k++] = ThumbWeight * e.y; res[k++] = ThumbWeight * e.z;
             }
-            for (int j = 0; j < ParamCount; j++) res[k++] = (j < 3 ? PositionWeight : RotationWeight) * x[j];
+            for (int j = 0; j < ParamCount; j++)
+                res[k++] = (j < 3 ? PositionWeight : RotationWeight) * (j == 4 ? x[j] - YawComfort : x[j]);
+            res[k++] = BackwardYawWeight * (x[4] < 0.0 ? x[4] : 0.0);
+            {   // keep the knuckles out of the neck: their centre stays a finger's thickness outside its edge
+                double side = m_knuckleNominal.z + x[2];
+                double need = neckHalfWidth + 0.012 * m_s;
+                res[k++] = ClearanceWeight * (side < need ? need - side : 0.0);
+            }
 
             double cost = 0.0;
             for (int m = 0; m < ResidualCount; m++) cost += res[m] * res[m];
@@ -418,7 +460,7 @@ namespace UntitledGuitarApp.Runtime.GhostHand
         // the fit with the smallest worst miss (then the smallest cost). Leaves the winner in m_xBest.
         void FitPalm()
         {
-            for (int j = 0; j < ParamCount; j++) m_x[j] = 0.0;
+            for (int j = 0; j < ParamCount; j++) m_x[j] = m_xBest[j];
             double bestCost = Minimise();
             double bestWorst = WorstReach(m_res);
             for (int j = 0; j < ParamCount; j++) m_xBest[j] = m_x[j];
@@ -473,9 +515,8 @@ namespace UntitledGuitarApp.Runtime.GhostHand
                     {
                         for (int j = 0; j < ParamCount; j++)
                         {
-                            double limit = j < 3 ? MaxShift : MaxTurn;
                             double v = m_x[j] + m_d[j];
-                            m_xTry[j] = v < -limit ? -limit : (v > limit ? limit : v);
+                            m_xTry[j] = v < ParamMin[j] ? ParamMin[j] : (v > ParamMax[j] ? ParamMax[j] : v);
                         }
                         double tryCost = Evaluate(m_xTry, m_resTry);
                         if (tryCost < cost)
@@ -536,6 +577,7 @@ namespace UntitledGuitarApp.Runtime.GhostHand
         /// say (parent space), every finger in its relaxed curl.</summary>
         public void SolveFree(Vector3 wristPosition, Quaternion wristRotation, out HandPose pose)
         {
+            UpdateNeckFrame();
             for (int i = 0; i < FingerCount; i++) { used[i] = false; reachError[i] = 0f; }
             pose.palmPosition = CapsuleHandMath.IsFinite(wristPosition) ? wristPosition : Vector3.zero;
             pose.palmRotation = CapsuleHandMath.IsFinite(wristRotation) ? CapsuleHandMath.Normalized(wristRotation) : Quaternion.identity;
@@ -565,9 +607,9 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             return PalmToParent(pose, tipCentre) - m_n * TipLift(finger);
         }
 
-        static Vector3 ToPalm(Vector3 parentOffset, Vector3 axisX, Vector3 axisY, Vector3 axisZ)
+        static Vector3 ToPalm(Vector3 offset, Vector3 axisX, Vector3 axisY, Vector3 axisZ)
         {
-            return new Vector3(Vector3.Dot(parentOffset, axisX), Vector3.Dot(parentOffset, axisY), Vector3.Dot(parentOffset, axisZ));
+            return new Vector3(Vector3.Dot(offset, axisX), Vector3.Dot(offset, axisY), Vector3.Dot(offset, axisZ));
         }
     }
 }

@@ -48,9 +48,10 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             public float z;             // along the palm, wrist = 0
             public float halfWidth;     // x radius
             public float halfThickness; // y radius
-            public float alpha;         // how strongly this ring is drawn: 1 = full, 0 = invisible (both ends fade into nothing)
-            public PalmStation(float z, float halfWidth, float halfThickness, float alpha)
-            { this.z = z; this.halfWidth = halfWidth; this.halfThickness = halfThickness; this.alpha = alpha; }
+            public float alpha;         // how strongly this ring is drawn: 1 = full, 0 = invisible (the forearm end fades into nothing)
+            public float hollow;        // how much of the fill is left out here: 0 = as much fill as a finger, 1 = rim only
+            public PalmStation(float z, float halfWidth, float halfThickness, float alpha, float hollow)
+            { this.z = z; this.halfWidth = halfWidth; this.halfThickness = halfThickness; this.alpha = alpha; this.hollow = hollow; }
         }
 
         public readonly bool leftHand;
@@ -81,6 +82,8 @@ namespace UntitledGuitarApp.Runtime.GhostHand
         /// <summary>The palm slab, forearm end first. Its cross-section is a superellipse (exponent 2 = ellipse, larger = boxier).</summary>
         public readonly PalmStation[] palm;
         public readonly float palmExponent = 2.5f;
+        /// <summary>From this z on (palm space) the palm's rings lean forward so that its far end lies along KnuckleArc.</summary>
+        public readonly float palmArcStart = 0.045f;
 
         public static CapsuleHandDimensions CreateDefault(bool leftHand)
         {
@@ -91,6 +94,23 @@ namespace UntitledGuitarApp.Runtime.GhostHand
 
         /// <summary>Radius of the fingertip (joint 3) of a finger.</summary>
         public float TipRadius(int finger) { return radius[finger * 4 + 3]; }
+
+        /// <summary>The z (palm space) of the arc through the four finger knuckles at the sideways position x: straight
+        /// lines between neighbouring knuckles, continued past the index and little knuckles. The palm's far end follows it.</summary>
+        public float KnuckleArc(float x)
+        {
+            // walk the knuckles in order of increasing x (a left hand is mirrored, so its order is reversed)
+            int first = 0, step = 1;
+            if (chains[3].knuckle.x < chains[0].knuckle.x) { first = 3; step = -1; }
+            Vector3 p = chains[first].knuckle, q = chains[first + step].knuckle;
+            for (int k = 1; k < 3 && x > q.x; k++)
+            {
+                p = q;
+                q = chains[first + step * (k + 1)].knuckle;
+            }
+            float dx = q.x - p.x;
+            return Mathf.Abs(dx) > 1e-6f ? p.z + (q.z - p.z) * (x - p.x) / dx : 0.5f * (p.z + q.z);
+        }
 
         CapsuleHandDimensions(bool leftHand)
         {
@@ -153,17 +173,20 @@ namespace UntitledGuitarApp.Runtime.GhostHand
                 hoverMcp[ThumbIndex] = 0.15f; hoverPip[ThumbIndex] = 0.30f;
             }
 
+            // alpha: the forearm end fades into nothing. hollow: the palm and the wrist carry much less fill than a finger,
+            // so the rim draws their shape and they never outshine the fingers (docs/GHOST_HANDS.md section 3).
             palm = new PalmStation[]
             {
-                new PalmStation(-0.070f, 0.0265f, 0.0205f, 0.00f),  // forearm end: faded out completely
-                new PalmStation(-0.046f, 0.0268f, 0.0202f, 0.22f),
-                new PalmStation(-0.022f, 0.0275f, 0.0194f, 0.50f),
-                new PalmStation( 0.000f, 0.0290f, 0.0182f, 0.74f),  // wrist
-                new PalmStation( 0.022f, 0.0330f, 0.0170f, 0.92f),
-                new PalmStation( 0.045f, 0.0368f, 0.0155f, 1.00f),
-                new PalmStation( 0.064f, 0.0392f, 0.0140f, 0.84f),
-                new PalmStation( 0.081f, 0.0400f, 0.0125f, 0.42f),
-                new PalmStation( 0.097f, 0.0395f, 0.0110f, 0.00f),  // knuckle line: the fingers' own skin has taken over
+                //               z         halfWidth  halfThick  alpha  hollow
+                new PalmStation(-0.070f, 0.0265f, 0.0205f, 0.00f, 1.00f),  // forearm end: faded out completely
+                new PalmStation(-0.046f, 0.0268f, 0.0202f, 0.25f, 0.95f),
+                new PalmStation(-0.022f, 0.0275f, 0.0194f, 0.55f, 0.90f),
+                new PalmStation( 0.000f, 0.0290f, 0.0182f, 0.80f, 0.80f),  // wrist
+                new PalmStation( 0.022f, 0.0330f, 0.0170f, 0.95f, 0.70f),
+                new PalmStation( 0.045f, 0.0368f, 0.0155f, 1.00f, 0.60f),
+                new PalmStation( 0.064f, 0.0392f, 0.0140f, 1.00f, 0.55f),
+                new PalmStation( 0.081f, 0.0400f, 0.0125f, 1.00f, 0.50f),
+                new PalmStation( 0.097f, 0.0395f, 0.0110f, 1.00f, 0.50f),  // knuckle line (the far end follows KnuckleArc)
             };
 
             if (leftHand) MirrorX();

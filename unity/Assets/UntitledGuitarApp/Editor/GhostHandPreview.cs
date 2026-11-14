@@ -17,8 +17,11 @@
 //   G               literal G-shaped fingertip targets on a straight virtual neck in the pinned neck frame
 //   G_finger2       the same with finger 2 active (the rest at 30%)
 //   G_faded         the same faded to 40%
-//   plus G seen from roughly where the player's eyes are.
+//   plus G seen from roughly where the player's eyes are (G_player) and along the neck from the headstock (G_nut: the
+//   fretboard is the bright line, the thumb should rest below it, behind the neck).
 // The thin grey lines (nut, frets, strings) and the orange marks (the targets) are only there to judge the pose.
+// What to look for: no bright seams where parts overlap (the shader draws only the hand's front-most surface), the glow
+// only on the three pressing fingertips (not on the thumb or the hovering little finger), the palm mostly rim.
 //
 // APIS (Unity 2021.3 Scripting Reference / Manual, local copy under Unity.app/Contents/Documentation/en, online under
 // https://docs.unity3d.com/2021.3/Documentation/):
@@ -168,6 +171,7 @@ namespace UntitledGuitarApp.Editor
                 Vector3 up = new Vector3(0f, 0f, -1f);
                 Vector3 threeQuarterEye = new Vector3(0.30f, 0.32f, -0.22f), threeQuarterLook = new Vector3(0.07f, 0.01f, 0.03f);
                 Vector3 playerEye = new Vector3(0.40f, 0.10f, -0.36f), playerLook = new Vector3(0.07f, 0.01f, 0.02f);
+                Vector3 nutEye = new Vector3(-0.40f, 0f, 0.03f), nutLook = new Vector3(0.07f, -0.01f, 0.03f);      // up = +y here
 
                 // 1. rest
                 hand.SetFingertipTargets(null, true);
@@ -183,6 +187,8 @@ namespace UntitledGuitarApp.Editor
                 Shoot(cam, readback, folder, "ghost_G", written);
                 Aim(cam, playerEye, playerLook, up, 22f);
                 Shoot(cam, readback, folder, "ghost_G_player", written);
+                Aim(cam, nutEye, nutLook, Vector3.up, 18f);
+                Shoot(cam, readback, folder, "ghost_G_nut", written);
                 Aim(cam, threeQuarterEye, threeQuarterLook, up, 24f);
 
                 // 3. finger 2 active
@@ -199,6 +205,13 @@ namespace UntitledGuitarApp.Editor
                 float worst = 0f;
                 for (int finger = 1; finger <= 3; finger++) worst = Mathf.Max(worst, hand.GetReachError(finger));
                 Debug.Log("[GhostHandPreview] G shape: worst fingertip miss " + (worst * 1000f).ToString("F2") + " mm (acceptance: 3 mm)");
+                // GetFingertipPad is the point below the tip centre along the neck normal; add the radius back for the centre
+                float thumbRadius = hand.Solver.dims.TipRadius(CapsuleHandDimensions.ThumbIndex) * hand.scale;
+                Vector3 thumb = hand.GetFingertipPad(5) + hand.Solver.Normal * thumbRadius;
+                Debug.Log("[GhostHandPreview] G shape: thumb tip centre " + (thumb.y * 1000f).ToString("F1") + " mm from the fretboard plane " +
+                          "(negative = behind it; the back of the neck is at about -" + (hand.Solver.neckDepth * 1000f).ToString("F0") + " mm), " +
+                          (thumb.z * 1000f).ToString("F1") + " mm across from the neck's centre line, miss " +
+                          (hand.GetReachError(5) * 1000f).ToString("F1") + " mm");
             }
             finally
             {
