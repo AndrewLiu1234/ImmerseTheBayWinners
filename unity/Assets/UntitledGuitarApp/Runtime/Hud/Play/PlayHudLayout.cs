@@ -12,8 +12,8 @@
 // screen-aligned column (it always faces the eyes and stays upright in the display), laid out in DEGREES OF VIEW relative to
 // its anchor, +x to the viewer's right and +y up:
 //
-//      +12.0   chord names above the words      (lyric strip, optional)
-//       +9.8   current lyric line
+//      +12.0   chord names above the words      (lyric strip, optional; a chords-only song shows its
+//       +9.8   current lyric line                chord sequence with one tick per beat here instead)
 //       +7.4   next lyric line (smaller)
 //       +3.0   CURRENT CHORD (4 degrees)   |  "next" + next chord
 //       -0.9   beat dots (countdown to the change)  /  wait cue
@@ -86,20 +86,29 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
         public const float PatternLaneDropDeg = 1.55f;
         public const float PatternCaretDeg = 0.7f;
 
-        public const float LyricChordRowDeg = 12.0f;
-        public const float LyricChordCapDeg = 1.5f;
-        public const float LyricMarkerRowDeg = 10.95f;
-        public const float LyricLineRowDeg = 9.8f;
+        /// <summary>Row of the current lyric line (or, for a chords-only line, the reference row of the chord sequence).</summary>
+        public const float LyricRowDeg = 9.8f;
+
+        // The lyric strip, relative to its own origin (the left end of the current line, at the middle of its letters).
         public const float LyricLineCapDeg = 1.5f;
-        public const float LyricCaretRowDeg = 8.6f;
-        public const float LyricNextRowDeg = 7.4f;
+        public const float LyricChordRiseDeg = 2.25f;
+        public const float LyricChordCapDeg = 1.5f;
+        public const float LyricMarkerRiseDeg = 1.2f;
+        public const float LyricMarkerWidthDeg = 1.1f;
+        public const float LyricMarkerHeightDeg = 0.2f;
+        public const float LyricCaretDropDeg = 1.25f;
+        public const float LyricCaretDeg = 0.6f;
+        public const float LyricNextDropDeg = 2.45f;
         public const float LyricNextCapDeg = HudText.MinTextDegrees;
 
-        public const float SequenceNameRowDeg = 11.0f;
+        // A chords-only line: chord names over one tick per beat, the next line's names smaller underneath.
+        public const float SequenceNameRiseDeg = 1.25f;
         public const float SequenceNameCapDeg = 1.6f;
-        public const float SequenceTickRowDeg = 9.55f;
-        public const float SequenceNextRowDeg = 7.5f;
+        public const float SequenceTickDropDeg = 0.3f;
+        public const float SequenceNextDropDeg = 2.3f;
+        public const float SequenceNextCapDeg = HudText.MinTextDegrees;
         public const float SequenceMaxBeatPitchDeg = 2.4f;
+        public const float SequenceMinBeatPitchDeg = 0.85f;
 
         /// <summary>The count-in digit: large, in the "next chord" block (nothing there is needed before the song starts).</summary>
         public const float CountInCapDeg = 5f;
