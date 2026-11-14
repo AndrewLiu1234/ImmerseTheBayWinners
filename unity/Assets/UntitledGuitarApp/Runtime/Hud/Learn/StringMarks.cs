@@ -12,7 +12,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
     /// alignment error, so marks drawn exactly on the string ends would pile up and could not say which string they
     /// mean. Instead the six marks stand in a row across the nut, just beyond it, 1.8 degrees apart, in the order the
     /// strings appear to the player (the layout of the X / O row of a chord diagram). While any mark is showing, the
-    /// other strings show their number dimly, so a lone mark is never ambiguous: it stands where its number was.
+    /// other strings show their number in pale blue, so a lone mark is never ambiguous: it stands where its number was.
     ///
     /// The marks follow the neck socket in world space every frame and turn to face the head. They are deliberately NOT
     /// parented under the socket, so a mirrored (left-handed) or scaled socket cannot mirror or resize them. Keep this
@@ -29,8 +29,14 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
         /// <summary>Cap height of the dim string numbers, degrees (the project's minimum text size).</summary>
         public const float DigitDegrees = HudText.MinTextDegrees;
 
-        /// <summary>Brightness of the dim string numbers (a legend, quieter than the marks).</summary>
-        public const float LegendOpacity = 0.7f;
+        /// <summary>
+        /// Brightness of the string numbers shown beside a mark. They are what makes a lone mark readable ("this is string
+        /// 2"), and on the additive glasses a dim number simply vanishes in a bright room, so they are only a step below
+        /// full: about 57% luminance in their pale blue, against 33% at the old 0.7. They stay quieter than the marks by
+        /// colour (pale blue against saturated green, red-orange and amber), by size (1.2 against 1.5 degrees) and by
+        /// being thin text against heavy strokes.
+        /// </summary>
+        public const float LegendOpacity = 0.9f;
 
         const float ResizeFraction = 0.08f;
 
