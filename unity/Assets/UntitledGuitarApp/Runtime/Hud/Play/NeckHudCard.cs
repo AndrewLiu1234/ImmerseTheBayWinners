@@ -1,7 +1,7 @@
 // NeckHudCard: the play-along card that floats by the neck (docs/MASTER_PLAN.md section 17: "about 8 cm above the neck
 // near fret 5, angled toward the eyes"). It holds the current chord (large), the next chord with the beat-dot countdown,
-// and the strum or picking strip; later commits add the lyric strip and the count-in. There is no plate and no frame: on
-// the additive glasses a "card" is only a group of bright things that move together.
+// the strum or picking strip, and (optional) the lyric strip. There is no plate and no frame: on the additive glasses a
+// "card" is only a group of bright things that move together.
 //
 // PLACEMENT. The card is not a child of the neck: it reads the neck socket and the head every frame and sets its own world
 // pose. That way it always faces the eyes, stays level in the display, keeps its angular size at any distance, and is never
@@ -21,7 +21,8 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
 {
     /// <summary>
     /// The neck HUD card. Create it with <see cref="Create"/>, attach it with <see cref="Attach"/>, then every frame of a
-    /// play-along feed <see cref="SetChords"/>, <see cref="Beats"/>, <see cref="Pattern"/> and <see cref="SetWaiting"/>.
+    /// play-along feed <see cref="SetChords"/>, <see cref="Beats"/>, <see cref="Pattern"/>, <see cref="Lyrics"/> and
+    /// <see cref="SetWaiting"/>.
     /// Main thread only.
     /// </summary>
     [DisallowMultipleComponent]
@@ -56,6 +57,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
         Transform _waitGroup;
         BeatDots _beats;
         PatternStrip _pattern;
+        LyricStrip _lyrics;
 
         string _currentRaw = string.Empty;
         string _nextRaw = string.Empty;
@@ -84,6 +86,9 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
 
         /// <summary>The strum or picking strip.</summary>
         public PatternStrip Pattern { get { return _pattern; } }
+
+        /// <summary>The lyric strip (chords above the words, or the chord sequence of a chords-only song). Optional: leave it unfed and it shows nothing.</summary>
+        public LyricStrip Lyrics { get { return _lyrics; } }
 
         /// <summary>The current chord as last set.</summary>
         public string CurrentChord { get { return _currentRaw; } }
@@ -151,6 +156,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
 
             _beats = BeatDots.Create(transform, d);
             _pattern = PatternStrip.Create(transform, d);
+            _lyrics = LyricStrip.Create(transform, d);
 
             var wait = new GameObject("WaitCue");
             wait.transform.SetParent(transform, false);
@@ -347,6 +353,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
             _beats.transform.localPosition = new Vector3(firstDot, dotsY, 0f);
 
             _pattern.transform.localPosition = new Vector3(left, PlayHudLayout.Offset(PlayHudLayout.PatternRowDeg * scale, d), 0f);
+            _lyrics.transform.localPosition = new Vector3(left, PlayHudLayout.Offset(PlayHudLayout.LyricRowDeg * scale, d), 0f);
 
             // Wait cue: a pause mark (two upright bars) and "strum G", on the dots row.
             float cueDeg = PlayHudLayout.TextDeg(PlayHudLayout.WaitCueCapDeg, _large);
