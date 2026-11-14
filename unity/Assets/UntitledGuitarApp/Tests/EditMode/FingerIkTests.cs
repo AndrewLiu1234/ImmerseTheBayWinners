@@ -418,7 +418,7 @@ namespace UntitledGuitarApp.Tests.EditMode
             for (int f = 0; f < 5; f++)
             {
                 bool thumb = f == CapsuleHandDimensions.ThumbIndex;
-                GhostTubeGeometry tube = new GhostTubeGeometry(thumb ? 4 : 5, 20, 4, 4, 3, thumb ? 0.50f : 0.55f, 0.5f);
+                GhostTubeGeometry tube = new GhostTubeGeometry(thumb ? 4 : 5, 20, 4, 4, 3, thumb ? 0.50f : 0.55f, 0.5f, true);
                 FingerIkResult r = fingers[f];
                 if (thumb)
                 {
@@ -453,8 +453,8 @@ namespace UntitledGuitarApp.Tests.EditMode
                 triangles += tube.triangleCount;
             }
 
-            Vector3[] pv, pn; Color32[] pc; int[] pt;
-            GhostPalmGeometry.Build(dims, 28, out pv, out pn, out pc, out pt);
+            Vector3[] pv, pn; Color32[] pc; float[] ph; int[] pt;
+            GhostPalmGeometry.Build(dims, 28, out pv, out pn, out pc, out ph, out pt);
             for (int k = 0; k < pt.Length; k += 3)
             {
                 Vector3 a = pv[pt[k]], b = pv[pt[k + 1]], c = pv[pt[k + 2]];

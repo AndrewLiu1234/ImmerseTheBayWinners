@@ -210,8 +210,8 @@ namespace UntitledGuitarApp.Runtime.GhostHand
 
             // ---- the palm: built once ----
             {
-                Vector3[] v; Vector3[] n; Color32[] c; int[] t;
-                GhostPalmGeometry.Build(dims, PalmAround, out v, out n, out c, out t);
+                Vector3[] v; Vector3[] n; Color32[] c; float[] h; int[] t;
+                GhostPalmGeometry.Build(dims, PalmAround, out v, out n, out c, out h, out t);
                 Mesh mesh = new Mesh();
                 mesh.name = "GhostHand palm";
                 mesh.SetVertices(v);
@@ -227,7 +227,7 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             for (int f = 0; f < FingerCount; f++)
             {
                 bool thumb = f == ThumbIndex;
-                GhostTubeGeometry tube = new GhostTubeGeometry(thumb ? 4 : 5, FingerAround, ElbowSteps, CapRows, FadeRows, thumb ? 0.50f : 0.55f, 0.5f);
+                GhostTubeGeometry tube = new GhostTubeGeometry(thumb ? 4 : 5, FingerAround, ElbowSteps, CapRows, FadeRows, thumb ? 0.50f : 0.55f, 0.5f, true);
                 m_tubes[f] = tube;
                 Mesh mesh = new Mesh();
                 mesh.name = "GhostHand " + PartNames[f + 1];

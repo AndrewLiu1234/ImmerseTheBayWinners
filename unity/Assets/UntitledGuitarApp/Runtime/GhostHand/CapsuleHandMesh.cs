@@ -1,22 +1,31 @@
-// CapsuleHandMesh: the vertex data of the capsule hand. Plain C# (arrays of Vector3 / Color32 / int only): no Mesh, no
-// Unity object, so it runs and is tested outside the editor. CapsuleHand copies these arrays into Mesh objects.
+// CapsuleHandMesh: the vertex data of the capsule hand. Plain C# (arrays of Vector3 / Vector4 / Color32 / int only): no
+// Mesh, no Unity object, so it runs and is tested outside the editor. CapsuleHand copies these arrays into one Mesh.
 //
-// WHY A FINGER IS ONE SKIN AND NOT THREE CAPSULES
-//   The ghost shader is additive and writes no depth, so every surface is visible through every other one. Three
-//   overlapping capsules would show their buried round ends as bright arcs across each joint ("a stack of pills").
-//   GhostTubeGeometry therefore builds exactly the OUTSIDE of the union of the capsules of one finger:
+// ONE MESH FOR THE WHOLE HAND (GhostHandGeometry)
+//   The ghost shader first writes the depth of the whole mesh and then adds colour only where a surface is the front-most
+//   one. That only makes "one hand" out of the parts if they are all in the same mesh, so the palm and the five fingers
+//   share one vertex buffer. The topology never changes: a pose change rewrites positions and normals in place, a change
+//   of brightness rewrites one small per-vertex control value. Nothing is allocated after construction.
+//
+// A FINGER IS ONE SKIN, NOT THREE CAPSULES (GhostTubeGeometry)
+//   It is exactly the OUTSIDE of the union of the finger's capsules:
 //     * straight (slightly tapered) tube sections along the bones,
 //     * at every joint, on the outside of the bend, the wedge of the joint sphere that the bend opens up,
 //     * on the inside of the bend, the crease where the two tubes run into each other (nothing is drawn past it),
-//     * a hemisphere at the fingertip, and a start that fades to nothing inside the palm.
-//   The topology never changes. Update() only rewrites the positions and normals, in place, with no allocation.
+//     * a hemisphere at the fingertip. The start is open; it sits hidden inside the palm.
+//   So the normals are continuous along the whole finger and the rim light never breaks at a joint.
 //
-// VERTEX COLOURS follow the GhostHand shader's convention: red = fingertip glow, blue = fade out, alpha unused.
+// PER-VERTEX DATA (the GhostHand shader's conventions)
+//   colour   red = fingertip glow, blue = fade out (the forearm end), green and alpha unused
+//   control  (TEXCOORD0, only read by the shader when _VertexControl is 1):
+//            x = dim     0 = full brightness .. 1 = off      (finger-by-finger emphasis)
+//            y = hollow  0 = normal fill .. 1 = rim only      (the palm and wrist are drawn lighter than the fingers)
+//            z = tipOff  0 = the fingertip glows .. 1 = no glow   (only fingers that press a string glow)
 using UnityEngine;
 
 namespace UntitledGuitarApp.Runtime.GhostHand
 {
-    /// <summary>A tube swept along a short polyline (one finger): fading start, rounded bends, hemispherical tip.</summary>
+    /// <summary>A tube swept along a short polyline (one finger): open start, rounded bends, hemispherical tip.</summary>
     public sealed class GhostTubeGeometry
     {
         /// <summary>The crease on the inside of a bend may use up at most this fraction of each neighbouring bone.</summary>
@@ -27,8 +36,8 @@ namespace UntitledGuitarApp.Runtime.GhostHand
         public readonly int around;                 // vertices around the tube
         public readonly int elbowSteps;             // rings spanning the outside of each bend, minus one
         public readonly int capRows;                // rings of the fingertip hemisphere (the pole is one extra vertex)
-        public readonly int fadeRows;               // rings of the fading start
-        public readonly float fadeFraction;         // the start fades in over this fraction of the first section
+        public readonly int startRows;              // rings along the first part of the first section
+        public readonly float startFraction;        // those rings cover this fraction of the first section
         public readonly float tipGlowStart;         // the fingertip glow starts this far along the last section (0..1)
 
         public readonly int rowCount;
@@ -42,17 +51,18 @@ namespace UntitledGuitarApp.Runtime.GhostHand
         readonly float[] m_cos;
         readonly float[] m_sin;
 
-        public GhostTubeGeometry(int pointCount, int around, int elbowSteps, int capRows, int fadeRows, float fadeFraction, float tipGlowStart)
+        /// <param name="fadeStart">true = the start rings fade in from nothing (blue vertex colour); false = solid from the start.</param>
+        public GhostTubeGeometry(int pointCount, int around, int elbowSteps, int capRows, int startRows, float startFraction, float tipGlowStart, bool fadeStart)
         {
             this.pointCount = Mathf.Max(pointCount, 3);
             this.around = Mathf.Max(around, 6);
             this.elbowSteps = Mathf.Max(elbowSteps, 1);
             this.capRows = Mathf.Max(capRows, 2);
-            this.fadeRows = Mathf.Max(fadeRows, 2);
-            this.fadeFraction = Mathf.Clamp(fadeFraction, 0.05f, 1f - MaxCreaseFraction - 0.05f);
+            this.startRows = Mathf.Max(startRows, 2);
+            this.startFraction = Mathf.Clamp(startFraction, 0.05f, 1f - MaxCreaseFraction - 0.05f);
             this.tipGlowStart = Mathf.Clamp(tipGlowStart, MaxCreaseFraction + 0.05f, 0.95f);
 
-            int n = this.pointCount, N = this.around, K = this.elbowSteps, M = this.capRows, F = this.fadeRows;
+            int n = this.pointCount, N = this.around, K = this.elbowSteps, M = this.capRows, F = this.startRows;
             int tipStartRow = F + (n - 2) * (K + 1);
             rowCount = tipStartRow + 1 + M;
             vertexCount = rowCount * N + 1;
@@ -71,11 +81,11 @@ namespace UntitledGuitarApp.Runtime.GhostHand
                 m_sin[i] = Mathf.Sin(phi);
             }
 
-            // colours: the start fades in (blue = fade out), the tip glows (red)
+            // colours: the tip glows (red); optionally the start fades in (blue = fade out)
             for (int row = 0; row < rowCount; row++)
             {
                 byte fadeOut = 0, tip = 0;
-                if (row < F)
+                if (fadeStart && row < F)
                 {
                     float x = (float)row / (F - 1);
                     float shown = x * x * (3f - 2f * x);
@@ -107,9 +117,9 @@ namespace UntitledGuitarApp.Runtime.GhostHand
         }
 
         /// <summary>
-        /// Rewrite the vertices and normals for a centre line. points[0] is where the skin starts (faded), points[1 .. n-2]
-        /// are the joints, points[n-1] is the fingertip centre; radii[i] is the thickness at points[i]. upHint fixes how the
-        /// ring is turned about the first section (any direction not parallel to it). No allocation.
+        /// Rewrite the vertices and normals for a centre line. points[0] is where the skin starts, points[1 .. n-2] are the
+        /// joints, points[n-1] is the fingertip centre; radii[i] is the thickness at points[i]. upHint fixes how the ring is
+        /// turned about the first section (any direction not parallel to it). No allocation.
         /// </summary>
         public void Update(Vector3[] points, float[] radii, Vector3 upHint)
         {
@@ -132,9 +142,9 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             Vector3 e2 = Vector3.Cross(a, e1);
 
             int row = 0;
-            for (int f = 0; f < fadeRows; f++)
+            for (int f = 0; f < startRows; f++)
             {
-                float g = fadeFraction * f / (fadeRows - 1);
+                float g = startFraction * f / (startRows - 1);
                 WriteRing(row++, p0 + seg * g, Mathf.Lerp(radii[0], radii[1], g), e1, e2, a, 1f, 0f);
             }
 
@@ -242,36 +252,53 @@ namespace UntitledGuitarApp.Runtime.GhostHand
         }
     }
 
-    /// <summary>The palm: a rounded slab lofted through CapsuleHandDimensions.palm, faded out at both ends. Built once.</summary>
+    /// <summary>The palm: a rounded slab lofted through CapsuleHandDimensions.palm. The forearm end fades out and is open;
+    /// the far end is closed and follows the arc of the knuckles, so the fingers grow out of it. Built once.</summary>
     public static class GhostPalmGeometry
     {
+        // how the closed end is rounded off: distance past the knuckle arc, and the thickness left there
+        static readonly float[] CapAhead = { 0.0045f, 0.0075f, 0.0090f };
+        static readonly float[] CapThickness = { 0.80f, 0.48f, 0.0f };
+
+        /// <param name="hollow">per vertex, 0..1: how much of the fill to leave out (the palm and wrist are drawn lighter).</param>
         public static void Build(CapsuleHandDimensions dims, int around,
-            out Vector3[] vertices, out Vector3[] normals, out Color32[] colors, out int[] triangles)
+            out Vector3[] vertices, out Vector3[] normals, out Color32[] colors, out float[] hollow, out int[] triangles)
         {
             int N = Mathf.Max(around, 8);
             CapsuleHandDimensions.PalmStation[] st = dims.palm;
-            int rows = st.Length;
+            int stations = st.Length;
+            int rows = stations + CapAhead.Length;
             vertices = new Vector3[rows * N];
             normals = new Vector3[rows * N];
             colors = new Color32[rows * N];
+            hollow = new float[rows * N];
             triangles = new int[(rows - 1) * N * 6];
 
             float power = 2f / Mathf.Max(dims.palmExponent, 1f);
+            float zEnd = st[stations - 1].z;
+            float zBend = dims.palmArcStart;
             for (int r = 0; r < rows; r++)
             {
-                byte fadeOut = (byte)Mathf.RoundToInt((1f - Mathf.Clamp01(st[r].alpha)) * 255f);
+                int s = Mathf.Min(r, stations - 1);
+                float thickness = r < stations ? 1f : CapThickness[r - stations];
+                float ahead = r < stations ? 0f : CapAhead[r - stations];
+                byte fadeOut = (byte)Mathf.RoundToInt((1f - Mathf.Clamp01(st[s].alpha)) * 255f);
                 for (int i = 0; i < N; i++)
                 {
                     float phi = 2f * Mathf.PI * i / N;
-                    float c = Mathf.Cos(phi), s = Mathf.Sin(phi);
-                    float x = Mathf.Sign(c) * Mathf.Pow(Mathf.Abs(c), power) * st[r].halfWidth;
-                    float y = Mathf.Sign(s) * Mathf.Pow(Mathf.Abs(s), power) * st[r].halfThickness;
-                    vertices[r * N + i] = new Vector3(x, y, st[r].z);
+                    float c = Mathf.Cos(phi), sn = Mathf.Sin(phi);
+                    float x = Mathf.Sign(c) * Mathf.Pow(Mathf.Abs(c), power) * st[s].halfWidth;
+                    float y = Mathf.Sign(sn) * Mathf.Pow(Mathf.Abs(sn), power) * st[s].halfThickness * thickness;
+                    // past the middle of the palm the rings lean so that the last one lies along the arc of the knuckles
+                    float z = st[s].z;
+                    if (z > zBend) z = zBend + (z - zBend) * (dims.KnuckleArc(x) - zBend) / (zEnd - zBend);
+                    vertices[r * N + i] = new Vector3(x, y, z + ahead);
                     colors[r * N + i] = new Color32(0, 0, fadeOut, 255);
+                    hollow[r * N + i] = st[s].hollow;
                 }
             }
 
-            // Winding: pick the order whose face normal points away from the palm's axis (the same for both hands).
+            // Winding: pick the order whose face normal points away from the palm's axis.
             Vector3 p00 = vertices[0], p01 = vertices[1], p10 = vertices[N];
             Vector3 probe = Vector3.Cross(p01 - p00, p10 - p00);
             bool keep = Vector3.Dot(probe, new Vector3(p00.x, p00.y, 0f)) > 0f;
@@ -307,6 +334,118 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             {
                 float m = normals[v].magnitude;
                 normals[v] = m > 1e-12f ? normals[v] / m : Vector3.up;
+            }
+        }
+    }
+
+    /// <summary>The whole hand as one vertex buffer: the palm, then fingers 1-4, then the thumb. Palm space, scale 1.</summary>
+    public sealed class GhostHandGeometry
+    {
+        public const int PartCount = 6;         // 0 = palm, 1-4 = fingers 1-4 (index..little), 5 = thumb  (part = finger index + 1)
+        public const int ElbowSteps = 4;
+        public const int CapRows = 4;
+        public const int StartRows = 2;
+
+        public readonly Vector3[] vertices;
+        public readonly Vector3[] normals;
+        public readonly Color32[] colors;       // static
+        public readonly Vector4[] control;      // (dim, hollow, tipOff, 0): see the top of this file
+        public readonly int[] triangles;        // static
+        public readonly int[] partStart = new int[PartCount];
+        public readonly int[] partCount = new int[PartCount];
+
+        readonly CapsuleHandDimensions m_dims;
+        readonly GhostTubeGeometry[] m_tubes = new GhostTubeGeometry[CapsuleHandDimensions.FingerCount];
+        readonly Vector3[] m_points = new Vector3[5];
+        readonly float[] m_radii = new float[5];
+
+        public int VertexCount { get { return vertices.Length; } }
+        public int TriangleCount { get { return triangles.Length / 3; } }
+
+        public GhostHandGeometry(CapsuleHandDimensions dims, int fingerAround, int palmAround)
+        {
+            m_dims = dims;
+            Vector3[] pv; Vector3[] pn; Color32[] pc; float[] ph; int[] pt;
+            GhostPalmGeometry.Build(dims, palmAround, out pv, out pn, out pc, out ph, out pt);
+
+            int vertexTotal = pv.Length, indexTotal = pt.Length;
+            for (int f = 0; f < CapsuleHandDimensions.FingerCount; f++)
+            {
+                bool thumb = f == CapsuleHandDimensions.ThumbIndex;
+                m_tubes[f] = new GhostTubeGeometry(thumb ? 4 : 5, fingerAround, ElbowSteps, CapRows, StartRows, 0.5f, 0.5f, false);
+                vertexTotal += m_tubes[f].vertexCount;
+                indexTotal += m_tubes[f].triangles.Length;
+            }
+
+            vertices = new Vector3[vertexTotal];
+            normals = new Vector3[vertexTotal];
+            colors = new Color32[vertexTotal];
+            control = new Vector4[vertexTotal];
+            triangles = new int[indexTotal];
+
+            System.Array.Copy(pv, vertices, pv.Length);
+            System.Array.Copy(pn, normals, pn.Length);
+            System.Array.Copy(pc, colors, pc.Length);
+            System.Array.Copy(pt, triangles, pt.Length);
+            for (int i = 0; i < pv.Length; i++) control[i] = new Vector4(0f, ph[i], 1f, 0f);    // the palm never glows like a fingertip
+            partStart[0] = 0; partCount[0] = pv.Length;
+
+            int v = pv.Length, t = pt.Length;
+            for (int f = 0; f < CapsuleHandDimensions.FingerCount; f++)
+            {
+                GhostTubeGeometry tube = m_tubes[f];
+                partStart[f + 1] = v; partCount[f + 1] = tube.vertexCount;
+                System.Array.Copy(tube.colors, 0, colors, v, tube.vertexCount);
+                for (int k = 0; k < tube.triangles.Length; k++) triangles[t + k] = tube.triangles[k] + v;
+                v += tube.vertexCount; t += tube.triangles.Length;
+            }
+
+            // a first shape, so the buffers never hold a collapsed finger: every finger in its relaxed curl
+            FingerIkResult r;
+            for (int f = 0; f < CapsuleHandDimensions.FingerCount; f++)
+            {
+                FingerIk.Pose(dims.chains[f], 0f, dims.relaxedMcp[f], dims.relaxedPip[f], out r);
+                SetFinger(f, r.knuckle, r.pip, r.dip, r.tip);
+            }
+        }
+
+        /// <summary>Redraw one finger (0 = index .. 3 = little, 4 = thumb) through its four joint positions (palm space).</summary>
+        public void SetFinger(int finger, Vector3 knuckle, Vector3 pip, Vector3 dip, Vector3 tip)
+        {
+            CapsuleHandDimensions dims = m_dims;
+            Vector3 upHint;
+            if (finger == CapsuleHandDimensions.ThumbIndex)
+            {
+                m_points[0] = knuckle; m_points[1] = pip; m_points[2] = dip; m_points[3] = tip;
+                m_radii[0] = dims.Radius(finger, 0); m_radii[1] = dims.Radius(finger, 1); m_radii[2] = dims.Radius(finger, 2); m_radii[3] = dims.Radius(finger, 3);
+                upHint = -dims.chains[finger].curl;
+            }
+            else
+            {
+                m_points[0] = dims.skinStart[finger]; m_points[1] = knuckle; m_points[2] = pip; m_points[3] = dip; m_points[4] = tip;
+                m_radii[0] = dims.skinStartRadius[finger]; m_radii[1] = dims.Radius(finger, 0); m_radii[2] = dims.Radius(finger, 1);
+                m_radii[3] = dims.Radius(finger, 2); m_radii[4] = dims.Radius(finger, 3);
+                upHint = Vector3.up;
+            }
+            GhostTubeGeometry tube = m_tubes[finger];
+            tube.Update(m_points, m_radii, upHint);
+            int start = partStart[finger + 1];
+            System.Array.Copy(tube.vertices, 0, vertices, start, tube.vertexCount);
+            System.Array.Copy(tube.normals, 0, normals, start, tube.vertexCount);
+        }
+
+        /// <summary>Brightness of one part (0 = palm, 1-4 = fingers, 5 = thumb): dim 0 = full .. 1 = off; tipGlow 1 = the
+        /// fingertip glows .. 0 = it does not. Writes the control values of that part's vertices.</summary>
+        public void SetPartLook(int part, float dim, float tipGlow)
+        {
+            float d = Mathf.Clamp01(dim), off = 1f - Mathf.Clamp01(tipGlow);
+            int start = partStart[part], end = start + partCount[part];
+            for (int i = start; i < end; i++)
+            {
+                Vector4 c = control[i];
+                c.x = d;
+                c.z = off;
+                control[i] = c;
             }
         }
     }
