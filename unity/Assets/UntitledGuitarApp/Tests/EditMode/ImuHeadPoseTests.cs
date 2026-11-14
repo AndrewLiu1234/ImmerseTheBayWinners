@@ -114,6 +114,43 @@ namespace UntitledGuitarApp.Tests.EditMode
             ExpectParse(J(FullPacket), 12.345678, 0.0, 0.70710678, 0.0, 0.70710678);
         }
 
+        // Real datagrams from tools/imu-bridge/bridge.py --fake: t, q, then the extra keys "seq" and "src" that receivers ignore.
+        // The first was captured on the merged bridge; the second is the example in docs/apis/glasses/imu-protocol.md.
+        const string BridgeDatagramCaptured = "{\"t\":0.744376,\"q\":[0.0787635,0.0943976,0.0383792,0.9916715],\"seq\":186,\"src\":\"fake\"}";
+        const string BridgeDatagramDocumented = "{\"t\":2.996300,\"q\":[-0.0160335,0.2056157,-0.0462472,0.9774080],\"seq\":749,\"src\":\"fake\"}";
+
+        [Test]
+        public void Parser_TheBridgesRealFakeModeDatagrams_AreAccepted()
+        {
+            ExpectBridgeDatagram(BridgeDatagramCaptured, 0.744376, 0.0787635, 0.0943976, 0.0383792, 0.9916715);
+            ExpectBridgeDatagram(BridgeDatagramDocumented, 2.996300, -0.0160335, 0.2056157, -0.0462472, 0.9774080);
+        }
+
+        [Test]
+        public void Parser_TheBridgesRealDatagram_SurvivesAnyCutOrAnyPaddingAfterIt()
+        {
+            byte[] bytes = Utf8(BridgeDatagramCaptured);
+            double t;
+            Quaternion q;
+            for (int length = 0; length < bytes.Length; length++)
+                Assert.IsFalse(ImuPacketParser.TryParse(bytes, length, out t, out q), "cut to " + length + " bytes");
+            byte[] padded = new byte[4096];
+            Array.Copy(bytes, padded, bytes.Length);
+            Assert.IsTrue(ImuPacketParser.TryParse(padded, bytes.Length, out t, out q), "the receiver passes the datagram length, not the buffer size");
+            Assert.AreEqual(0.744376, t, 1e-12);
+        }
+
+        // The bridge prints seven decimals, so its quaternion has length 1 only to about 1e-7; the parser normalizes it.
+        static void ExpectBridgeDatagram(string json, double t, double x, double y, double z, double w)
+        {
+            double len = Math.Sqrt(x * x + y * y + z * z + w * w);
+            ExpectParse(json, t, x / len, y / len, z / len, w / len);
+            double pt;
+            Quaternion pq;
+            Assert.IsTrue(TryParse(json, out pt, out pq));
+            AssertUnitAndFinite(pq, json);
+        }
+
         [Test]
         public void Parser_CompactPacket_WithoutAnyWhitespace()
         {
