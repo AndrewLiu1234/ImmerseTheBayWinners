@@ -101,7 +101,8 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
     /// <summary>
     /// The tuner's state over time, with no engine objects: feed it readings, tick it, read the needle and the verdict.
     /// The needle eases (exponential smoothing), ignores unclear readings (confidence gate) and holds its place when the
-    /// note dies away; the verdict words latch, so "Too low: tighten" stays while the player turns the peg in silence.
+    /// note dies away. The verdict latches, so "Too low: tighten" stays while the player turns the peg in silence, and it
+    /// never claims "too low" or "too high" for a note that is inside the in-tune zone and merely still settling.
     /// </summary>
     public struct TunerModel
     {
@@ -111,7 +112,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
         float _shownCents;
         float _sinceReading;
         float _inZoneSeconds;
-        bool _inTune;
+        TunerState _state;
 
         /// <summary>True between SetTarget and Clear.</summary>
         public bool HasTarget { get { return _hasTarget; } }
@@ -128,18 +129,9 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
         /// <summary>The needle angle to draw, degrees clockwise from straight up.</summary>
         public float NeedleDegrees { get { return TunerMath.NeedleAngleDegrees(_shownCents); } }
 
-        public bool InTune { get { return _inTune; } }
+        public bool InTune { get { return _hasTarget && _state == TunerState.InTune; } }
 
-        public TunerState State
-        {
-            get
-            {
-                if (!_hasTarget) return TunerState.Idle;
-                if (!_hasReading) return TunerState.Listening;
-                if (_inTune) return TunerState.InTune;
-                return _shownCents < 0f ? TunerState.TooLow : TunerState.TooHigh;
-            }
-        }
+        public TunerState State { get { return _hasTarget ? _state : TunerState.Idle; } }
 
         /// <summary>Starts listening for a new string: forgets the old needle position and verdict.</summary>
         public void SetTarget()
@@ -150,7 +142,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
             _shownCents = 0f;
             _sinceReading = 0f;
             _inZoneSeconds = 0f;
-            _inTune = false;
+            _state = TunerState.Listening;
         }
 
         public void Clear()
@@ -172,14 +164,14 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
                 // (a sweep through the centre would look like "in tune" for a moment).
                 _shownCents = _targetCents;
                 _inZoneSeconds = 0f;
-                if (_inTune && !TunerMath.InZone(true, _shownCents)) _inTune = false;
+                UpdateState(0f);
             }
             _hasReading = true;
             _sinceReading = 0f;
             return true;
         }
 
-        /// <summary>Advances time by <paramref name="dt"/> seconds: eases the needle and updates the in-tune verdict.</summary>
+        /// <summary>Advances time by <paramref name="dt"/> seconds: eases the needle and updates the verdict.</summary>
         public void Tick(float dt)
         {
             if (!_hasTarget || !_hasReading || !(dt > 0f)) return;
@@ -189,23 +181,29 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
             if (!live) return;   // an old reading: the needle and the verdict stay as they were
 
             _shownCents = LearnTiming.ExpSmooth(_shownCents, _targetCents, dt, TunerMath.NeedleSmoothSeconds);
+            UpdateState(dt);
+        }
 
-            if (_inTune)
+        void UpdateState(float dt)
+        {
+            if (_state == TunerState.InTune)
             {
-                if (!TunerMath.InZone(true, _shownCents))
-                {
-                    _inTune = false;
-                    _inZoneSeconds = 0f;
-                }
+                if (TunerMath.InZone(true, _shownCents)) return;
+                _inZoneSeconds = 0f;
+                _state = _shownCents < 0f ? TunerState.TooLow : TunerState.TooHigh;
+                return;
             }
-            else if (TunerMath.InZone(false, _shownCents))
+
+            if (TunerMath.InZone(false, _shownCents))
             {
+                // Inside the zone but not yet rested there: keep the previous words until the dwell is over.
                 _inZoneSeconds += dt;
-                if (_inZoneSeconds >= TunerMath.InTuneDwellSeconds) _inTune = true;
+                if (_inZoneSeconds >= TunerMath.InTuneDwellSeconds) _state = TunerState.InTune;
             }
             else
             {
                 _inZoneSeconds = 0f;
+                _state = _shownCents < 0f ? TunerState.TooLow : TunerState.TooHigh;
             }
         }
     }

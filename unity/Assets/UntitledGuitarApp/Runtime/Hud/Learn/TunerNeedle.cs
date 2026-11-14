@@ -32,6 +32,12 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
         public const float StatusIconDegrees = 2.0f;
         public const float DebugDegrees = HudText.MinTextDegrees;
 
+        /// <summary>Half the height of the whole tuner block, degrees (dial top to the status line; the debug line adds 2.4 below).</summary>
+        public const float BlockHalfHeightDegrees = 6.9f;
+
+        /// <summary>Half the width of the whole tuner block, degrees (the status line is the widest part).</summary>
+        public const float BlockHalfWidthDegrees = 10f;
+
         public const string TooLowText = "Too low: tighten";
         public const string TooHighText = "Too high: loosen";
         public const string InTuneText = "In tune!";
