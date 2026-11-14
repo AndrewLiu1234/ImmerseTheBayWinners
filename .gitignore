@@ -10,6 +10,7 @@ unity/*.csproj
 unity/*.sln
 unity/.vs/
 unity/.idea/
+unity/.vscode/
 # dotnet
 core-build/bin/
 core-build/obj/

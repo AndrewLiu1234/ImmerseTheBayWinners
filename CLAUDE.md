@@ -15,6 +15,7 @@ Immerse the Bay 2026 · feature freeze Sun 2026-11-15 01:00 PT · Devpost deadli
 - Core tests only: `dotnet test core-tests -v q`
 - Audio eval vs baseline: `./scripts/audio-eval.sh`
 - Unity compile check (L3): Unity MCP `refresh_unity` → `read_console` → `run_tests` (EditMode)
+- Unity L3 without the editor (Person 1's main checkout, editor closed): `./scripts/unity-tests.sh` (compile + EditMode tests, ~10 s)
 - Run on the glasses (ask before building; a human wears them): `/glasses-run`
 - Logs to a file: `./scripts/logs.sh` (UGA lines from Unity's Editor/Player log → logs/*.log; never paste raw logs into chat)
 - IMU bridge: `./scripts/imu-bridge.sh` (UDP 127.0.0.1:47800; without it Unity runs headLocked)
