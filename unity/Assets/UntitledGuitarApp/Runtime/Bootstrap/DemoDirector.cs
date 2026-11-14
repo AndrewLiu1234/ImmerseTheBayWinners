@@ -166,6 +166,11 @@ namespace UntitledGuitarApp.Runtime
                 Play.Present(PracticeFrame.Idle, 0f);   // an inactive frame hides the neck HUD card and the rings
             }
             _practice = PracticeFrame.Idle;
+            // The head-locked mic meter sits top right, exactly where the learn card and the play card go (12:35 player frame:
+            // "MIC 48 kHz" on "next", its bars on the chord row). Learn has its own tuner needle and the spectator shows the
+            // mic state, so the meter shows only while idle.
+            if (_boot.Meter != null && _boot.Meter.gameObject.activeSelf != (State.Mode == DemoMode.Idle))
+                _boot.Meter.gameObject.SetActive(State.Mode == DemoMode.Idle);
 
             if (State.Mode == DemoMode.Learn) EnterLearn(flags);
             else if (State.Mode == DemoMode.Play) EnterPlay(flags);
