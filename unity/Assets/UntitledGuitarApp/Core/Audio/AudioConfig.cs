@@ -126,6 +126,39 @@ namespace UntitledGuitarApp.Core.Audio
         /// and costs ~16 two-partial Goertzels instead of 75.</summary>
         public double RingStepSec { get; }
 
+        // ---- Onsets (SL6, §19 "Onset": spectral flux + adaptive median threshold) ----
+        /// <summary>FFT size for the onset detector, samples (§19: 1024 = 21 ms @ 48 kHz). Short enough to place a strum within one
+        /// 512-sample hop; long enough for 47 Hz bins below 4 kHz. Must be a power of two ≥ <see cref="HopSize"/>.</summary>
+        public int OnsetFftSize { get; }
+        /// <summary>Highest bin used in the flux, Hz. 4 kHz (§19): pick/strum energy is mostly below it, and the optional
+        /// metronome click (6–8 kHz) never registers as a strum.</summary>
+        public double OnsetMaxHz { get; }
+        /// <summary>Log compression log(1 + γ·amplitude) of each bin before differencing. γ = 1000 makes the flux respond to
+        /// relative change (a soft pluck on a quiet room counts like a loud strum), and a −60 dBFS bin still sits on the curve's knee.</summary>
+        public double OnsetLogGamma { get; }
+        /// <summary>SuperFlux maximum filter: each bin is compared with the max of the previous spectrum over ±this many bins
+        /// (Böck &amp; Widmer 2013). 1 bin = ±47 Hz: a ringing chord's beating partials stop reading as new energy (synthetic:
+        /// a ringing G's flux drops from ≈ 0.2 to ≤ 0.1) while a new pick attack, broadband, still reads ≈ 2.</summary>
+        public int OnsetMaxFilterBins { get; }
+        /// <summary>The flux compares the newest spectrum with the one this many hops earlier. 2 hops = 21 ms = one full
+        /// non-overlapping 1024 frame: a strum's strings arrive over ~30 ms, and with lag 1 each hop saw only part of the rise
+        /// (synthetic: re-strums on ringing strings read 0.2–0.4 vs a 0.06 background with lag 1).</summary>
+        public int OnsetDiffLagHops { get; }
+        /// <summary>Adaptive threshold = k · median(flux over the last <see cref="OnsetMedianSec"/>) + <see cref="OnsetMinFlux"/>
+        /// (§19: k = 1.5). Steady noise gives a flux with ≈ 10 % spread, so 1.5× its median is several σ above it.</summary>
+        public double OnsetThresholdK { get; }
+        /// <summary>Median window, s (§19: 300 ms ≈ 28 hops). Shorter than one slot at the fastest preset (300 ms at 100 bpm
+        /// eighths), so ringing chords and room noise set the floor, not the previous strum.</summary>
+        public double OnsetMedianSec { get; }
+        /// <summary>Absolute flux floor added to the threshold (mean log-compressed rise per bin). Matters right after silence,
+        /// when the median is 0: a ringing chord's flux stays ≤ 0.2 between strums, an up-strum over 3–4 ringing top strings
+        /// reaches 0.3–0.8, a strum after silence ≈ 2.7 (synthetic, SuperFlux lag 2). 0.15 = 0.30 floor gave up-strum misses
+        /// (strum F1 0.67 at 100 % tempo); 0.1 with lag 1 let the ring itself trigger.</summary>
+        public double OnsetMinFlux { get; }
+        /// <summary>Minimum time between onsets, s (§19: 60 ms). A strum's 6 strings arrive within ~30–50 ms and must count once;
+        /// the fastest pattern (16ths at 100 bpm) is 150 ms apart.</summary>
+        public double OnsetMinGapSec { get; }
+
         public AudioConfig(
             int frameSize = 2048,
             int hopSize = 512,
@@ -158,7 +191,16 @@ namespace UntitledGuitarApp.Core.Audio
             double ringDropDb = 30.0,
             double ringFloorDb = 6.0,
             double ringCutDb = 10.0,
-            double ringStepSec = 0.05)
+            double ringStepSec = 0.05,
+            int onsetFftSize = 1024,
+            double onsetMaxHz = 4000.0,
+            double onsetLogGamma = 1000.0,
+            int onsetMaxFilterBins = 1,
+            int onsetDiffLagHops = 2,
+            double onsetThresholdK = 1.5,
+            double onsetMedianSec = 0.3,
+            double onsetMinFlux = 0.15,
+            double onsetMinGapSec = 0.06)
         {
             if (frameSize < 256) throw new ArgumentOutOfRangeException(nameof(frameSize));
             if (hopSize < 1 || hopSize > frameSize) throw new ArgumentOutOfRangeException(nameof(hopSize));
@@ -190,6 +232,16 @@ namespace UntitledGuitarApp.Core.Audio
             if (!(ringFloorDb >= 0)) throw new ArgumentOutOfRangeException(nameof(ringFloorDb));
             if (!(ringCutDb >= 0)) throw new ArgumentOutOfRangeException(nameof(ringCutDb));
             if (!(ringStepSec > 0)) throw new ArgumentOutOfRangeException(nameof(ringStepSec));
+            if (onsetFftSize < 64 || (onsetFftSize & (onsetFftSize - 1)) != 0 || onsetFftSize < hopSize)
+                throw new ArgumentOutOfRangeException(nameof(onsetFftSize), "power of two ≥ hopSize");
+            if (!(onsetMaxHz > 0)) throw new ArgumentOutOfRangeException(nameof(onsetMaxHz));
+            if (!(onsetLogGamma > 0)) throw new ArgumentOutOfRangeException(nameof(onsetLogGamma));
+            if (onsetMaxFilterBins < 0 || onsetMaxFilterBins > 8) throw new ArgumentOutOfRangeException(nameof(onsetMaxFilterBins));
+            if (onsetDiffLagHops < 1 || onsetDiffLagHops > 8) throw new ArgumentOutOfRangeException(nameof(onsetDiffLagHops));
+            if (!(onsetThresholdK >= 1)) throw new ArgumentOutOfRangeException(nameof(onsetThresholdK));
+            if (!(onsetMedianSec > 0) || onsetMedianSec > 5) throw new ArgumentOutOfRangeException(nameof(onsetMedianSec));
+            if (!(onsetMinFlux >= 0)) throw new ArgumentOutOfRangeException(nameof(onsetMinFlux));
+            if (!(onsetMinGapSec >= 0) || onsetMinGapSec > 2) throw new ArgumentOutOfRangeException(nameof(onsetMinGapSec));
 
             FrameSize = frameSize; HopSize = hopSize; MinHz = minHz; MaxHz = maxHz;
             YinThreshold = yinThreshold; MaxAperiodicity = maxAperiodicity; SilenceRmsDbfs = silenceRmsDbfs;
@@ -201,6 +253,8 @@ namespace UntitledGuitarApp.Core.Audio
             PluckOctaveSupportRatio = pluckOctaveSupportRatio; PluckPartials = pluckPartials; PluckRiseDb = pluckRiseDb;
             PluckAttackRiseDb = pluckAttackRiseDb; PluckMinSalience = pluckMinSalience; PluckSustainDb = pluckSustainDb;
             RingOutSec = ringOutSec; RingPartials = ringPartials; RingDropDb = ringDropDb; RingFloorDb = ringFloorDb; RingCutDb = ringCutDb; RingStepSec = ringStepSec;
+            OnsetFftSize = onsetFftSize; OnsetMaxHz = onsetMaxHz; OnsetLogGamma = onsetLogGamma; OnsetMaxFilterBins = onsetMaxFilterBins; OnsetDiffLagHops = onsetDiffLagHops; OnsetThresholdK = onsetThresholdK;
+            OnsetMedianSec = onsetMedianSec; OnsetMinFlux = onsetMinFlux; OnsetMinGapSec = onsetMinGapSec;
         }
 
         public static readonly AudioConfig Default = new AudioConfig();

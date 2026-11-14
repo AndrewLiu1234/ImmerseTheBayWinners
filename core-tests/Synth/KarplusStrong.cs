@@ -63,6 +63,66 @@ namespace UntitledGuitarApp.Core.Tests.Synth
         }
     }
 
+    /// <summary>A seeded strum / pluck train with ground-truth onset times, for onset-detector tests.</summary>
+    public sealed class OnsetTrain
+    {
+        public readonly int SampleRate;
+        public readonly System.Collections.Generic.List<double> OnsetsSec = new System.Collections.Generic.List<double>();
+        readonly System.Collections.Generic.List<(double t, int s, int midi, float amp, int seed)> _notes =
+            new System.Collections.Generic.List<(double, int, int, float, int)>();
+        XorShift32 _rng;
+
+        public OnsetTrain(int sampleRate, int seed) { SampleRate = sampleRate; _rng = new XorShift32(seed); }
+
+        /// <summary>Strum at <paramref name="tSec"/>: down = every played string 6 → 1, up = the played top four 1 → 4, the
+        /// strings spread over <paramref name="spreadMs"/> (seeded ±25 %), seeded level 0.25–0.45 per stroke.</summary>
+        public void Strum(double tSec, ChordShape chord, bool up, double spreadMs = 30)
+        {
+            OnsetsSec.Add(tSec);
+            float amp = (float)(0.35 + 0.1 * _rng.NextBipolar());
+            double spread = spreadMs * (1 + 0.25 * _rng.NextBipolar());
+            var order = new System.Collections.Generic.List<int>();
+            if (!up) { for (int s = 6; s >= 1; s--) if (chord.IsPlayed(s)) order.Add(s); }
+            else { for (int s = 1; s <= 4; s++) if (chord.IsPlayed(s)) order.Add(s); }
+            for (int i = 0; i < order.Count; i++)
+            {
+                double dt = order.Count > 1 ? spread / 1000.0 * i / (order.Count - 1) : 0;
+                _notes.Add((tSec + dt, order[i], chord.MidiOn(order[i]), amp * (float)(0.8 + 0.2 * _rng.NextBipolar()), (int)_rng.NextUInt()));
+            }
+        }
+
+        /// <summary>Single pluck of string <paramref name="s"/> at <paramref name="tSec"/> (seeded level 0.3–0.5).</summary>
+        public void Pluck(double tSec, ChordShape chord, int s)
+        {
+            OnsetsSec.Add(tSec);
+            int m = chord.IsPlayed(s) ? chord.MidiOn(s) : Tuning.StandardMidi(s);
+            _notes.Add((tSec, s, m, (float)(0.4 + 0.1 * _rng.NextBipolar()), (int)_rng.NextUInt()));
+        }
+
+        /// <summary>Renders all notes. A re-plucked string stops its previous note (5 ms fade), as a pick or finger does;
+        /// other strings keep ringing (T60 <paramref name="t60Sec"/>, ≤ 2 s rendered per note).</summary>
+        public float[] Render(double tailSec = 1.0, double t60Sec = 4.0, double snrDb = double.PositiveInfinity, int noiseSeed = 1)
+        {
+            double end = 0; foreach (var n in _notes) end = Math.Max(end, n.t);
+            var x = new float[(int)((end + tailSec) * SampleRate)];
+            for (int i = 0; i < _notes.Count; i++)
+            {
+                var n = _notes[i];
+                double next = double.MaxValue;
+                for (int j = 0; j < _notes.Count; j++)
+                    if (j != i && _notes[j].s == n.s && _notes[j].t > n.t && _notes[j].t < next) next = _notes[j].t;
+                double dur = Math.Min(2.0, Math.Min(next - n.t, end + tailSec - n.t));
+                int at = (int)Math.Round(n.t * SampleRate);
+                var p = KarplusStrong.Pluck(n.midi, Math.Max(1, (int)(dur * 1000)), SampleRate, n.seed, t60Sec: t60Sec, amplitude: n.amp);
+                int fade = Math.Min(p.Length, SampleRate / 200);
+                if (next < double.MaxValue) for (int k = 0; k < fade; k++) p[p.Length - 1 - k] *= (float)k / fade;
+                Signals.MixInto(x, p, at, 1f);
+            }
+            if (!double.IsPositiveInfinity(snrDb)) Signals.AddNoise(x, snrDb, noiseSeed, 0, x.Length);
+            return x;
+        }
+    }
+
     /// <summary>Tiny deterministic PRNG (same sequence on every runtime, unlike System.Random).</summary>
     public struct XorShift32
     {
