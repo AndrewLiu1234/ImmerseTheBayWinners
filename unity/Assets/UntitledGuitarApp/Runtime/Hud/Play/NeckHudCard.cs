@@ -349,7 +349,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
             bool hasNext = _nextRaw.Length > 0 && !_countInShown;
             _nextWord.Visible = hasNext && !cue;
             _nextChord.Visible = hasNext && !cue;
-            _beats.Visible = !cue;
+            _beats.Visible = !cue && !_countInShown;   // the count-in digit takes the dots' place too (it reaches down to them)
             _waitText.Visible = cue && _currentRaw.Length > 0;
             if (_pauseLeft != null)
             {
