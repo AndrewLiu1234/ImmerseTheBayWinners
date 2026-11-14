@@ -8,9 +8,9 @@
 // reload), so a hot-reloaded staleMs / predictionMs / invert* / anchorMode applies on the next frame, and a changed
 // udpPort restarts the receiver on the new port.
 //
-// Logging (UGALog, main thread only, never per frame): imu_listening, imu_state, imu_recenter, imu_stopped, and
-// warnings imu_bind_failed (once per failure episode), imu_bad_port (once per bad value), imu_packets_rejected
-// (at most one per 5 s while datagrams keep failing to parse).
+// Logging (UGALog, main thread only, never per frame): imu_listening, imu_state (the starting state once, then each
+// change, with a reason), imu_recenter, imu_stopped, and warnings imu_bind_failed (once per failure episode),
+// imu_bad_port (once per bad value), imu_packets_rejected (at most one per 5 s while datagrams keep failing to parse).
 
 using System;
 using UnityEngine;
@@ -33,6 +33,7 @@ namespace UntitledGuitarApp.Runtime.Head
         ImuSample _sample;
         bool _anchorHeadLocked;
         HeadTrackingState _state = HeadTrackingState.HeadLocked;
+        bool _stateLogged;
         Quaternion _rotation = Quaternion.identity;
         float _packetRateHz;
         long _reportedRejected;
@@ -178,10 +179,15 @@ namespace UntitledGuitarApp.Runtime.Head
             HeadTrackingState state = _anchorHeadLocked ? HeadTrackingState.HeadLocked : _filter.GetState(nowSec);
             _rotation = state == HeadTrackingState.Tracking ? _filter.GetRotation(nowSec) : Quaternion.identity;
             _packetRateHz = _filter.GetPacketRateHz(nowSec);
-            if (state == _state) return false;
+            if (state == _state && _stateLogged) return false;
+
+            // One line per change, plus one for the state we start in (so a log always says why the head is locked,
+            // even when anchorMode forces it from the first frame and the state never "changes").
+            bool changed = state != _state;
             _state = state;
+            _stateLogged = true;
             UGALog.Event("imu_state", "state", state == HeadTrackingState.Tracking ? "Tracking" : "HeadLocked", "reason", Reason(state));
-            return true;
+            return changed;
         }
 
         string Reason(HeadTrackingState state)
