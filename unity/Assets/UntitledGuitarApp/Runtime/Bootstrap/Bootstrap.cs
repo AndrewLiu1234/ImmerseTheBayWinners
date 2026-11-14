@@ -258,6 +258,7 @@ namespace UntitledGuitarApp.Runtime
 
         void Update()
         {
+            FlagStore.EnsureInitialized();   // domain reloads reset the statics; re-load the flags instead of running on defaults
             FlagStore.Poll();
             if (Demo == null && HeadPose != null && Input.GetKeyDown(KeyCode.R)) RecenterView();   // else DemoKeys handles R
             if (Meter != null && Mic != null)

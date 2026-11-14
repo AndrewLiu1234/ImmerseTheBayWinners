@@ -58,6 +58,9 @@ namespace UntitledGuitarApp.Runtime.Flags
     {
         public bool enabled = false;           // SL12: ArUco marker -> neck anchor. Safe default off.
         public string cameraName = "UVC";      // substring of the WebCamTexture device name (the Ultra's UVC camera)
+        public int requestWidth = 1760;        // device default 640x241 delivers streak garbage on this setup; 1760x1328 is the working mode (STATUS 2026-11-14)
+        public int requestHeight = 1328;
+        public int requestFps = 30;
         public float markerMm = 120f;          // printed marker side length
         public int markerId = 7;
         public int udpInPort = 47801;          // JPEG chunks -> tools/camera-vision bridge

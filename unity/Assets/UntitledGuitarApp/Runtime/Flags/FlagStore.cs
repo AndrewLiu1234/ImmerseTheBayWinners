@@ -124,6 +124,23 @@ namespace UntitledGuitarApp.Runtime.Flags
         /// <summary>True after Initialize() has run.</summary>
         public static bool IsInitialized { get { return s_loader != null; } }
 
+        /// <summary>True when Initialize() has not run (or a domain reload reset the statics).</summary>
+        public static bool NeedsInitialization { get { return s_loader == null; } }
+
+        /// <summary>
+        /// Self-healing init: a domain reload (script recompile during Play Mode) resets statics to the built-in defaults
+        /// while the restored scene objects keep running, silently disabling every flag override. Bootstrap.Update calls
+        /// this every frame; it is a one-line no-op once initialized (STATUS 2026-11-14 camera hunt).
+        /// </summary>
+        public static void EnsureInitialized()
+        {
+            if (s_loader == null)
+            {
+                try { Initialize(); }
+                catch (Exception e) { UGALog.Error("flags_init", e.ToString()); }
+            }
+        }
+
         /// <summary>The flags.default.json that was read, or null before Initialize().</summary>
         public static string DefaultsPath { get { FlagLoader l = s_loader; return l != null ? l.DefaultsPath : null; } }
 

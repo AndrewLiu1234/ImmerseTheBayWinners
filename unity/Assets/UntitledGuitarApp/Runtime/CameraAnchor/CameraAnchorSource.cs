@@ -38,6 +38,26 @@ namespace UntitledGuitarApp.Runtime.CameraAnchor
             public float[] quat;
         }
 
+        /// <summary>Requested WebCamTexture mode, resolved from flags with safe fallbacks (pure logic; tested).</summary>
+        public struct RequestedMode
+        {
+            public int width, height, fps;
+            public RequestedMode(int width, int height, int fps) { this.width = width; this.height = height; this.fps = fps; }
+        }
+
+        /// <summary>Working mode for this device: 640x241 (the device default) delivers streak garbage on this setup;
+        /// 1760x1328 is real footage (STATUS 2026-11-14, verified by direct ffmpeg grab vs Unity stream).</summary>
+        public static readonly RequestedMode DefaultMode = new RequestedMode(1760, 1328, 30);
+
+        /// <summary>Pure: flags -> requested mode; non-positive fields fall back to the default.</summary>
+        public static RequestedMode ResolveRequestedMode(CameraAnchorFlags f)
+        {
+            return new RequestedMode(
+                f.requestWidth > 0 ? f.requestWidth : DefaultMode.width,
+                f.requestHeight > 0 ? f.requestHeight : DefaultMode.height,
+                f.requestFps > 0 ? f.requestFps : DefaultMode.fps);
+        }
+
         /// <summary>Latest-bytes mailbox (producer = receive thread, consumer = main thread); no waits, no growth.</summary>
         sealed class ByteSlot
         {
@@ -151,7 +171,8 @@ namespace UntitledGuitarApp.Runtime.CameraAnchor
                         if (!_openLogged) { _openLogged = true; UGALog.Warn("camera_anchor", "no WebCamTexture device matches \"" + _f.cameraName + "\""); }
                         return;
                     }
-                    _tex = new WebCamTexture(name);
+                    RequestedMode mode = ResolveRequestedMode(_f);
+                    _tex = new WebCamTexture(name, mode.width, mode.height, mode.fps);
                 }
                 if (!_tex.isPlaying) _tex.Play();
                 if (!_tex.isPlaying && !_openLogged)
