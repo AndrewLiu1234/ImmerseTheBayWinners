@@ -1,0 +1,14 @@
+{
+  "name": "UntitledGuitarApp.Runtime",
+  "rootNamespace": "UntitledGuitarApp.Runtime",
+  "references": ["UntitledGuitarApp.Core"],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}
