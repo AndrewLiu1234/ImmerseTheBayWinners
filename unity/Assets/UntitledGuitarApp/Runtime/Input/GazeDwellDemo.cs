@@ -28,7 +28,8 @@ namespace UntitledGuitarApp.Runtime.Gaze
         Camera cam;
         Transform head;
         GazeDwell gaze;
-        string status = "";
+        string focusLine = "";    // what the gaze is on right now
+        string resultLine = "";   // the last fire or confirm
 
         void Start()
         {
@@ -48,10 +49,11 @@ namespace UntitledGuitarApp.Runtime.Gaze
 
             gaze = GazeDwell.GetOrCreate();
             gaze.Head = head;
-            gaze.TargetEntered += t => status = "Looking at " + t.Label;
-            gaze.TargetExited += t => status = "";
-            gaze.TargetFired += t => status = "Fired: " + t.Label;
-            gaze.Confirmed += () => status = "Confirmed (Space with nothing focused)";
+            // A fired target leaves the focus one frame later (it is in cooldown), so the result has its own line.
+            gaze.TargetEntered += t => focusLine = "Looking at: " + t.Label;
+            gaze.TargetExited += t => focusLine = "";
+            gaze.TargetFired += t => resultLine = "Fired: " + t.Label;
+            gaze.Confirmed += () => resultLine = "Confirmed (Space with nothing focused)";
 
             var reticle = new GameObject("Gaze Demo Reticle").AddComponent<Reticle>();
             reticle.Gaze = gaze;
@@ -103,7 +105,8 @@ namespace UntitledGuitarApp.Runtime.Gaze
         void OnGUI()
         {
             GUI.Label(new Rect(12f, 8f, 1000f, 24f), "Gaze-dwell demo: the mouse is your gaze. Hold the ring on a ball for 1.2 s, or press Space on it. Space on empty space = Confirmed.");
-            GUI.Label(new Rect(12f, 30f, 1000f, 24f), status);
+            GUI.Label(new Rect(12f, 30f, 1000f, 24f), focusLine);
+            GUI.Label(new Rect(12f, 52f, 1000f, 24f), resultLine);
         }
     }
 }

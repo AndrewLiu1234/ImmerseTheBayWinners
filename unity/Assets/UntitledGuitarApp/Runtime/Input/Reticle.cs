@@ -218,7 +218,8 @@ namespace UntitledGuitarApp.Runtime.Gaze
             bool verticesChanged = false;
             bool colorsChanged = false;
 
-            if (ShapeChanged())
+            bool shapeChanged = ShapeChanged();
+            if (shapeChanged)
             {
                 geometry.SetShape(DistanceM, RingRadiusDeg, RingWidthDeg, ArcWidthDeg, DotRadiusDeg);
                 RememberShape();
@@ -233,7 +234,9 @@ namespace UntitledGuitarApp.Runtime.Gaze
 
             if (verticesChanged) mesh.vertices = geometry.Vertices;
             if (colorsChanged) mesh.colors32 = geometry.Colors;
-            if (verticesChanged) UpdateBounds();
+            // Unity recalculates a mesh's bounds only when its first vertices are assigned (Mesh.vertices docs), so they
+            // are set by hand. The arc always moves inside them, so only a new shape needs new bounds.
+            if (shapeChanged) UpdateBounds();
         }
 
         bool ShapeChanged()
