@@ -1,8 +1,9 @@
 // LearnChord: one chord shape as learn mode needs it: per string, the fret (x = do not play, 0 = open) and the finger, the
 // finger-by-finger steps (finger 1 first) and the strings that must sound. Plain data, pure, unit-tested.
-// Built from a row of the chord table (docs/MASTER_PLAN.md Appendix B2: frets and fingers listed string 6 -> 1). Today the
-// rows come from TEMPORARY Dev/DevLearnChords; when Core's ChordLibrary lands an adapter builds this same class from it.
+// Built from a row of the chord table (docs/MASTER_PLAN.md Appendix B2: frets and fingers listed string 6 -> 1), normally
+// Core's ChordShape (FromShape; LearnChords looks the chord up in Core's ChordLibrary).
 using System;
+using UntitledGuitarApp.Core.Theory;
 
 namespace UntitledGuitarApp.Runtime.Practice.Learn
 {
@@ -68,6 +69,20 @@ namespace UntitledGuitarApp.Runtime.Practice.Learn
             if (string.IsNullOrEmpty(name) || fretsString6To1 == null || fingersString6To1 == null) return null;
             if (fretsString6To1.Length != StringCount || fingersString6To1.Length != StringCount) return null;
             return new LearnChord(name, fretsString6To1, fingersString6To1);
+        }
+
+        /// <summary>The same chord as Core's <paramref name="shape"/> (its frets and fingers are listed string 6 first too). Null for null.</summary>
+        public static LearnChord FromShape(ChordShape shape)
+        {
+            if (shape == null) return null;
+            var frets = new int[StringCount];
+            var fingers = new int[StringCount];
+            for (int i = 0; i < StringCount; i++)
+            {
+                frets[i] = shape.FretsLowToHigh[i];
+                fingers[i] = shape.FingersLowToHigh[i];
+            }
+            return FromRow(shape.Name, frets, fingers);
         }
 
         /// <summary>The fret on a string: <see cref="Muted"/> (do not play), 0 (open) or the fret number. Muted outside 1..6.</summary>

@@ -31,7 +31,7 @@ namespace UntitledGuitarApp.Tests.EditMode
             public bool Has(string call) { return Calls.Contains(call); }
         }
 
-        static LearnChord G { get { return DevLearnChords.Get("G"); } }
+        static LearnChord G { get { return LearnChords.Get("G"); } }
 
         static void TuneAll(LearnFlow flow)
         {
@@ -72,30 +72,30 @@ namespace UntitledGuitarApp.Tests.EditMode
         [Test]
         public void ChordsWithStringsNotPlayedStartPluckingLower()
         {
-            Assert.AreEqual(5, DevLearnChords.Get("C").LowestSoundingString);
-            Assert.AreEqual(4, DevLearnChords.Get("D").LowestSoundingString);
-            Assert.AreEqual(5, DevLearnChords.Get("Am").LowestSoundingString);
-            Assert.AreEqual(6, DevLearnChords.Get("Em").LowestSoundingString);
-            Assert.AreEqual(LearnChord.Muted, DevLearnChords.Get("C").Fret(6));
-            Assert.AreEqual(new LearnChordStep(1, 2, 1), DevLearnChords.Get("C").Step(0));
-            Assert.AreEqual(2, DevLearnChords.Get("Em").StepCount);
+            Assert.AreEqual(5, LearnChords.Get("C").LowestSoundingString);
+            Assert.AreEqual(4, LearnChords.Get("D").LowestSoundingString);
+            Assert.AreEqual(5, LearnChords.Get("Am").LowestSoundingString);
+            Assert.AreEqual(6, LearnChords.Get("Em").LowestSoundingString);
+            Assert.AreEqual(LearnChord.Muted, LearnChords.Get("C").Fret(6));
+            Assert.AreEqual(new LearnChordStep(1, 2, 1), LearnChords.Get("C").Step(0));
+            Assert.AreEqual(2, LearnChords.Get("Em").StepCount);
         }
 
         [Test]
         public void FlagsPickTheChordElseG()
         {
             var flags = new FlagSet();
-            Assert.AreEqual("G", DevLearnChords.NameFromFlags(null));
-            Assert.AreEqual("G", DevLearnChords.NameFromFlags(flags));
+            Assert.AreEqual("G", LearnChords.NameFromFlags(null));
+            Assert.AreEqual("G", LearnChords.NameFromFlags(flags));
             flags.chords = new string[0];
-            Assert.AreEqual("G", DevLearnChords.NameFromFlags(flags));
+            Assert.AreEqual("G", LearnChords.NameFromFlags(flags));
             flags.chords = new[] { "Em" };                      // tools/flags/judge.json
-            Assert.AreEqual("Em", DevLearnChords.NameFromFlags(flags));
+            Assert.AreEqual("Em", LearnChords.NameFromFlags(flags));
             flags.chords = new[] { " am ", "G" };
-            Assert.AreEqual("Am", DevLearnChords.NameFromFlags(flags));
+            Assert.AreEqual("Am", LearnChords.NameFromFlags(flags));
             flags.chords = new[] { "F#m" };
-            Assert.AreEqual("G", DevLearnChords.NameFromFlags(flags));
-            Assert.AreEqual("Em", DevLearnChords.FromFlags(new FlagSet { chords = new[] { "Em" } }).Name);
+            Assert.AreEqual("G", LearnChords.NameFromFlags(flags));
+            Assert.AreEqual("Em", LearnChords.FromFlags(new FlagSet { chords = new[] { "Em" } }).Name);
         }
 
         // ------------------------------------------------------------------ the state machine
@@ -191,7 +191,7 @@ namespace UntitledGuitarApp.Tests.EditMode
         {
             var view = new RecordingView();
             var flow = new LearnFlow(view);
-            flow.Begin(DevLearnChords.Get("C"));
+            flow.Begin(LearnChords.Get("C"));
             flow.SkipTo(LearnStage.PluckCheck);
             Assert.AreEqual("tip:Pluck each string, 5 to 1:None", view.Last);
             for (int s = 5; s >= 1; s--) flow.OnPluckResult(s, LearnMark.Correct, null, TipIcon.None);
@@ -260,14 +260,14 @@ namespace UntitledGuitarApp.Tests.EditMode
         {
             var result = new NeckMark[6];
             var verdicts = new LearnMark[6];
-            LearnNeckColumn.ChordMarks(DevLearnChords.Get("C"), result);
+            LearnNeckColumn.ChordMarks(LearnChords.Get("C"), result);
             CollectionAssert.AreEqual(new[] { NeckMark.Open, NeckMark.None, NeckMark.Open, NeckMark.None, NeckMark.None, NeckMark.Muted }, result);
 
-            LearnNeckColumn.ColumnMarksDuringPluck(DevLearnChords.Get("C"), verdicts, result);
+            LearnNeckColumn.ColumnMarksDuringPluck(LearnChords.Get("C"), verdicts, result);
             CollectionAssert.AreEqual(new[] { NeckMark.None, NeckMark.None, NeckMark.None, NeckMark.None, NeckMark.None, NeckMark.Muted }, result,
                 "O marks give their slots to the verdicts; the X on string 6 stays");
             verdicts[5] = LearnMark.Wrong;                         // string 6 was played after all
-            LearnNeckColumn.ColumnMarksDuringPluck(DevLearnChords.Get("C"), verdicts, result);
+            LearnNeckColumn.ColumnMarksDuringPluck(LearnChords.Get("C"), verdicts, result);
             Assert.AreEqual(NeckMark.None, result[5], "the verdict takes the X's slot");
 
             LearnNeckColumn.ColumnMarksDuringPluck(G, new LearnMark[6], result);
@@ -357,13 +357,13 @@ namespace UntitledGuitarApp.Tests.EditMode
             };
             for (int i = 0; i < names.Length; i++)
             {
-                DevLearnTimeline run = DevLearnTimeline.Build(DevLearnChords.Get(names[i]));
+                DevLearnTimeline run = DevLearnTimeline.Build(LearnChords.Get(names[i]));
                 Assert.AreEqual(strings[i], run.MistakeString, names[i]);
                 Assert.AreEqual(fingers[i], run.MistakeFinger, names[i]);
                 Assert.AreEqual(tips[i], run.MistakeTip, names[i]);
                 Assert.IsTrue(LearnText.WithinWordLimit(run.MistakeTip), names[i] + ": 7 words or fewer");
                 Assert.IsTrue(LearnText.FitsAtAGlance(run.MistakeTip), names[i] + ": two short lines");
-                Assert.IsTrue(DevLearnChords.Get(names[i]).IsOpen(run.MistakeString), names[i] + ": the muted string rings open in the chord");
+                Assert.IsTrue(LearnChords.Get(names[i]).IsOpen(run.MistakeString), names[i] + ": the muted string rings open in the chord");
             }
             Assert.IsTrue(LearnText.FitsAtAGlance(LearnFlow.PluckPromptFor(G)));
             Assert.IsTrue(LearnText.FitsAtAGlance(LearnFlow.StrumPrompt));
@@ -373,9 +373,9 @@ namespace UntitledGuitarApp.Tests.EditMode
         [Test]
         public void DevRunPlayedIntoTheFlowReachesDoneThroughEveryMoment()
         {
-            foreach (string name in DevLearnChords.Names)
+            foreach (string name in LearnChords.Names)
             {
-                LearnChord chord = DevLearnChords.Get(name);
+                LearnChord chord = LearnChords.Get(name);
                 DevLearnTimeline run = DevLearnTimeline.Build(chord);
                 var view = new RecordingView();
                 var flow = new LearnFlow(view);
@@ -410,7 +410,7 @@ namespace UntitledGuitarApp.Tests.EditMode
         [Test]
         public void DevRunStageStartsAreInOrderAndMatchTheEvents()
         {
-            DevLearnTimeline run = DevLearnTimeline.Build(DevLearnChords.Get("Em"));
+            DevLearnTimeline run = DevLearnTimeline.Build(LearnChords.Get("Em"));
             float previous = -1f;
             for (LearnStage s = LearnStage.Tune; s <= LearnStage.Done; s++)
             {

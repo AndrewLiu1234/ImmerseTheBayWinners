@@ -2,6 +2,8 @@
 // whole learn flow can be shown before the tuner, pluck check and strum check exist. Delete it when the Core adapter feeds
 // LearnPresenter.Verdicts. Everything it sends is invented: never use it to judge audio.
 //
+// With a live microphone (LiveTuner.IsLive) the tuning is REAL: the run waits while Core's tuner and the needle's in-tune rule
+// take the player through strings 6 .. 1, then carries on with the (still simulated) finger steps and checks.
 // The chord comes from the flags (FlagSet.chords[0]; the judge profile sets Em), else G. Keys while it runs (old Input
 // Manager, the same as Bootstrap's R key): L starts (or restarts) the run, N skips to the next stage, K stops learn mode.
 // Set HandleKeys = false to drive it from code only (Play, Skip, Stop). Main thread only; no allocation per frame.
@@ -30,6 +32,9 @@ namespace UntitledGuitarApp.Runtime.Practice.Learn.Dev
         /// <summary>Read L / N / K from the keyboard. Default true.</summary>
         public bool HandleKeys = true;
 
+        /// <summary>The real tuner; while it is live the scripted tuning is not played (see the file summary). May be null.</summary>
+        public LearnMicTuner LiveTuner;
+
         public LearnPresenter Presenter { get { return _presenter; } }
         public DevLearnTimeline Timeline { get { return _timeline; } }
         public bool Playing { get { return _playing; } }
@@ -49,7 +54,7 @@ namespace UntitledGuitarApp.Runtime.Practice.Learn.Dev
         /// <summary>Starts the run for the chord the flags ask for (else G).</summary>
         public bool Play()
         {
-            return Play(DevLearnChords.FromFlags(FlagStore.Current));
+            return Play(LearnChords.FromFlags(FlagStore.Current));
         }
 
         /// <summary>Starts the run for <paramref name="chord"/>: the neck and the hand take its shape, the tuner comes up.</summary>
@@ -57,9 +62,7 @@ namespace UntitledGuitarApp.Runtime.Practice.Learn.Dev
         {
             if (_presenter == null || chord == null) return false;
             _timeline = DevLearnTimeline.Build(chord);
-            int dotCount = -1;
-            FloatingNeck neck = _presenter.Neck;
-            if (neck != null && neck.Layout != null) dotCount = DevLearnChords.ToNeck(chord, neck.Layout, _dots, _neckMarks);
+            int dotCount = LearnChords.ToNeck(chord, _dots, _neckMarks);   // Core's dots on the default neck Bootstrap builds
             _presenter.AutoAdvanceTuning = false;   // this script says when each string is in tune
             if (!_presenter.Begin(chord, dotCount >= 0 ? _dots : null, dotCount)) return false;
             _clock = 0f;
@@ -67,6 +70,17 @@ namespace UntitledGuitarApp.Runtime.Practice.Learn.Dev
             _playing = true;
             UGALog.Event("learn_dev_script", "chord", chord.Name, "mistake", _timeline.MistakeTip, "seconds", _timeline.Duration);
             return true;
+        }
+
+        // When learn mode got ahead of the run (real tuning finished, or someone skipped the presenter), start that stage's part.
+        void CatchUp()
+        {
+            LearnStage stage = _presenter.Stage;
+            if (stage <= LearnStage.Tune || stage > LearnStage.Done) return;
+            float start = _timeline.StageStart(stage);
+            if (_clock >= start) return;
+            _clock = start;
+            while (_next < _timeline.Count && (_timeline[_next].stage < stage || _timeline[_next].time < _clock)) _next++;
         }
 
         /// <summary>Jumps to the start of the next stage (the run and learn mode together).</summary>
@@ -103,6 +117,10 @@ namespace UntitledGuitarApp.Runtime.Practice.Learn.Dev
         public void Advance(float dt)
         {
             if (!_playing || _timeline == null || _presenter == null) return;
+            bool liveTune = LiveTuner != null && LiveTuner.IsLive;
+            _presenter.AutoAdvanceTuning = liveTune;
+            if (liveTune && _presenter.Stage == LearnStage.Tune) return;   // real tuning: the run waits for the player
+            CatchUp();
             _clock += dt > 0f ? dt : 0f;
             ILearnVerdictSink sink = _presenter.Verdicts;
 
