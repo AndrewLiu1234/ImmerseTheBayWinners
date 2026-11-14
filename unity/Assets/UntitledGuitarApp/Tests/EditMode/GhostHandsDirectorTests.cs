@@ -235,7 +235,9 @@ namespace UntitledGuitarApp.Tests.EditMode
             double slotSeconds = 1.0 / (bps * RiptideSlotsPerBeat);
             var onsets = new List<double>();
             bool striking = false;
-            for (double t = 0.0; t < 2.0 * Riptide.Length * slotSeconds; t += frame)
+            // stop half a frame before bar 3: a frame landing on its downbeat (t = 16 slots minus rounding noise) already is
+            // bar 3's first stroke under PatternClock's boundary rule, and is not one of the two bars counted here
+            for (double t = 0.0; t < 2.0 * Riptide.Length * slotSeconds - 0.5 * frame; t += frame)
             {
                 StrumSample s = StrumMath.Sample(true, false, t * bps, Riptide, RiptideSlotsPerBeat);
                 if (s.Striking && !striking) onsets.Add(t);
@@ -317,6 +319,106 @@ namespace UntitledGuitarApp.Tests.EditMode
             Assert.AreEqual(0, StrumMath.Sample(true, false, 3.1, waltz, 1).Slot);
             Assert.AreEqual(2, StrumMath.Sample(true, false, 2.2, waltz, 1).Slot);
             Assert.AreEqual("up-start", StrumMath.Sample(true, false, 2.2, waltz, 1).From);
+        }
+
+        // happy-birthday.song.json: 90 bpm, 3/4, strum.subdivision 6 = 6 slots a bar, D - D - D -, a pickup before beat 0.
+        static readonly string[] Waltz = { "D", "-", "D", "-", "D", "-" };
+
+        [TestCase(0.0, 0)]
+        [TestCase(0.5, 1)]
+        [TestCase(1.0, 2)]
+        [TestCase(2.75, 5)]
+        [TestCase(3.0, 0)]      // a 3/4 bar is 3 beats: the pattern wraps here, not at beat 4
+        [TestCase(4.0, 2)]
+        [TestCase(5.9, 5)]
+        public void Sample_ThreeFourBar_SixSlotsOverThreeBeats_WrapsEveryThreeBeats(double beat, int slot)   // pure
+        {
+            StrumSample s = StrumMath.Sample(true, false, beat, Waltz, 2);   // SlotsPerBeat = 6 slots / 3 beats
+            Assert.AreEqual(slot, s.Slot, "beat " + beat);
+            Assert.AreEqual(Waltz[slot] == "D" ? StrumPhase.Stroke : StrumPhase.Hover, s.Phase, "beat " + beat);
+        }
+
+        [Test]
+        public void Sample_Pickup_OnNegativeBeats_IsNotPatterned()   // pure
+        {
+            // Happy Birthday's pickup: one beat before bar 1 (beat -1 .. 0), chord G already sounding. No strokes there.
+            for (double beat = -1.0; beat < 0.0; beat += 0.02)
+            {
+                StrumSample s = StrumMath.Sample(true, false, beat, Waltz, 2);
+                Assert.IsFalse(s.Striking, "pickup beat " + beat);
+                Assert.AreEqual(-1, s.Slot);
+                Assert.IsTrue(s.Phase == StrumPhase.Ready || s.Phase == StrumPhase.LeadIn, "pickup beat " + beat + ": " + s.Phase);
+            }
+            Assert.AreEqual(StrumPhase.Stroke, StrumMath.Sample(true, false, 0.0, Waltz, 2).Phase, "bar 1's downbeat strokes");
+
+            string from, to;
+            float u;
+            StrumMath.FrettingTarget("G", "D", 1.0 + 4.0, 1.5f, out from, out to, out u);   // the pickup chord is shown
+            Assert.AreEqual("G", from);
+            Assert.AreEqual(0f, u);
+        }
+
+        [Test]
+        public void Fretting_InWaitMode_HoldsTheNewChord_AndDoesNotStartTowardTheNextOne()   // pure
+        {
+            // the producer holds ON the change: Chord is already the new chord; even a short chord must not morph on
+            string from, to;
+            float u;
+            StrumMath.FrettingTarget("G", "C", 0.5, RiptideBps, true, out from, out to, out u);
+            Assert.AreEqual("G", from);
+            Assert.AreEqual("G", to);
+            Assert.AreEqual(0f, u);
+            GhostHandsDirector d = GhostHandsDirector.Create(null, null);
+            PracticeFrame f = RiptideFrame(2.0);       // G from beat 2
+            f.Waiting = true;
+            f.BeatsToChange = 0.5;
+            d.Apply(f, 0.016f);
+            Assert.AreEqual("G", d.FrettingFrom);
+            Assert.AreEqual("G", d.FrettingTo);
+            Assert.AreEqual(StrumPhase.Ready, d.LastStrum.Phase, "and the strumming hand waits at pick-ready");
+        }
+
+        [Test]
+        public void Slots_AgreeWithCorePatternClockBoundaries_IncludingTheBoundaryEpsilon()   // pure
+        {
+            // PatternClock.ActiveIndex = floor((t - first) / slotSeconds + 1e-9): a position a hair under a boundary because
+            // of rounding is already the next slot. StrumMath must say the same.
+            double almost = 3.0 - 1e-11;                               // 3 slots minus rounding noise
+            int slot;
+            float phase;
+            Assert.IsTrue(StrumMath.Locate(almost / 2.0, 2, 8, out slot, out phase));
+            Assert.AreEqual(3, slot);
+            Assert.AreEqual(0f, phase, 1e-6f);
+        }
+
+        // ================================================================================================ relational checks (pure)
+
+        [Test]
+        public void PickOverStrings_PassesOverTheStrings_AndFiresOnAPlantedPickBeyondThem()   // pure
+        {
+            string why;
+            // the floating neck's strings: x 0 .. 312.6 mm (strum zone 272.6 + 40), z from -17.5 (string 6) to +17.5 (string 1)
+            Assert.IsTrue(GhostHandChecks.PickOverStrings(new Vector3(247.6f, 5f, 2f), 0f, 312.6f, 17.5f, -17.5f, 3f, out why), why);
+            Assert.IsNull(why);
+            // planted: the hand parented at the socket (no strum-zone offset) puts the pick at the authored 415 mm
+            Assert.IsFalse(GhostHandChecks.PickOverStrings(new Vector3(415f, 5f, 2f), 0f, 312.6f, 17.5f, -17.5f, 3f, out why));
+            StringAssert.Contains("beyond the end of the drawn strings", why);
+            Assert.IsFalse(GhostHandChecks.PickOverStrings(new Vector3(200f, 5f, 30f), 0f, 312.6f, 17.5f, -17.5f, 3f, out why));
+            StringAssert.Contains("outside string 1", why);
+            Assert.IsFalse(GhostHandChecks.PickOverStrings(new Vector3(200f, 5f, -30f), 0f, 312.6f, 17.5f, -17.5f, 3f, out why));
+            StringAssert.Contains("outside string 6", why);
+            Assert.IsFalse(GhostHandChecks.PickOverStrings(new Vector3(float.NaN, 5f, 0f), 0f, 312.6f, 17.5f, -17.5f, 3f, out why), "NaN never passes");
+        }
+
+        [Test]
+        public void MinDistance_BetweenTwoHands_FiresOnAPlantedOverlap()   // pure
+        {
+            Vector3[] fretting = { new Vector3(0f, 0f, 0f), new Vector3(90f, 10f, 0f) };
+            Vector3[] strumming = { new Vector3(250f, 0f, 0f), new Vector3(200f, 20f, 10f) };
+            Assert.AreEqual(Vector3.Distance(fretting[1], strumming[1]), GhostHandChecks.MinDistanceMm(fretting, 2, strumming, 2), 1e-4f);
+            Vector3[] planted = { new Vector3(250f, 0f, 0f), new Vector3(92f, 10f, 0f) };   // one joint 2 mm from the other hand
+            Assert.Less(GhostHandChecks.MinDistanceMm(fretting, 2, planted, 2), 30f, "a planted overlap must fire a 30 mm gap check");
+            Assert.AreEqual(float.PositiveInfinity, GhostHandChecks.MinDistanceMm(fretting, 0, strumming, 2));
         }
 
         // ================================================================================================ fretting morph (pure)

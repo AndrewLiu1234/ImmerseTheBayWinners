@@ -7,7 +7,8 @@
 //
 // FRETTING: shows frame.Chord; from one beat before the change (BeatsToChange = 1) it morphs to frame.NextChord, locked to
 // the beat cursor, arriving by the change (StrumMath.MorphProgress: one beat, clamped to 0.25-0.8 s). Count-in (Chord
-// null): the song's first chord (NextChord), or rest. ChordConfirmed fades it to flag ghost.fadeAfterSuccess (0.4); it is
+// null): the song's first chord (NextChord), or rest. Wait mode (the playhead held ON the change, Chord = the new chord):
+// it holds Chord and does not start toward the next one. ChordConfirmed fades it to flag ghost.fadeAfterSuccess (0.4); it is
 // back at full brightness as soon as it starts forming the next chord.
 // STRUMMING: plays frame.StrumSlots in time with frame.Beat (StrumMath.Sample: D = down-start -> down-end, U = up-start ->
 // up-end, "-" = hover at pick-ready, each slot ending on the next one's start pose). Count-in and wait mode: pick-ready,
@@ -132,7 +133,8 @@ namespace UntitledGuitarApp.Runtime.GhostHand
 
             string from, to;
             float u;
-            StrumMath.FrettingTarget(frame.Chord, frame.NextChord, frame.BeatsToChange, frame.BeatsPerSecond, out from, out to, out u);
+            StrumMath.FrettingTarget(frame.Chord, frame.NextChord, frame.BeatsToChange, frame.BeatsPerSecond, frame.Waiting,
+                                     out from, out to, out u);
             _frettingFrom = from;
             _frettingTo = to;
             _frettingMorph = u;

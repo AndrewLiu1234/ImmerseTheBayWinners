@@ -3,7 +3,9 @@
 // struct of pose NAMES (StreamingAssets/poses/strumming-<name>.pose.json) and a weight. Unit-tested in
 // Tests/EditMode/GhostHandsDirectorTests.cs.
 //
-// THE STRUM TIMELINE (positions in pattern slots: slot = Beat * SlotsPerBeat, wrapped to the pattern length = one bar).
+// THE STRUM TIMELINE (positions in pattern slots: slot = floor(Beat * SlotsPerBeat) wrapped to the pattern length = one
+// bar; the same boundaries as Core/Practice/PatternClock, whose slot is BeatsPerBar / Subdivision beats long and whose
+// pickup beats, before beat 0, have no slots).
 // Every slot has an ENTRY pose, where the hand is at the slot's first instant: D -> down-start, U -> up-start,
 // "-" -> pick-ready. Inside a slot (phase 0..1):
 //   D / U   [0, StrokeFraction)   the stroke: start -> end pose (eased out, so the hand moves off on the slot's onset and
@@ -16,8 +18,9 @@
 // on the last end pose: a beginner reads motion = strum and stillness = no strum, and pick-ready is the authored
 // "hovering over the strings" pose (5 mm above them, art/blender/hand/pose_hands.py STRUM_POSES), so a missed slot is
 // visibly different from a stroke.
-// Count-in (Beat < 0): pick-ready, no strokes, except the last (1 - StrokeFraction) slot before beat 0, which moves to the
-// first slot's entry pose (so the first stroke starts from its own start pose). Wait mode: pick-ready, no strokes.
+// Count-in and pickup (Beat < 0; a pickup is not patterned): pick-ready, no strokes, except the last (1 - StrokeFraction)
+// slot before beat 0, which moves to the first slot's entry pose (so the first stroke starts from its own start pose).
+// One bar = StrumSlots.Length slots = BeatsPerBar beats (3/4 works as 4/4). Wait mode: pick-ready, no strokes.
 // No song (inactive) or no pattern: rest.
 //
 // THE FRETTING MORPH: it starts exactly one beat before the change (BeatsToChange = 1) and takes one beat, clamped to
@@ -83,6 +86,12 @@ namespace UntitledGuitarApp.Runtime.GhostHand
 
         /// <summary>The share of a D / U slot the stroke takes; the rest of the slot brings the hand back.</summary>
         public const float StrokeFraction = 0.5f;
+
+        /// <summary>
+        /// Added before flooring a slot position, exactly as Core/Practice/PatternClock.ActiveIndex does
+        /// (floor((t - first) / slotSeconds + 1e-9)), so the hand and Core's timing judge agree on every slot boundary.
+        /// </summary>
+        public const double BoundaryEpsilon = 1e-9;
 
         // ---- fretting morph -------------------------------------------------------------------------------------------
         /// <summary>Shortest morph (seconds) when the beat is longer than this; see the file header.</summary>
@@ -151,7 +160,7 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             phase = -1f;
             if (slotCount <= 0 || double.IsNaN(beat) || double.IsInfinity(beat)) return false;
             double position = beat * Math.Max(1, slotsPerBeat);
-            double whole = Math.Floor(position);
+            double whole = Math.Floor(position + BoundaryEpsilon);   // as Core's PatternClock.ActiveIndex: a slot starts on its boundary
             if (whole > long.MaxValue / 2 || whole < long.MinValue / 2) return false;
             slot = Wrap((long)whole, slotCount);
             double fraction = position - whole;
@@ -272,11 +281,20 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             return u >= 1.0 ? 1f : u <= 0.0 ? 0f : (float)u;
         }
 
+        /// <summary>As the overload with waiting = false.</summary>
+        public static void FrettingTarget(string chord, string nextChord, double beatsToChange, float beatsPerSecond,
+                                          out string from, out string to, out float u)
+        {
+            FrettingTarget(chord, nextChord, beatsToChange, beatsPerSecond, false, out from, out to, out u);
+        }
+
         /// <summary>
         /// The fretting hand during a song: the chord shown (from), the chord being morphed to (to) and the linear progress
-        /// (u, ease it for display). A null chord (count-in) holds the first chord (nextChord) or, without one, rest.
+        /// (u, ease it for display). A null chord (count-in, or a pickup without a chord) holds the first chord (nextChord)
+        /// or, without one, rest. In wait mode (waiting) the producer holds the playhead ON the change with chord already the
+        /// new chord, so the hand holds chord and does not start toward the one after it, however close it is.
         /// </summary>
-        public static void FrettingTarget(string chord, string nextChord, double beatsToChange, float beatsPerSecond,
+        public static void FrettingTarget(string chord, string nextChord, double beatsToChange, float beatsPerSecond, bool waiting,
                                           out string from, out string to, out float u)
         {
             u = 0f;
@@ -286,7 +304,7 @@ namespace UntitledGuitarApp.Runtime.GhostHand
                 return;
             }
             from = chord;
-            if (nextChord == null || string.Equals(nextChord, chord, StringComparison.Ordinal))
+            if (waiting || nextChord == null || string.Equals(nextChord, chord, StringComparison.Ordinal))
             {
                 to = chord;
                 return;
