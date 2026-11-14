@@ -163,6 +163,34 @@ namespace UntitledGuitarApp.Runtime.Practice.Learn
             if (clean) Advance(LearnStage.Done);
         }
 
+        /// <summary>
+        /// The real driver's finger-stage fault (Core's pluck check while a finger is being placed): show the tip on the card.
+        /// The scripted dev run never calls this. A pass still arrives as <see cref="OnFingerPlaced"/>.
+        /// </summary>
+        public void OnFingerStageFault(string tip, TipIcon icon)
+        {
+            if (_stage != LearnStage.FingerByFinger || string.IsNullOrEmpty(tip)) return;
+            _view.ShowTip(tip, icon);
+        }
+
+        /// <summary>
+        /// The real driver's pluck result in Core's strict order (string by string, lowest first, from Core's LearnChordSession):
+        /// every result marks its string, and a completed all-correct pass (<paramref name="passComplete"/> as Core reports it)
+        /// starts the hold that leads to the strum check. Unlike <see cref="OnPluckResult"/> there is no restart-on-repeat:
+        /// Core's session never re-asks a string that already passed, so a replay would only erase the pass's earlier marks.
+        /// </summary>
+        public void OnDriverPluckResult(int stringNumber, StringMark mark, string tip, TipIcon icon, bool passComplete)
+        {
+            if (_stage != LearnStage.PluckCheck || _hold > 0f) return;
+            if (stringNumber < 1 || stringNumber > LearnChord.StringCount) return;
+            _view.ShowStringMark(stringNumber, mark);
+            if (!string.IsNullOrEmpty(tip)) _view.ShowTip(tip, icon);
+            if (!passComplete) return;
+            _passes++;
+            _view.ShowTip(AllCorrectTip, TipIcon.Good);
+            _hold = AllCorrectHoldSeconds;
+        }
+
         // ------------------------------------------------------------------ stages
 
         void Advance(LearnStage next)

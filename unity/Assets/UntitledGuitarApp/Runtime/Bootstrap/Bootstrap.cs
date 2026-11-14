@@ -8,6 +8,7 @@ using UntitledGuitarApp.Runtime.Head;
 using UntitledGuitarApp.Runtime.Hud;
 using UntitledGuitarApp.Runtime.Logging;
 using UntitledGuitarApp.Runtime.Neck;
+using UntitledGuitarApp.Runtime.Practice.Learn;
 using UntitledGuitarApp.Runtime.Render;
 using UntitledGuitarApp.Runtime.Spectator;
 
@@ -146,7 +147,10 @@ namespace UntitledGuitarApp.Runtime
 
             Chords = ChordLabel.Create(Rig.Head, HudDistanceM);
             HudLayout.Place(Chords.transform, ChordAzimuthDeg, ChordElevationDeg, HudDistanceM);
-            Chords.SetChords("G", "C");   // walking skeleton: fixed until Core's practice events drive it
+            // The walking skeleton's chord comes from the flags (flags.chords[0], the judge profile's chord; else G), like
+            // learn and idle modes. SetChords hides "next" until practice events drive it.
+            string skeletonChord = LearnChords.NameFromFlags(flags);
+            Chords.SetChords(skeletonChord, null);
 
             Meter = MicMeter.Create(Rig.Head, HudDistanceM);
             HudLayout.Place(Meter.transform, MeterAzimuthDeg, MeterElevationDeg, HudDistanceM);
@@ -188,10 +192,12 @@ namespace UntitledGuitarApp.Runtime
         void ComposeNeckAndHand(FlagSet flags)
         {
             Neck = FloatingNeck.Create(transform);
-            // Person 2's Core: FretboardGeometry (default guitar until the demo guitar is measured) + ChordLibrary's G,
-            // mapped to the neck frame by CoreNeckLayout (Core's across axis is + toward string 6; ours is + toward string 1).
+            // Person 2's Core: FretboardGeometry (default guitar until the demo guitar is measured) + ChordLibrary, mapped to
+            // the neck frame by CoreNeckLayout (Core's across axis is + toward string 6; ours is + toward string 1). The chord
+            // is the flags' (the judge profile sets chords = ["Em"]), else G.
             NeckLayout layout = CoreNeckLayout.Create(CoreNeckLayout.DefaultGeometry);
-            _dotCount = Mathf.Max(0, CoreNeckLayout.ChordMarks(CoreNeckLayout.DefaultGeometry, "G", _dots, _marks));
+            string chord = LearnChords.NameFromFlags(flags);
+            _dotCount = Mathf.Max(0, CoreNeckLayout.ChordMarks(CoreNeckLayout.DefaultGeometry, chord, _dots, _marks));
             if (!Neck.Build(layout))
             {
                 UGALog.Warn("neck_layout_invalid", "the dev neck layout failed NeckLayout.Validate; see the warnings above");
