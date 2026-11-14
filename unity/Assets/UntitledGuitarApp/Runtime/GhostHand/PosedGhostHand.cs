@@ -336,6 +336,35 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             return true;
         }
 
+        /// <summary>
+        /// Moves the whole hand by <paramref name="offsetMm"/> (pose-frame mm, = neck-frame axes) on top of its pose
+        /// (GhostPoseDriver.RootOffsetMm): used for the stroke sweep. Takes effect at the next pose change or Tick, or at once
+        /// with RefreshPose.
+        /// </summary>
+        public void SetRootOffsetMm(Vector3 offsetMm)
+        {
+            if (_available && _driver != null) _driver.RootOffsetMm = offsetMm;
+        }
+
+        /// <summary>The translation set by SetRootOffsetMm (zero when unavailable).</summary>
+        public Vector3 RootOffsetMm { get { return _available && _driver != null ? _driver.RootOffsetMm : Vector3.zero; } }
+
+        /// <summary>Writes the bones again (after SetRootOffsetMm while the pose itself does not change).</summary>
+        public void RefreshPose()
+        {
+            if (_available && _driver != null) _driver.Refresh();
+        }
+
+        /// <summary>How far (mm) the drawn wrist is from the blend of two poses at u drawn at offsetMm; infinity when a pose is missing.</summary>
+        public float DistanceToBlendMm(string fromPose, string toPose, float u, Vector3 offsetMm)
+        {
+            if (!_available || _driver == null) return float.PositiveInfinity;
+            GhostPose a, b;
+            bool hasA = TryGetPose(fromPose, out a), hasB = TryGetPose(toPose, out b);
+            if (!hasA && !hasB) return float.PositiveInfinity;
+            return _driver.WristDistanceToBlendMm(hasA ? a : b, hasB ? b : a, u, offsetMm);
+        }
+
         /// <summary>Remembers the pose on screen now: the start of a ShowBlend cross-fade.</summary>
         public void HoldSnapshot()
         {

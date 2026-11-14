@@ -13,6 +13,11 @@
 // STRUMMING: plays frame.StrumSlots in time with frame.Beat (StrumMath.Sample: D = down-start -> down-end, U = up-start ->
 // up-end, "-" = hover at pick-ready, each slot ending on the next one's start pose). Count-in and wait mode: pick-ready,
 // no strokes. No song or no pattern: rest.
+// THE SWEEP (StrokeSweep): on a FloatingNeck, each D / U stroke also moves the whole hand so the pick (9 mm beyond the
+// thumb-index pinch, as authored) sweeps from outside the chord's bass string to past string 1 (D) or from past string 1
+// to between strings 3 and 4 (U), in the string plane while it crosses the struck strings and lifted at both ends. The
+// recover and hover phases carry that offset smoothly to the next stroke's start; held poses ease it back to zero.
+// Sweep = false switches it off (the authored blend alone).
 // SMOOTHNESS: held poses (rest, pick-ready, a chord between morphs) are reached with PosedGhostHand.SetPose's 0.28 s ease;
 // beat-locked poses are set every frame. When a beat-locked pose takes over from a held one more than SettleJumpMm away
 // (leaving wait mode mid-pattern, a song starting without a count-in), the hand cross-fades to it over SettleSeconds
@@ -54,7 +59,15 @@ namespace UntitledGuitarApp.Runtime.GhostHand
 
         readonly Motion _fretting;
         readonly Motion _strumming;
+        FloatingNeck _neck;
         Transform _strumZone;
+        readonly Quaternion[] _rotations = new Quaternion[GhostPose.BoneCount];   // sweep: the blended pose, then its FK
+        readonly Quaternion[] _totals = new Quaternion[GhostPose.BoneCount];
+        readonly Vector3[] _joints = new Vector3[GhostPose.JointCount];
+        readonly float[] _stringZ = new float[NeckLayout.StringCount];
+        string _bassChord;
+        int _bassString = 6;
+        Vector3 _strumOffset, _pickTarget, _authoredPick;
         Vector3 _strumZoneLocal;
         bool _strumZoneKnown;
 
@@ -68,8 +81,18 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             _strumming = Usable(strumming) ? new Motion(strumming) : null;
             _lastStrum = StrumMath.Sample(false, false, 0.0, null, 1);
             _frettingFrom = _frettingTo = StrumMath.Rest;
-            if (_strumming != null) _strumZone = FindStrumZone(strumming);
+            if (_strumming != null) _strumZone = FindStrumZone(strumming, out _neck);
+            Sweep = true;
         }
+
+        /// <summary>The stroke sweep on top of the authored strokes (file header). True by default; needs a FloatingNeck.</summary>
+        public bool Sweep { get; set; }
+        /// <summary>The whole-hand translation of the strumming hand asked for this frame (neck mm; zero without a sweep).</summary>
+        public Vector3 StrumOffsetMm { get { return _strumOffset; } }
+        /// <summary>During a stroke: where the pick should be (neck mm); otherwise the last such target.</summary>
+        public Vector3 PickTargetMm { get { return _pickTarget; } }
+        /// <summary>During a stroke: where the authored blend alone puts the pick (neck mm).</summary>
+        public Vector3 AuthoredPickMm { get { return _authoredPick; } }
 
         /// <summary>
         /// A director for the two hands. Either may be null or unavailable (PosedGhostHand.IsAvailable false): that hand is
@@ -141,12 +164,13 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             _frettingFade = StrumMath.FrettingFade(frame.ChordConfirmed, u, FadeFlag());
             if (_fretting != null)
             {
-                if (u > 0f) _fretting.Blend(from, to, StrumMath.Ease(u), dt);
-                else _fretting.Hold(from);
+                if (u > 0f) _fretting.Blend(from, to, StrumMath.Ease(u), dt, Vector3.zero);
+                else _fretting.Hold(from, dt);
                 _fretting.Fade(_frettingFade);
             }
 
             _lastStrum = StrumMath.Sample(true, frame.Waiting, frame.Beat, frame.StrumSlots, frame.SlotsPerBeat);
+            _strumOffset = StrumOffset(ref frame, _lastStrum);
             DriveStrumming(dt);
         }
 
@@ -160,10 +184,11 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             _frettingFade = 1f;
             if (_fretting != null)
             {
-                _fretting.Hold(_frettingFrom);
+                _fretting.Hold(_frettingFrom, dt);
                 _fretting.Fade(1f);
             }
             _lastStrum = StrumMath.Sample(false, false, 0.0, null, 1);
+            _strumOffset = Vector3.zero;
             DriveStrumming(dt);
         }
 
@@ -171,8 +196,99 @@ namespace UntitledGuitarApp.Runtime.GhostHand
         {
             if (_strumming == null) return;
             StrumPhase p = _lastStrum.Phase;
-            if (p == StrumPhase.Rest || p == StrumPhase.Ready) _strumming.Hold(_lastStrum.From);
-            else _strumming.Blend(_lastStrum.From, _lastStrum.To, _lastStrum.Blend, dt);
+            if (p == StrumPhase.Rest || p == StrumPhase.Ready) _strumming.Hold(_lastStrum.From, dt);
+            else _strumming.Blend(_lastStrum.From, _lastStrum.To, _lastStrum.Blend, dt, _strumOffset);
+        }
+
+        // ------------------------------------------------------------------------------------------------ the stroke sweep
+
+        // The strumming hand's translation for this sample: exact during a stroke, carried linearly (with the pose blend)
+        // from one stroke's end to the next one's start in the recover / hover / lead-in phases, zero when held.
+        Vector3 StrumOffset(ref PracticeFrame frame, StrumSample s)
+        {
+            if (!Sweep || _neck == null || _neck.Layout == null || _strumming == null || !_strumming.Alive) return Vector3.zero;
+            switch (s.Phase)
+            {
+                case StrumPhase.Stroke:
+                    return SweepOffset(s.Kind, CurrentChord(ref frame), s.From, s.To, s.Blend, true);
+                case StrumPhase.Recover:
+                    return Vector3.Lerp(SweepOffset(s.Kind, CurrentChord(ref frame), StrumMath.StrokeEndPose(s.Kind), StrumMath.StrokeEndPose(s.Kind), 1f, false),
+                                        EntryOffset(s.To, NextSlotChord(ref frame)), s.Blend);
+                case StrumPhase.Hover:
+                    return Vector3.Lerp(Vector3.zero, EntryOffset(s.To, NextSlotChord(ref frame)), s.Blend);
+                case StrumPhase.LeadIn:
+                    return Vector3.Lerp(Vector3.zero, EntryOffset(s.To, ChordAtBeat(ref frame, 0.0)), s.Blend);
+                default:
+                    return Vector3.zero;
+            }
+        }
+
+        // The offset at the start of the stroke that begins on entry pose 'pose' (zero for pick-ready: a hover).
+        Vector3 EntryOffset(string pose, string chord)
+        {
+            char kind = string.Equals(pose, StrumMath.DownStart, System.StringComparison.Ordinal) ? 'D'
+                      : string.Equals(pose, StrumMath.UpStart, System.StringComparison.Ordinal) ? 'U' : '-';
+            if (kind == '-') return Vector3.zero;
+            return SweepOffset(kind, chord, pose, pose, 0f, false);
+        }
+
+        Vector3 SweepOffset(char kind, string chord, string fromPose, string toPose, float u, bool remember)
+        {
+            Vector3 authored;
+            if (!AuthoredPickNeckMm(fromPose, toPose, u, out authored)) return Vector3.zero;
+            NeckLayout layout = _neck.Layout;
+            for (int i = 0; i < NeckLayout.StringCount; i++) _stringZ[i] = NeckMath.StringZMm(layout, i + 1, authored.x);
+            Vector3 target = StrokeSweep.Target(kind, BassString(chord), u, authored.x, layout.stringHeightMm, _stringZ);
+            if (remember)
+            {
+                _pickTarget = target;
+                _authoredPick = authored;
+            }
+            return StrokeSweep.Offset(target, authored);
+        }
+
+        // Where the authored blend of two strumming poses puts the pick, neck-frame mm (forward kinematics of the pose data).
+        bool AuthoredPickNeckMm(string fromPose, string toPose, float u, out Vector3 pick)
+        {
+            pick = Vector3.zero;
+            GhostPose a, b;
+            if (!_strumming.Hand.TryGetPose(fromPose, out a) || !_strumming.Hand.TryGetPose(toPose, out b) || !a.HasBind) return false;
+            Vector3 root;
+            if (!GhostPose.BlendLinear(a, b, u, _rotations, out root)) return false;
+            if (!a.ComputeJointPositionsMm(_rotations, root, _totals, _joints)) return false;
+            Vector3 inPoseFrame = StrokeSweep.Pick(_joints[GhostPose.BoneCount + 0], _joints[GhostPose.BoneCount + 1], _totals[GhostPose.Wrist]);
+            pick = inPoseFrame + (_strumZone.localPosition + _strumming.Hand.transform.localPosition) / NeckMath.MetresPerMm;
+            return true;
+        }
+
+        int BassString(string chord)
+        {
+            if (!ReferenceEquals(chord, _bassChord))
+            {
+                _bassChord = chord;
+                _bassString = StrokeSweep.BassString(chord);
+            }
+            return _bassString;
+        }
+
+        static string CurrentChord(ref PracticeFrame frame)
+        {
+            return frame.Chord ?? frame.NextChord;
+        }
+
+        // The chord sounding when the next pattern slot starts.
+        static string NextSlotChord(ref PracticeFrame frame)
+        {
+            int perBeat = frame.SlotsPerBeat > 0 ? frame.SlotsPerBeat : 1;
+            double nextSlotBeat = (System.Math.Floor(frame.Beat * perBeat + StrumMath.BoundaryEpsilon) + 1.0) / perBeat;
+            return ChordAtBeat(ref frame, nextSlotBeat);
+        }
+
+        static string ChordAtBeat(ref PracticeFrame frame, double beat)
+        {
+            if (frame.Chord == null) return frame.NextChord;
+            bool changed = frame.NextChord != null && !double.IsInfinity(frame.BeatsToChange) && beat >= frame.Beat + frame.BeatsToChange - 1e-6;
+            return changed ? frame.NextChord : frame.Chord;
         }
 
         static float FadeFlag()
@@ -184,12 +300,15 @@ namespace UntitledGuitarApp.Runtime.GhostHand
         // ------------------------------------------------------------------------------------------------ the strum anchor
 
         // The strum zone the hand hangs under, if its parent is a FloatingNeck's StrumZone (then the offset is kept in step).
-        static Transform FindStrumZone(PosedGhostHand hand)
+        static Transform FindStrumZone(PosedGhostHand hand, out FloatingNeck neck)
         {
+            neck = null;
             Transform parent = hand.transform.parent;
             if (parent == null || parent.parent == null) return null;
-            FloatingNeck neck = parent.parent.GetComponent<FloatingNeck>();
-            return neck != null && neck.StrumZone == parent ? parent : null;
+            FloatingNeck owner = parent.parent.GetComponent<FloatingNeck>();
+            if (owner == null || owner.StrumZone != parent) return null;
+            neck = owner;
+            return parent;
         }
 
         void SyncStrumAnchor()
@@ -216,6 +335,8 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             public readonly PosedGhostHand Hand;
             bool _blending, _settling;
             float _settleElapsed;
+            Vector3 _offset, _offsetFrom;
+            float _offsetEase = 1f;
 
             public Motion(PosedGhostHand hand)
             {
@@ -229,21 +350,37 @@ namespace UntitledGuitarApp.Runtime.GhostHand
                 if (Alive) Hand.SetFade(fade);
             }
 
-            public void Hold(string pose)
+            public void Hold(string pose, float dt)
             {
                 if (!Alive) return;
-                _blending = false;
+                if (_blending)
+                {
+                    _blending = false;
+                    _offsetFrom = _offset;
+                    _offsetEase = _offset == Vector3.zero ? 1f : 0f;
+                }
+                bool moved = false;
+                if (_offsetEase < 1f)                       // the sweep's translation eases out like the pose (morphSeconds)
+                {
+                    float step = dt > 0f && !float.IsInfinity(dt) ? dt : 0f;
+                    _offsetEase = Mathf.Min(1f, _offsetEase + step / Mathf.Max(Hand.morphSeconds, 1e-3f));
+                    _offset = _offsetFrom * (1f - StrumMath.Ease(_offsetEase));
+                    Hand.SetRootOffsetMm(_offset);
+                    moved = true;
+                }
                 Hand.SetPose(pose, false);
+                if (moved && Hand.Driver != null && !Hand.Driver.IsMorphing) Hand.RefreshPose();
             }
 
-            public void Blend(string from, string to, float u, float dt)
+            public void Blend(string from, string to, float u, float dt, Vector3 offset)
             {
                 if (!Alive) return;
                 if (!_blending)
                 {
                     _blending = true;
-                    _settling = Hand.DistanceToBlendMm(from, to, u) > SettleJumpMm;
+                    _settling = Hand.DistanceToBlendMm(from, to, u, offset) > SettleJumpMm;
                     _settleElapsed = 0f;
+                    _offsetFrom = _offset;
                     if (_settling) Hand.HoldSnapshot();
                 }
                 float weight = 1f;
@@ -253,6 +390,8 @@ namespace UntitledGuitarApp.Runtime.GhostHand
                     weight = StrumMath.Ease(_settleElapsed / SettleSeconds);
                     if (weight >= 1f) _settling = false;
                 }
+                _offset = weight >= 1f ? offset : Vector3.Lerp(_offsetFrom, offset, weight);
+                Hand.SetRootOffsetMm(_offset);
                 Hand.ShowBlend(from, to, u, weight);
             }
         }

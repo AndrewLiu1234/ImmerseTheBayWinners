@@ -441,6 +441,7 @@ namespace UntitledGuitarApp.Runtime.GhostHand
         readonly Quaternion[] _held = new Quaternion[GhostPose.BoneCount];        // HoldSnapshot
         Vector3 _heldRootMm;
         bool _hasHeld;
+        Vector3 _rootOffsetMm;                                                     // RootOffsetMm
         readonly List<string> _missing = new List<string>();
         readonly GhostRigSolver _solver = new GhostRigSolver();
         Transform _root;
@@ -629,6 +630,31 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             return true;
         }
 
+        /// <summary>
+        /// An extra translation of the whole hand (pose-frame mm) added to the wrist position when the bones are written: the
+        /// stroke sweep of GhostHandsDirector, layered on the authored poses without changing their shape. Setting it writes
+        /// nothing; the next Apply, Blend, BlendLinearFromHeld or Tick uses it, or call Refresh. Zero by default.
+        /// </summary>
+        public Vector3 RootOffsetMm
+        {
+            get { return _rootOffsetMm; }
+            set { _rootOffsetMm = IsFinite(value) ? value : Vector3.zero; }
+        }
+
+        /// <summary>The wrist position drawn now, pose-frame mm: CurrentRootPositionMm + RootOffsetMm.</summary>
+        public Vector3 ShownRootPositionMm { get { return _currentRootMm + _rootOffsetMm; } }
+
+        /// <summary>Writes the bones again with the current pose and RootOffsetMm (after changing only the offset).</summary>
+        public void Refresh()
+        {
+            if (_hasPose && IsBound && _solver.IsFitted) Write();
+        }
+
+        static bool IsFinite(Vector3 v)
+        {
+            return !(float.IsNaN(v.x) || float.IsNaN(v.y) || float.IsNaN(v.z) || float.IsInfinity(v.x) || float.IsInfinity(v.y) || float.IsInfinity(v.z));
+        }
+
         /// <summary>Remembers the pose on screen now, for BlendLinearFromHeld (a cross-fade out of a held pose).</summary>
         public void HoldSnapshot()
         {
@@ -663,10 +689,17 @@ namespace UntitledGuitarApp.Runtime.GhostHand
         /// <summary>How far (pose mm) the wrist on screen is from where the blend of a and b at u would put it.</summary>
         public float WristDistanceToBlendMm(GhostPose a, GhostPose b, float u)
         {
+            return WristDistanceToBlendMm(a, b, u, _rootOffsetMm);
+        }
+
+        /// <summary>As WristDistanceToBlendMm, with the blend drawn at RootOffsetMm = <paramref name="offsetMm"/> (the drawn wrist
+        /// keeps its own offset).</summary>
+        public float WristDistanceToBlendMm(GhostPose a, GhostPose b, float u, Vector3 offsetMm)
+        {
             if (a == null || b == null) return float.PositiveInfinity;
             float k = u > 0f ? (u < 1f ? u : 1f) : 0f;
             Vector3 ra = a.RootPositionMm, rb = b.RootPositionMm;
-            Vector3 d = new Vector3(ra.x + (rb.x - ra.x) * k, ra.y + (rb.y - ra.y) * k, ra.z + (rb.z - ra.z) * k) - _currentRootMm;
+            Vector3 d = new Vector3(ra.x + (rb.x - ra.x) * k, ra.y + (rb.y - ra.y) * k, ra.z + (rb.z - ra.z) * k) + offsetMm - ShownRootPositionMm;
             return d.magnitude;
         }
 
@@ -753,7 +786,7 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             Vector3 position;
             Quaternion rotation;
             float scale;
-            if (!_solver.Solve(_current, _currentRootMm, _local, out position, out rotation, out scale)) return;
+            if (!_solver.Solve(_current, _currentRootMm + _rootOffsetMm, _local, out position, out rotation, out scale)) return;
             _root.localPosition = position;
             _root.localRotation = rotation;
             _root.localScale = new Vector3(scale, scale, scale);
