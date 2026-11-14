@@ -697,7 +697,7 @@ def run(cfg):
         seen[key] = j.label
 
     source_blend = os.path.basename(bpy.data.filepath) if bpy.data.filepath else "(unsaved .blend)"
-    results = []  # (job, text, fails, worst, lines, warns, fk_worst)
+    results = []  # (job, text, fails, worst, lines, warns, fk_worst, pose)
     guard = SceneGuard(arm) if source in ("markers", "actions") else None
     try:
         for j in jobs:
@@ -720,13 +720,21 @@ def run(cfg):
             lines, fails, worst, checked = target_report(j.hand, j.name, pose, fk_tips, neck, cfg["tolerance_mm"], warns)
             if cfg["strict"] and j.hand == "fretting" and j.name in CHORD_POSES and checked == 0:
                 raise UserError("--strict: %s-%s has no fingertip targets to be checked against (tip_%s_f* from build_neck_mockup.py, built with --chords including %s)" % (j.hand, j.name, j.name, j.name))
-            results.append((j, text, fails, worst, lines, warns, fk_worst))
+            results.append((j, text, fails, worst, lines, warns, fk_worst, pose))
     finally:
         if guard is not None:
             guard.restore()
     if guard is not None and guard.unkeyed:
         shown = ", ".join(guard.unkeyed[:8]) + (" ..." if len(guard.unkeyed) > 8 else "")
         warnings.append("unkeyed changes at frame %d (%s) are back on screen, but they are NOT in these files: key them, or use --source current to export what you see" % (guard.frame, shown))
+    for i, first in enumerate(results):  # two files with the same numbers: a pose that was never keyed at its marker
+        for second in results[i + 1:]:
+            pa, pb = first[7], second[7]
+            same = (pa["root_mm"] - pb["root_mm"]).length < 0.001 and all(
+                abs(x - y) < 1e-6 for qa, qb in zip(pa["rotations"], pb["rotations"]) for x, y in zip(qa, qb))
+            if same:
+                warnings.append("%s-%s and %s-%s are exactly the same pose: was each one keyed at its own frame? Unkeyed changes are lost when the timeline moves" % (
+                    first[0].hand, first[0].name, second[0].hand, second[0].name))
 
     total_fail = sum(r[2] for r in results)
     if cfg["strict"] and total_fail:
@@ -735,7 +743,7 @@ def run(cfg):
     if not cfg["dry_run"]:
         os.makedirs(out_dir, exist_ok=True)
     written = []
-    for j, text, fails, worst, lines, warns, fk_worst in results:
+    for j, text, fails, worst, lines, warns, fk_worst, _pose in results:
         path = os.path.join(out_dir, "%s-%s.pose.json" % (j.hand, j.name))
         if cfg["dry_run"]:
             report.append("--- %s (dry run) ---\n%s" % (path, text))
