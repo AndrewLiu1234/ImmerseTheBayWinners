@@ -143,6 +143,13 @@ namespace UntitledGuitarApp.Runtime.Gaze
             engine.Reset();
         }
 
+        void Update()
+        {
+            // Input.GetKeyDown is documented for Update ("the state gets reset each frame"), so read it here and latch it;
+            // LateUpdate, which runs after the head pose is applied, acts on it in the same frame.
+            if (ConfirmKey != KeyCode.None && Input.GetKeyDown(ConfirmKey)) confirmRequested = true;
+        }
+
         void LateUpdate()
         {
             float dt = Time.unscaledDeltaTime;
@@ -159,9 +166,8 @@ namespace UntitledGuitarApp.Runtime.Gaze
                 GazeDirection = head.forward;
             }
 
-            bool confirm = confirmRequested;
+            bool confirm = confirmRequested;   // set by Update (the key) or by Confirm()
             confirmRequested = false;
-            if (!confirm && ConfirmKey != KeyCode.None && Input.GetKeyDown(ConfirmKey)) confirm = true;
 
             engine.Step(GazeOrigin, GazeDirection, hasGaze, snapshot, count, dt, confirm);
 
