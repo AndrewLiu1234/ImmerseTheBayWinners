@@ -171,7 +171,7 @@ namespace UntitledGuitarApp.Runtime.GhostHand
         {
             p = default(Prepared);
             if (!Finite(ch.knuckle) || !Finite(ch.forward) || !Finite(ch.curl)) return false;
-            if (!float.IsFinite(ch.length1) || !float.IsFinite(ch.length2) || !float.IsFinite(ch.length3)) return false;
+            if (!Finite(ch.length1) || !Finite(ch.length2) || !Finite(ch.length3)) return false;
 
             Vector3 f = ch.forward;
             float fm = f.magnitude;
@@ -196,8 +196,8 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             p.l3 = Math.Max(ch.length3, MinBone);
 
             FingerIkLimits lim = ch.limits;
-            if (!float.IsFinite(lim.mcpMin) || !float.IsFinite(lim.mcpMax) || !float.IsFinite(lim.pipMax) ||
-                !float.IsFinite(lim.dipCoupling) || !float.IsFinite(lim.swingMax)) lim = FingerIkLimits.Finger;
+            if (!Finite(lim.mcpMin) || !Finite(lim.mcpMax) || !Finite(lim.pipMax) ||
+                !Finite(lim.dipCoupling) || !Finite(lim.swingMax)) lim = FingerIkLimits.Finger;
             p.k = Math.Max(0.0, Math.Min(2.0, lim.dipCoupling));
             p.A = Math.Min(lim.mcpMin, lim.mcpMax);
             p.B = Math.Max(lim.mcpMin, lim.mcpMax);
@@ -333,9 +333,15 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             return (double)u.x * v.x + (double)u.y * v.y + (double)u.z * v.z;
         }
 
+        // Written out (not float.IsFinite) so it compiles against every .NET profile Unity 2021.3 offers.
+        static bool Finite(float v)
+        {
+            return !float.IsNaN(v) && !float.IsInfinity(v);
+        }
+
         static bool Finite(Vector3 v)
         {
-            return float.IsFinite(v.x) && float.IsFinite(v.y) && float.IsFinite(v.z);
+            return Finite(v.x) && Finite(v.y) && Finite(v.z);
         }
     }
 }
