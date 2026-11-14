@@ -34,7 +34,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
         public const float DebugDegrees = HudText.MinTextDegrees;
 
         /// <summary>Half the height of the whole tuner block, degrees (dial top to the second status line; the debug line adds 2.6 below).</summary>
-        public const float BlockHalfHeightDegrees = 8.4f;
+        public const float BlockHalfHeightDegrees = 8.7f;
 
         /// <summary>Half the width of the whole tuner block, degrees ("Pluck string 6" is the widest part).</summary>
         public const float BlockHalfWidthDegrees = 7.5f;
@@ -47,12 +47,30 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
         public const string InTuneText = "In tune!";
 
         // Vertical positions, degrees, measured from the dial's pivot (the block is then centred on the object's origin).
-        const float PivotY = -0.8f;
-        const float NoteY = 2.3f;
-        const float StringY = -0.9f;
-        const float StatusY = -4.8f;        // centre of the status block (one line, or two)
-        const float DebugY = -9.0f;
-        const float StatusLineStepInCaps = 1.8f;
+        // Set for the TRUE text size (HudText calibrated 14 Nov): a text's box is about 1.56 cap heights tall, centred on
+        // its anchor, so the note's box (5.0 deg) ends 0.14 deg below the lowest point the needle reaches over its column
+        // (inner end 0.615 radii out, at +-20 deg of swing) and 0.1 deg above the string label's box; the status block sits
+        // 0.1 deg under that. Every offset goes through Meters, so largeText scales the whole block and keeps these gaps.
+        // (Before: NoteY 2.3, StringY -0.9, StatusY -4.8, PivotY -0.8: the note's box sat 0.39 deg into "string 6" and
+        // 0.04-0.10 deg into the swinging needle.)
+
+        /// <summary>The dial's pivot below the object's origin, degrees (centres the whole block on the origin).</summary>
+        public const float PivotY = -0.45f;
+
+        /// <summary>Centre of the note name above the pivot, degrees.</summary>
+        public const float NoteY = 2.05f;
+
+        /// <summary>Centre of the "string N" line, degrees from the pivot.</summary>
+        public const float StringY = -1.65f;
+
+        /// <summary>Centre of the status block (one line, or two), degrees from the pivot.</summary>
+        public const float StatusY = -5.5f;
+
+        /// <summary>Centre of the debug line (debugOverlay), degrees from the pivot.</summary>
+        public const float DebugY = -9.7f;
+
+        /// <summary>Distance between the two status lines, in cap heights.</summary>
+        public const float StatusLineStepInCaps = 1.8f;
 
         const float ZoneRestOpacity = 0.55f;
         const float StaleNeedleOpacity = 0.35f;
