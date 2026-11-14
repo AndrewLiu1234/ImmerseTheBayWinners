@@ -8,19 +8,25 @@
 //
 // THE FLOW. Begin() recenters the IMU first (through NeckAnchor.Recenter, so whatever is already placed in the world turns with
 // it), hides the neck and its ghost hands (the player must see the REAL guitar), and turns gaze selection off (so no other
-// dwell target fires while the player stares at the guitar). For each target a head-locked prompt above the reticle says
-// where to look ("Look at the nut / on the thick low E string / Hold still - or press Space"); a capture happens when the
-// head's forward has stayed within 0.5 degrees of its mean for 1.2 s (GazeSteadiness; MASTER_PLAN's 1.2 s dwell, Person 2's
-// 0.5 degree advice), or at once on Space. The reticle's arc fills meanwhile. After the 4th capture Core's NeckSolver fits the
-// neck (NeckAlignFlow). Success: the anchor gets the pose (FloatingNeck.SetWorldPose, NeckMode.Aligned), the prompt shows the
-// residual honestly, `neck_aligned` is logged. Failure: the prompt says why (Core's text or our gate), the neck goes back to
-// what it was (the floating neck, or the previous alignment), and Space within 8 s tries again. The player always has a neck.
-// It cannot work without real head rotation: with no IMU tracking (and no editor mouse-look) it refuses and says so.
+// dwell target fires while the player stares at the guitar). For each target a head-locked prompt says where to look; a
+// capture happens when the head's forward has held still (all samples within a 1 degree wide patch, i.e. about 0.5 degree
+// radius) for 1.2 s (GazeSteadiness; MASTER_PLAN's 1.2 s dwell, Person 2's 0.5 degree advice), or at once on Space. The
+// reticle's arc fills meanwhile. After the 4th capture Core's NeckSolver fits the neck (NeckAlignFlow). Success: the anchor
+// gets the pose (FloatingNeck.SetWorldPose, NeckMode.Aligned), the HUD shows the fit honestly and asks the player to check
+// the real nut, `neck_aligned` is logged. Failure: the HUD says why in a few words (the full reason is logged), the neck goes
+// back to what it was (the floating neck, or the previous alignment), and Space tries again while the message is up. The
+// player always has a neck. Without real head rotation (no IMU tracking, no editor mouse-look) it refuses and says so.
 //
-// HUD: three HudText lines + a step title, head-locked at 1.2 m, centred 2.6 to 10.2 degrees above the reticle (the view is
-// 27 degrees tall), cap heights 1.6 / 1.2 degrees (the minimum is 1.2). Sizes are the TRUE sizes asked for: HudText's
-// current ~18% shortfall is being fixed on its own branch, so nothing here compensates for it. Every prompt string is a
-// constant; the per-frame path (Step) builds no strings and allocates nothing (the final capture allocates the outcome).
+// HUD (round 2, after the 12:38 preview showed a big centred block covering the nut it asked about): a small block of up to
+// 4 head-locked lines at 1.2 m in the UPPER band of the view, on the side AWAY from the neck: a right-handed player sees the
+// neck run from the headstock at the upper left of the view to the body at the lower right whichever part is looked at
+// (the reticle, the point being looked at, is the view centre), so the block starts HudInnerAzimuthDeg right of centre and
+// runs right; for a left-handed player it is mirrored. Line A has 1.6 degree caps, lines B-D 1.2 (the minimum); HudText
+// draws exactly the asked cap height (fixed 12:30). Line lengths are capped (LineAMaxChars, LineMaxChars) from the measured
+// ~1.0 degree per character at 1.6 degree caps (align_prompt_step1.png, 12:38), so the block stays inside the 46 degree wide
+// view. A result fades out after SuccessShowSeconds (a failure after FailureShowSeconds), over FadeSeconds (no flashing).
+// Every prompt string is a constant; the per-frame path (Step) builds no strings and allocates nothing (the final capture
+// allocates the outcome, and the result text is built once).
 using System;
 using UnityEngine;
 using UntitledGuitarApp.Core.Geometry;
@@ -37,45 +43,76 @@ namespace UntitledGuitarApp.Runtime.Neck
     public sealed class NeckAligner : MonoBehaviour
     {
         public const float HudDistanceM = 1.2f;
-        public const float TitleCapDeg = 1.2f;
-        public const float PromptCapDeg = 1.6f;
-        public const float HintCapDeg = 1.2f;
-        public const float TitleElevationDeg = 10.2f;
-        public const float Line1ElevationDeg = 7.6f;
-        public const float Line2ElevationDeg = 5.0f;
-        public const float HintElevationDeg = 2.6f;
 
-        /// <summary>A capture needs the gaze within this many degrees of its mean (Person 2: aim for dwell jitter 0.5 or less).</summary>
+        /// <summary>The block's inner edge, degrees from the view centre toward the side away from the neck.</summary>
+        public const float HudInnerAzimuthDeg = 5f;
+
+        /// <summary>Cap height of line A (what to look at / the result), degrees.</summary>
+        public const float LineACapDeg = 1.6f;
+
+        /// <summary>Cap height of lines B-D, degrees (HudText's minimum).</summary>
+        public const float LineCapDeg = 1.2f;
+
+        /// <summary>Line centres above the view centre, degrees: A, B, C, D (the view is 27 degrees tall: +-13.5).</summary>
+        public static readonly float[] LineElevationDeg = { 12.0f, 9.9f, 8.1f, 6.3f };
+
+        /// <summary>Longest line A: about 1.0 degree per character at 1.6 degree caps, so 14 characters are about 14 degrees.</summary>
+        public const int LineAMaxChars = 14;
+
+        /// <summary>Longest line B-D: about 0.77 degree per character at 1.2 degree caps, so 20 characters are about 15 degrees
+        /// (the block then ends about 21 degrees right of centre, inside the 23 degree half-width).</summary>
+        public const int LineMaxChars = 20;
+
+        public const int HudLineCount = 4;
+
+        /// <summary>Layout estimate (10% above the 12:38 measurement): one character is this many cap heights wide.</summary>
+        public const float EstimatedCharWidthPerCap = 0.70f;
+
+        /// <summary>Layout estimate: a line's box (ascenders and descenders included) is this many cap heights tall.</summary>
+        public const float EstimatedLineHeightPerCap = 1.5f;
+
+        /// <summary>
+        /// Where HUD line <paramref name="line"/> with <paramref name="chars"/> characters lies in the head's view, as a rectangle
+        /// in tangent coordinates (x = tan of the angle right of centre, y = tan of the angle above it), from the layout constants
+        /// and the estimates above. Pure; used by the layout test. The preview checks the real rendered bounds instead.
+        /// </summary>
+        public static Rect EstimatedLineRect(int line, int chars, bool leftSide)
+        {
+            float cap = line == 0 ? LineACapDeg : LineCapDeg;
+            float inner = Mathf.Tan(HudInnerAzimuthDeg * Mathf.Deg2Rad);
+            float width = Mathf.Tan(cap * Mathf.Deg2Rad) * EstimatedCharWidthPerCap * Mathf.Max(0, chars);
+            float height = Mathf.Tan(cap * Mathf.Deg2Rad) * EstimatedLineHeightPerCap;
+            float centreY = Mathf.Tan(LineElevationDeg[Mathf.Clamp(line, 0, HudLineCount - 1)] * Mathf.Deg2Rad);
+            float xMin = leftSide ? -inner - width : inner;
+            return new Rect(xMin, centreY - 0.5f * height, width, height);
+        }
+
+        /// <summary>A capture needs the gaze to hold still within about this radius (Person 2: aim for dwell jitter 0.5 or less).</summary>
         public const float SteadyThresholdDeg = 0.5f;
 
         /// <summary>... for this long (MASTER_PLAN section 20: hold each for 1.2 s).</summary>
         public const float SteadyWindowSeconds = 1.2f;
 
-        /// <summary>How long the result stays up (and Space retries after a failure).</summary>
-        public const float ResultSeconds = 8f;
+        /// <summary>How long a success stays up, fade included.</summary>
+        public const float SuccessShowSeconds = 4f;
 
-        /// <summary>
-        /// Longest HUD line at the 1.6 degree prompt size. Estimate (not measured): an average character of mixed-case Arial is
-        /// roughly 0.7 of the cap height wide, so about 1.1 degrees, and 30 characters about 34 of the 46 degrees of view.
-        /// Longer messages are split in two at a space. Check it in align_result frames.
-        /// </summary>
-        public const int MaxLineChars = 30;
+        /// <summary>How long a failure stays up, fade included (Space retries meanwhile).</summary>
+        public const float FailureShowSeconds = 8f;
 
-        static readonly Color TitleColor = new Color(0.55f, 0.90f, 1.00f, 1f);
+        public const float FadeSeconds = 1f;
+
+        static readonly Color StepColor = new Color(0.55f, 0.90f, 1.00f, 1f);
         static readonly Color PromptColor = new Color(1.00f, 1.00f, 1.00f, 1f);
         static readonly Color HintColor = new Color(0.75f, 0.88f, 1.00f, 1f);
         static readonly Color GoodColor = new Color(0.50f, 1.00f, 0.62f, 1f);
         static readonly Color BadColor = new Color(1.00f, 0.78f, 0.35f, 1f);
 
-        static readonly string[] StepTitles = { "Neck alignment 1 / 4", "Neck alignment 2 / 4", "Neck alignment 3 / 4", "Neck alignment 4 / 4" };
-        static readonly string[] StepLine1 = { "Look at the nut", "Now the nut", "Now fret 5", "Now fret 12" };
-        static readonly string[] StepLine2 =
-        {
-            "on the thick low E string", "on the thin high E string", "on the thick low E string", "on the thick low E string",
-        };
-        const string ReanchorTitle = "Re-anchor";
-        const string ReanchorLine1 = "Look at the nut";
-        const string HoldHint = "Hold still - or press Space";
+        /// <summary>Line A of each step prompt (at most LineAMaxChars).</summary>
+        public static readonly string[] StepLineA = { "1/4: the nut", "2/4: the nut", "3/4: fret 5", "4/4: fret 12" };
+        /// <summary>Line B of each step prompt (at most LineMaxChars).</summary>
+        public static readonly string[] StepLineB = { "on the thick low E", "on the thin high E", "on the thick low E", "on the thick low E" };
+        public const string ReanchorLineA = "Re-anchor: nut";
+        public const string HoldHint = "Hold still, or Space";
 
         Transform _head;
         FloatingNeck _neck;
@@ -83,12 +120,12 @@ namespace UntitledGuitarApp.Runtime.Neck
         NeckAnchor _anchor;
         NeckAlignFlow _flow;
         FretboardGeometry _geometry;
-        HudText _title;
-        HudText _line1;
-        HudText _line2;
-        HudText _hint;
+        readonly HudText[] _lines = new HudText[HudLineCount];
+        readonly Color[] _lineColors = new Color[HudLineCount];
         bool _hudVisible;
-        float _hideAt = -1f;
+        bool _hudLeftSide;
+        float _resultShownAt = -1f;
+        float _resultSeconds;
         bool _retryOffered;
         bool _confirmRequested;
         bool _neckHidden;
@@ -125,23 +162,29 @@ namespace UntitledGuitarApp.Runtime.Neck
             _geometry = CoreNeckLayout.DefaultGeometry;
             _flow = new NeckAlignFlow(_geometry, NeckSolverConfig.Default, SteadyThresholdDeg, SteadyWindowSeconds);
             Transform hudParent = _head != null ? _head : transform;
-            _title = MakeLine(hudParent, "AlignTitle", TitleCapDeg, TitleElevationDeg, TitleColor);
-            _line1 = MakeLine(hudParent, "AlignLine1", PromptCapDeg, Line1ElevationDeg, PromptColor);
-            _line2 = MakeLine(hudParent, "AlignLine2", PromptCapDeg, Line2ElevationDeg, PromptColor);
-            _hint = MakeLine(hudParent, "AlignHint", HintCapDeg, HintElevationDeg, HintColor);
+            for (int i = 0; i < HudLineCount; i++)
+            {
+                HudText text = HudText.Create(hudParent, "AlignHud" + (char)('A' + i));
+                text.SetAngularHeight(i == 0 ? LineACapDeg : LineCapDeg, HudDistanceM);
+                text.transform.localRotation = Quaternion.identity;
+                _lines[i] = text;
+            }
+            PlaceHud(false);
             SetHudVisible(false);
         }
 
-        static HudText MakeLine(Transform parent, string name, float capDeg, float elevationDeg, Color color)
+        // The block on the side away from the neck: right of centre for a right-handed player, left for a left-handed one.
+        void PlaceHud(bool leftSide)
         {
-            HudText text = HudText.Create(parent, name);
-            text.Anchor = TextAnchor.MiddleCenter;
-            text.Alignment = TextAlignment.Center;
-            text.Color = color;
-            text.SetAngularHeight(capDeg, HudDistanceM);
-            text.transform.localPosition = new Vector3(0f, HudDistanceM * Mathf.Tan(elevationDeg * Mathf.Deg2Rad), HudDistanceM);
-            text.transform.localRotation = Quaternion.identity;
-            return text;
+            _hudLeftSide = leftSide;
+            float x = HudDistanceM * Mathf.Tan(HudInnerAzimuthDeg * Mathf.Deg2Rad) * (leftSide ? -1f : 1f);
+            for (int i = 0; i < HudLineCount; i++)
+            {
+                HudText text = _lines[i];
+                text.Anchor = leftSide ? TextAnchor.MiddleRight : TextAnchor.MiddleLeft;
+                text.Alignment = leftSide ? TextAlignment.Right : TextAlignment.Left;
+                text.transform.localPosition = new Vector3(x, HudDistanceM * Mathf.Tan(LineElevationDeg[i] * Mathf.Deg2Rad), HudDistanceM);
+            }
         }
 
         // ------------------------------------------------------------------ public surface
@@ -151,6 +194,9 @@ namespace UntitledGuitarApp.Runtime.Neck
 
         /// <summary>The key that captures at once / retries after a failure (KeyCode.None = off).</summary>
         public KeyCode ConfirmKey = KeyCode.Space;
+
+        /// <summary>The operator key that starts a re-anchor, named in the success message ("Off the nut? Press Z").</summary>
+        public string ReanchorKeyLabel = "Z";
 
         /// <summary>Hide the neck (and its ghost hands) while the player looks at the real guitar. Default on.</summary>
         public bool HideNeckWhileAligning = true;
@@ -182,6 +228,19 @@ namespace UntitledGuitarApp.Runtime.Neck
         {
             get { return _anchor; }
             set { _anchor = value; }
+        }
+
+        /// <summary>True while the prompt or a result is on screen.</summary>
+        public bool HudVisible
+        {
+            get { return _hudVisible; }
+        }
+
+        /// <summary>One of the HUD lines (0 = A .. 3 = D), for previews and layout checks. Empty text = not shown.</summary>
+        public HudText HudLine(int index)
+        {
+            Init();
+            return index >= 0 && index < HudLineCount ? _lines[index] : null;
         }
 
         /// <summary>The guitar the solver fits (default: CoreNeckLayout.DefaultGeometry, the same as the drawn neck). Set before Begin.</summary>
@@ -253,13 +312,13 @@ namespace UntitledGuitarApp.Runtime.Neck
             if (_flow == null) return;
             if (!_flow.IsRunning)
             {
-                if (_hudVisible && _hideAt >= 0f && nowSec >= _hideAt) SetHudVisible(false);
+                if (_hudVisible && _resultShownAt >= 0f) FadeResult(nowSec);
                 if (confirm && _retryOffered && _hudVisible) Retry();
                 return;
             }
             if (!HeadTrackedNow())
             {
-                if (_flow.Cancel("head tracking stopped: alignment needs the glasses' IMU")) Ended(_flow.Outcome);
+                if (_flow.Cancel("tracking stopped:\nalignment needs IMU")) Ended(_flow.Outcome);
                 return;
             }
             if (_head == null) return;
@@ -298,16 +357,16 @@ namespace UntitledGuitarApp.Runtime.Neck
 
         string Refusal()
         {
-            if (_head == null) return "no head transform: alignment cannot run";
-            if (RespectAnchorModeFlag && (_anchor != null ? _anchor.HeadLockedMode : HeadLockedFlag())) return "anchorMode is headLocked (flag): alignment is off";
-            if (!HeadTrackedNow()) return "no head tracking: start the IMU bridge first";
+            if (_head == null) return "no head transform\nalignment cannot run";
+            if (RespectAnchorModeFlag && (_anchor != null ? _anchor.HeadLockedMode : HeadLockedFlag())) return "anchorMode flag is\nheadLocked";
+            if (!HeadTrackedNow()) return "no head tracking:\nstart the IMU bridge";
             return null;
         }
 
         bool Refuse(string why, bool reanchor)
         {
-            var outcome = new AlignOutcome { Reanchor = reanchor, Failure = why };
-            UGALog.Warn("neck_align_refused", why);
+            var outcome = new AlignOutcome { Reanchor = reanchor, Failure = why.Replace('\n', ' '), ShortReason = why };
+            UGALog.Warn("neck_align_refused", outcome.Failure);
             _last = outcome;
             ShowResult(outcome);
             RaiseFinished(outcome);
@@ -317,7 +376,7 @@ namespace UntitledGuitarApp.Runtime.Neck
         void Started(bool reanchor)
         {
             _retryOffered = false;
-            _hideAt = -1f;
+            _resultShownAt = -1f;
             HideNeck();
             SuspendGaze();
             _shownStep = -1;
@@ -370,68 +429,109 @@ namespace UntitledGuitarApp.Runtime.Neck
             int step = _flow.Step;
             if (step == _shownStep) return;
             _shownStep = step;
-            if (_flow.IsReanchor)
-            {
-                SetLines(ReanchorTitle, ReanchorLine1, StepLine2[0], HoldHint, TitleColor, PromptColor);
-            }
-            else
-            {
-                int i = Mathf.Clamp(step, 0, StepTitles.Length - 1);
-                SetLines(StepTitles[i], StepLine1[i], StepLine2[i], HoldHint, TitleColor, PromptColor);
-            }
-            _hideAt = -1f;
+            PlaceHud(LeftHanded());
+            string lineA = _flow.IsReanchor ? ReanchorLineA : StepLineA[Mathf.Clamp(step, 0, StepLineA.Length - 1)];
+            string lineB = _flow.IsReanchor ? StepLineB[0] : StepLineB[Mathf.Clamp(step, 0, StepLineB.Length - 1)];
+            SetLines(lineA, StepColor, lineB, PromptColor, HoldHint, HintColor, string.Empty, HintColor);
+            _resultShownAt = -1f;
             SetHudVisible(true);
         }
 
         void ShowResult(AlignOutcome outcome)
         {
             if (outcome == null) return;
+            PlaceHud(LeftHanded());
+            string offTheNut = "Off the nut? Press " + ReanchorKeyLabel;
             if (outcome.Success && !outcome.Reanchor)
             {
                 // Honest: the fit error is NOT the nut error (Person 2's G1 caution), so the player is asked to check the nut.
-                SetLines("Neck aligned", "fit error " + outcome.ResidualRmsMm.ToString("0") + " mm (max " + outcome.ResidualMaxMm.ToString("0") + " mm)",
-                         "nut " + (outcome.NutDistanceM * 100f).ToString("0") + " cm away",
-                         "Check: is it on the real nut?", GoodColor, PromptColor);
+                SetLines("Aligned", GoodColor,
+                         "fit " + outcome.ResidualRmsMm.ToString("0") + " mm · nut " + (outcome.NutDistanceM * 100f).ToString("0") + " cm", PromptColor,
+                         offTheNut, HintColor, string.Empty, HintColor);
                 _retryOffered = false;
+                _resultSeconds = SuccessShowSeconds;
             }
             else if (outcome.Success)
             {
-                SetLines("Re-anchored", "the nut moved " + outcome.NutShiftMm.ToString("0") + " mm", string.Empty,
-                         "Look around: it should stay on your guitar", GoodColor, PromptColor);
+                SetLines("Re-anchored", GoodColor, "nut moved " + outcome.NutShiftMm.ToString("0") + " mm", PromptColor,
+                         offTheNut, HintColor, string.Empty, HintColor);
                 _retryOffered = false;
+                _resultSeconds = SuccessShowSeconds;
             }
             else
             {
                 string first, second;
-                SplitInTwo(outcome.Failure ?? "unknown error", MaxLineChars, out first, out second);
-                bool kept = _anchor != null && _anchor.HasAlignment;
-                SetLines(kept ? "Alignment failed: kept the old one" : "Alignment failed: floating neck", first, second,
-                         ConfirmKey != KeyCode.None ? "Press " + ConfirmKey + " to try again" : string.Empty, BadColor, BadColor);
+                SplitReason(outcome.ShortReason ?? outcome.Failure ?? "unknown error", out first, out second);
+                SetLines("Not aligned", BadColor, first, BadColor, second, BadColor,
+                         ConfirmKey != KeyCode.None ? ConfirmKey + ": try again" : string.Empty, HintColor);
                 _retryOffered = true;
+                _resultSeconds = FailureShowSeconds;
             }
-            _hideAt = _now + ResultSeconds;
+            _resultShownAt = _now;
             SetHudVisible(true);
         }
 
-        void SetLines(string title, string line1, string line2, string hint, Color titleColor, Color lineColor)
+        // Holds the result, then fades it out over FadeSeconds and hides it. Only colour values change: no allocation.
+        void FadeResult(float nowSec)
         {
-            _title.SetText(title);
-            _title.Color = titleColor;
-            _line1.SetText(line1);
-            _line1.Color = lineColor;
-            _line2.SetText(line2);
-            _line2.Color = lineColor;
-            _hint.SetText(hint);
+            float age = nowSec - _resultShownAt;
+            if (age >= _resultSeconds)
+            {
+                SetHudVisible(false);
+                _resultShownAt = -1f;
+                _retryOffered = false;
+                return;
+            }
+            float alpha = Mathf.Clamp01((_resultSeconds - age) / FadeSeconds);
+            for (int i = 0; i < HudLineCount; i++)
+            {
+                Color c = _lineColors[i];
+                c.a *= alpha;
+                _lines[i].Color = c;
+            }
+        }
+
+        void SetLines(string a, Color aColor, string b, Color bColor, string c, Color cColor, string d, Color dColor)
+        {
+            SetLine(0, a, aColor);
+            SetLine(1, b, bColor);
+            SetLine(2, c, cColor);
+            SetLine(3, d, dColor);
+        }
+
+        void SetLine(int index, string text, Color color)
+        {
+            _lines[index].SetText(text ?? string.Empty);
+            _lineColors[index] = color;
+            _lines[index].Color = color;
+            _lines[index].Visible = _hudVisible && !string.IsNullOrEmpty(text);
         }
 
         void SetHudVisible(bool visible)
         {
             _hudVisible = visible;
-            if (_title == null) return;
-            _title.Visible = visible;
-            _line1.Visible = visible;
-            _line2.Visible = visible;
-            _hint.Visible = visible;
+            for (int i = 0; i < HudLineCount; i++)
+            {
+                if (_lines[i] == null) continue;
+                _lines[i].Visible = visible && !string.IsNullOrEmpty(_lines[i].Text);
+            }
+        }
+
+        /// <summary>
+        /// The two short lines of a failure: the reason's own line break when it has one (ShortReason is written that way),
+        /// else split at the space nearest the middle when longer than <see cref="LineMaxChars"/>.
+        /// </summary>
+        public static void SplitReason(string reason, out string first, out string second)
+        {
+            reason = reason ?? string.Empty;
+            int newline = reason.IndexOf('\n');
+            if (newline >= 0)
+            {
+                first = reason.Substring(0, newline);
+                second = reason.Substring(newline + 1);
+                return;
+            }
+            SplitInTwo(reason, LineMaxChars, out first, out second);
         }
 
         /// <summary>Splits a sentence at the space nearest its middle when it is longer than <paramref name="maxLine"/>.</summary>
