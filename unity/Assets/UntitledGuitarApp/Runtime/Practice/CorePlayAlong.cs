@@ -108,7 +108,7 @@ namespace UntitledGuitarApp.Runtime.Practice
         double _now;
         double _countInSec;
         double _spb = 1;
-        ChordTarget _target;
+        PlayAlongTarget _target;
         int _confirmedSpan = -1;
         int _seenSpan = -1;
         bool _seenHolding;
@@ -295,7 +295,7 @@ namespace UntitledGuitarApp.Runtime.Practice
             _slotsPerBeat = 1;
             _phase = PlayAlongPhase.Idle;
             _now = 0;
-            _target = default(ChordTarget);
+            _target = default(PlayAlongTarget);
             _confirmedSpan = -1;
             _seenSpan = -1;
             _seenHolding = false;
@@ -368,7 +368,7 @@ namespace UntitledGuitarApp.Runtime.Practice
             while (_feed.TryRead(out e))
             {
                 if (_phase != PlayAlongPhase.Playing || _session == null) continue;   // count-in strums never reach the session
-                ChordTarget before = _target;
+                PlayAlongTarget before = _target;
                 _target = StrumRouting.Feed(_session, e);
                 _realStrums++;
                 IReadOnlyList<ChordSpan> spans = _timeline.Spans;
@@ -437,7 +437,7 @@ namespace UntitledGuitarApp.Runtime.Practice
         void Strum(string chord, bool simulated)
         {
             if (_phase != PlayAlongPhase.Playing || _session == null) return;
-            ChordTarget before = _target;
+            PlayAlongTarget before = _target;
             _target = _session.OnStrum(chord, _now);
             if (simulated) _simulatedStrums++;
             else _realStrums++;

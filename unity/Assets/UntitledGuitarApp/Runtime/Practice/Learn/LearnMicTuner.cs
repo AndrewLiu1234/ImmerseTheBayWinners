@@ -1,6 +1,6 @@
 // LearnMicTuner: the REAL tuner for learn mode. While LearnPresenter is in its Tune stage it reads the live microphone samples
 // (MicCapture.Read), runs Person 2's Core tuner on the newest window with the string being tuned as the target
-// (Core/Audio/Tuner.Process(samples, offset, count, nowSec, targetString) -> TunerReading; auto mode can mistake strings) and
+// (Core/Audio/Tuner.Process(samples, offset, count, nowSec, targetString) -> TunerState; auto mode can mistake strings) and
 // sends the reading to LearnPresenter.Verdicts. The needle's own in-tune rule then moves to the next string (the presenter's
 // AutoAdvanceTuning).
 //
@@ -48,7 +48,7 @@ namespace UntitledGuitarApp.Runtime.Practice.Learn
         }
 
         /// <summary>The last reading sent (for the spectator and debugging).</summary>
-        public TunerReading LastReading { get; private set; }
+        public TunerState LastReading { get; private set; }
 
         /// <summary>True when real microphone pitch drives the needle (see the file summary).</summary>
         public bool IsLive
@@ -130,7 +130,7 @@ namespace UntitledGuitarApp.Runtime.Practice.Learn
             int hop = Mathf.Max(1, AudioConfig.Default.HopSize);
             if (_filled < _window.Length || _sinceProcess < hop) return;
             _sinceProcess = 0;
-            TunerReading reading = _tuner.Process(_window, 0, _window.Length, nowSec, target);
+            TunerState reading = _tuner.Process(_window, 0, _window.Length, nowSec, target);
             LastReading = reading;
             if (reading.HasPitch) _presenter.Verdicts.OnTunerReading((float)reading.Cents, reading.Confidence);
         }
