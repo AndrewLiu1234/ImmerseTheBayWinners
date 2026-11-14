@@ -151,6 +151,9 @@ namespace UntitledGuitarApp.Runtime.Neck
         /// <summary>Turn gaze selection (GazeDwell.Head) off while aligning, so no other dwell target fires. Default on.</summary>
         public bool SuspendGazeWhileAligning = true;
 
+        /// <summary>Refuse to run while the anchorMode flag says headLocked. Default on; previews turn it off.</summary>
+        public bool RespectAnchorModeFlag = true;
+
         public bool IsRunning
         {
             get { return _flow != null && _flow.IsRunning; }
@@ -289,7 +292,7 @@ namespace UntitledGuitarApp.Runtime.Neck
         string Refusal()
         {
             if (_head == null) return "no head transform: alignment cannot run";
-            if (_anchor != null ? _anchor.HeadLockedMode : HeadLockedFlag()) return "anchorMode is headLocked (flag): alignment is off";
+            if (RespectAnchorModeFlag && (_anchor != null ? _anchor.HeadLockedMode : HeadLockedFlag())) return "anchorMode is headLocked (flag): alignment is off";
             if (!HeadTrackedNow()) return "no head tracking: start the IMU bridge (alignment needs the glasses' IMU)";
             return null;
         }
