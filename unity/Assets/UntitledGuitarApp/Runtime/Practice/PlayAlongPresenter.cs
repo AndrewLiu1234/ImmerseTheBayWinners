@@ -181,7 +181,9 @@ namespace UntitledGuitarApp.Runtime.Practice
                 PatternStrip pattern = _card.Pattern;
                 pattern.SlotsPerBeat = Math.Max(1, frame.SlotsPerBeat);
                 pattern.SetPattern(frame.StrumSlots, false);
-                pattern.SetCursor((float)PlayAlongMath.SlotPosition(frame.Beat, frame.SlotsPerBeat));
+                // P2-4 (adversarial review): negative count-in beats wrap and swept the cursor across the whole bar,
+                // showing strokes that never happen (the strumming hand holds pick-ready). Park it at slot 0 instead.
+                pattern.SetCursor(countIn ? 0f : (float)PlayAlongMath.SlotPosition(frame.Beat, frame.SlotsPerBeat));
 
                 PresentLyrics(frame.Beat);
 
