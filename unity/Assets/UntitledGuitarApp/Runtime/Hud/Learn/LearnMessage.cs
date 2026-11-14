@@ -168,7 +168,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
                 if (_holdLeft <= 0f)
                 {
                     _holdLeft = float.PositiveInfinity;
-                    if (_wantVisible)
+                    if (_wantVisible && !_contentDirty)   // a newer message waiting at the gate is not thrown away
                     {
                         _wantVisible = false;
                         _gate.Request();

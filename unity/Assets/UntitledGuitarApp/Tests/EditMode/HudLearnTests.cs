@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Text;
 using NUnit.Framework;
 using UnityEngine;
 using UntitledGuitarApp.Runtime.Hud;
@@ -555,6 +557,22 @@ namespace UntitledGuitarApp.Tests.EditMode
             Assert.LessOrEqual(passes, 15);                    // 5 s at under 3 a second
             Assert.GreaterOrEqual(passes, 13, "but it must not starve either");
             Assert.Greater(3f * LearnTiming.MinChangeSeconds, 1f, "three gaps are longer than a second, so a fourth change cannot fit in it");
+        }
+
+        [Test]
+        public void Gate_MarkChanged_HoldsTheNextChange_AsIfOneHadJustPassed()
+        {
+            // The tuner's words change through two paths (a new string; a new reading). A new string marks the words gate,
+            // so the first reading's words cannot follow within a third of a second.
+            var g = new ChangeGate();
+            g.Request();
+            g.MarkChanged();
+            Assert.IsFalse(g.Pending, "a waiting request is dropped: the other path already applied the latest words");
+            Assert.AreEqual(LearnTiming.MinChangeSeconds, g.Cooldown, 1e-6);
+            g.Request();
+            Assert.IsFalse(g.Tick(0f));
+            Assert.IsFalse(g.Tick(0.2f), "0.2 s after the other path changed the element");
+            Assert.IsTrue(g.Tick(0.15f), "0.35 s after it");
         }
 
         // ---------------------------------------------------------------- text: length limits
@@ -1334,6 +1352,209 @@ namespace UntitledGuitarApp.Tests.EditMode
         public void DistanceChanged_OnlyForRealChanges(float applied, float now, bool expected)
         {
             Assert.AreEqual(expected, LearnHudLayout.DistanceChanged(applied, now, 0.08f));
+        }
+
+        // ---------------------------------------------------------------- offsets keep their sign
+
+        // Expected values: python3, copysign(2 * d * tan(|a| / 2), a).
+        [TestCase(-5.6f, 1f, -0.0978163f)]      // the tuner's instruction block, 5.6 degrees below its origin
+        [TestCase(-0.5f, 0.47f, -0.0041015f)]   // the finger prompt's second line
+        [TestCase(2.3f, 1f, 0.0401480f)]
+        public void SignedMeters_KeepsTheSign_SoPartsBelowTheOriginStayBelowIt(float degrees, float distance, float expected)
+        {
+            Assert.AreEqual(expected, LearnHudLayout.SignedMeters(degrees, distance), 1e-6);
+        }
+
+        [Test]
+        public void SignedMeters_IsZeroForNothingOrNonsense()
+        {
+            Assert.AreEqual(0f, LearnHudLayout.SignedMeters(0f, 1f));
+            Assert.AreEqual(0f, LearnHudLayout.SignedMeters(float.NaN, 1f));
+            Assert.AreEqual(0f, LearnHudLayout.SignedMeters(float.NegativeInfinity, 1f));
+            Assert.AreEqual(0f, LearnHudLayout.SignedMeters(-3f, 0f));
+            Assert.AreEqual(0f, LearnHudLayout.SignedMeters(-3f, float.NaN));
+        }
+
+        // ---------------------------------------------------------------- composed widgets: no two parts overlap
+        //
+        // These build the real widgets (GameObjects, TextMesh, meshes; no rendering, no Play Mode) and check the layout their
+        // own code produces, in the states the previews show. A text's box is estimated from its words (LearnText.WidthInCaps)
+        // and its cap height, 1.3 cap heights tall (a bold Arial line with its descenders); a shape's box is its 1 x 1 box.
+        // The tuner dial is skipped (the needle is meant to cross the track) and the ring around the finger number holds the
+        // number by design. Before LearnHudLayout.SignedMeters, the tuner's words sat on its note name and the finger
+        // prompt's pips on its second line, and both of these tests failed.
+
+        [Test]
+        public void Tuner_NoteStringAndInstruction_HaveTheirOwnRows_InEveryState()
+        {
+            TunerNeedle tuner = TunerNeedle.Create(null, LearnHudLayout.TunerDistanceM);
+            try
+            {
+                tuner.SetTarget(6, "E");
+                FeedTuner(tuner, float.NaN, 1f);
+                Assert.AreEqual(TunerState.Listening, tuner.State);
+                AssertTunerRows(tuner, "listening");
+
+                FeedTuner(tuner, -22f, 1.5f);
+                Assert.AreEqual(TunerState.TooLow, tuner.State);
+                AssertTunerRows(tuner, "too low");
+
+                FeedTuner(tuner, 31f, 1.5f);
+                Assert.AreEqual(TunerState.TooHigh, tuner.State);
+                AssertTunerRows(tuner, "too high");
+
+                FeedTuner(tuner, 1.5f, 1.5f);
+                Assert.AreEqual(TunerState.InTune, tuner.State);
+                AssertTunerRows(tuner, "in tune");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(tuner.gameObject);
+            }
+        }
+
+        [Test]
+        public void Messages_NoTwoPartsOverlap_ForEveryPlannedMessageAndStep()
+        {
+            var root = new GameObject("HudLearnTests layout");
+            try
+            {
+                TipLine tip = TipLine.Create(root.transform, LearnWidget.DefaultViewingDistanceM);
+                foreach (string message in PlannedMessages)
+                {
+                    tip.Show(message, TipIcon.Arch);
+                    tip.Settle();
+                    AssertNoOverlap(tip.transform, "tip \"" + message + "\"");
+                }
+
+                StrumVerdict strum = StrumVerdict.Create(root.transform, LearnWidget.DefaultViewingDistanceM);
+                strum.Show(true, null);
+                strum.Settle();
+                AssertNoOverlap(strum.transform, "clean strum");
+                strum.Show(false, "Heard C, target is G");
+                strum.Settle();
+                AssertNoOverlap(strum.transform, "strum issue");
+
+                FingerStepPrompt finger = FingerStepPrompt.Create(root.transform, LearnWidget.DefaultViewingDistanceM);
+                int[,] steps = { { 1, 1 }, { 1, 3 }, { 2, 3 }, { 3, 3 }, { 4, 4 } };
+                for (int i = 0; i < steps.GetLength(0); i++)
+                {
+                    finger.Show(2, 5, 2, steps[i, 0], steps[i, 1]);
+                    finger.Settle();
+                    string what = "finger prompt, step " + steps[i, 0] + " of " + steps[i, 1];
+                    AssertNoOverlap(finger.transform, what);
+                    Assert.Greater(LocalY(finger.transform, "Headline"), LocalY(finger.transform, "Detail"), what);
+                    Assert.Greater(LocalY(finger.transform, "Detail"), LocalY(finger.transform, "Pip1"), what + ": the pips sit under the words");
+                }
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(root);
+            }
+        }
+
+        struct LayoutBox
+        {
+            public string Part;
+            public string Label;
+            public float MinX, MaxX, MinY, MaxY;
+        }
+
+        static void FeedTuner(TunerNeedle tuner, float cents, float seconds)
+        {
+            int frames = Mathf.CeilToInt(seconds / Frame);
+            for (int i = 0; i < frames; i++)
+            {
+                if (!float.IsNaN(cents)) tuner.SetReading(cents, 0.95f);
+                tuner.Tick(Frame);
+            }
+        }
+
+        static void AssertTunerRows(TunerNeedle tuner, string state)
+        {
+            AssertNoOverlap(tuner.transform, "tuner, " + state);
+            float note = LocalY(tuner.transform, "Note");
+            float stringLabel = LocalY(tuner.transform, "String");
+            float instruction = LocalY(tuner.transform, "Status");
+            Assert.Greater(note, stringLabel, state + ": the note name sits above the string");
+            Assert.Greater(stringLabel, instruction, state + ": the string sits above the instruction");
+        }
+
+        static void AssertNoOverlap(Transform widget, string what)
+        {
+            List<LayoutBox> boxes = VisibleBoxes(widget);
+            Assert.GreaterOrEqual(boxes.Count, 2, what + ": too few visible parts to compare");
+            var overlaps = new StringBuilder();
+            for (int i = 0; i < boxes.Count; i++)
+            {
+                for (int j = i + 1; j < boxes.Count; j++)
+                {
+                    LayoutBox a = boxes[i];
+                    LayoutBox b = boxes[j];
+                    if (MayOverlap(a.Part, b.Part)) continue;
+                    float x = Mathf.Min(a.MaxX, b.MaxX) - Mathf.Max(a.MinX, b.MinX);
+                    float y = Mathf.Min(a.MaxY, b.MaxY) - Mathf.Max(a.MinY, b.MinY);
+                    if (x > 1e-4f && y > 1e-4f) overlaps.Append(" | ").Append(a.Label).Append(" overlaps ").Append(b.Label);
+                }
+            }
+            Assert.AreEqual(0, overlaps.Length, what + overlaps);
+        }
+
+        static bool MayOverlap(string a, string b)
+        {
+            return (a == "FingerRing" && b == "FingerNumber") || (a == "FingerNumber" && b == "FingerRing");
+        }
+
+        // Every visible text and unit-box shape under the widget, as a box in the widget's own plane (metres).
+        static List<LayoutBox> VisibleBoxes(Transform widget)
+        {
+            var boxes = new List<LayoutBox>();
+            foreach (HudText text in widget.GetComponentsInChildren<HudText>(true))
+            {
+                if (!text.Visible || text.Text.Length == 0) continue;
+                Vector3 p = widget.InverseTransformPoint(text.transform.position);
+                float cap = text.CapHeightMeters;
+                float width = LearnText.WidthInCaps(text.Text) * cap;
+                TextAnchor anchor = text.Anchor;
+                float left = p.x - 0.5f * width;
+                if (anchor == TextAnchor.UpperLeft || anchor == TextAnchor.MiddleLeft || anchor == TextAnchor.LowerLeft) left = p.x;
+                else if (anchor == TextAnchor.UpperRight || anchor == TextAnchor.MiddleRight || anchor == TextAnchor.LowerRight) left = p.x - width;
+                boxes.Add(new LayoutBox
+                {
+                    Part = text.name, Label = "text \"" + text.Text + "\" [" + text.name + "]",
+                    MinX = left, MaxX = left + width, MinY = p.y - 0.65f * cap, MaxY = p.y + 0.65f * cap,
+                });
+            }
+            foreach (HudShape shape in widget.GetComponentsInChildren<HudShape>(true))
+            {
+                if (!shape.Visible || shape.Opacity <= 0f || !LearnGlyphs.FitsUnitBox(shape.Glyph)) continue;
+                Vector3 p = widget.InverseTransformPoint(shape.transform.position);
+                float half = 0.5f * shape.transform.lossyScale.y / widget.lossyScale.y;
+                boxes.Add(new LayoutBox
+                {
+                    Part = shape.name, Label = "shape " + shape.Glyph + " [" + shape.name + "]",
+                    MinX = p.x - half, MaxX = p.x + half, MinY = p.y - half, MaxY = p.y + half,
+                });
+            }
+            return boxes;
+        }
+
+        static float LocalY(Transform widget, string part)
+        {
+            Transform t = FindPart(widget, part);
+            Assert.IsNotNull(t, "no part named " + part + " under " + widget.name);
+            return widget.InverseTransformPoint(t.position).y;
+        }
+
+        static Transform FindPart(Transform root, string name)
+        {
+            if (root.name == name) return root;
+            for (int i = 0; i < root.childCount; i++)
+            {
+                Transform found = FindPart(root.GetChild(i), name);
+                if (found != null) return found;
+            }
+            return null;
         }
 
         // ---------------------------------------------------------------- helpers

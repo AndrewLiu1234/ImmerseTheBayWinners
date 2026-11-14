@@ -237,6 +237,19 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
             return HudLayout.PointAtAngles(0f, FloatingMessageElevationDegrees, FloatingMessageDistanceM);
         }
 
+        /// <summary>
+        /// Metres that span <paramref name="degrees"/> of view at <paramref name="distanceM"/> metres, KEEPING THE SIGN, so
+        /// it serves for offsets (below or left of an origin) as well as for sizes. HudText.SizeForAngularHeight returns 0
+        /// for a negative angle; using it for offsets once put every part of the tuner that belongs below its origin on the
+        /// origin itself, on top of the note name. 0 for a non-finite angle or an unusable distance.
+        /// </summary>
+        public static float SignedMeters(float degrees, float distanceM)
+        {
+            if (float.IsNaN(degrees) || float.IsInfinity(degrees)) return 0f;
+            float meters = HudText.SizeForAngularHeight(Mathf.Abs(degrees), distanceM);
+            return degrees < 0f ? -meters : meters;
+        }
+
         /// <summary>True when a distance changed enough (more than <paramref name="fraction"/>) to be worth re-sizing text for.</summary>
         public static bool DistanceChanged(float appliedM, float nowM, float fraction)
         {

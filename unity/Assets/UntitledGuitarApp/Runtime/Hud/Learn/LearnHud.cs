@@ -34,6 +34,8 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
 
         const float ResizeFraction = 0.08f;
 
+        static readonly Vector3[] s_NutCentre = { Vector3.zero };   // used when no string positions are given
+
         bool _built;
         Transform _head;
         Transform _socket;
@@ -67,7 +69,10 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
         /// <summary>The object on the neck card spot that holds the message (for placing other things relative to it).</summary>
         public Transform Card { get { EnsureBuilt(); return _card; } }
 
-        /// <summary>The wearer's head (StereoRig's Head). Everything faces it and is sized for its distance.</summary>
+        /// <summary>
+        /// The wearer's head (StereoRig's Head). Everything faces it and is sized for its distance. The tuner is parented
+        /// under it; setting null (do it before destroying a head) brings the tuner back under this object.
+        /// </summary>
         public Transform Head
         {
             get { return _head; }
@@ -76,13 +81,11 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
                 EnsureBuilt();
                 _head = value;
                 Marks.Head = value;
-                if (value != null)
-                {
-                    Tuner.transform.SetParent(value, false);
-                    Tuner.transform.localPosition = LearnHudLayout.TunerHeadLocal();
-                    Tuner.transform.localRotation = Quaternion.identity;
-                    Tuner.SetViewingDistance(LearnHudLayout.TunerDistanceM);
-                }
+                if (Tuner == null) return;
+                Tuner.transform.SetParent(value != null ? value : transform, false);
+                Tuner.transform.localPosition = value != null ? LearnHudLayout.TunerHeadLocal() : Vector3.zero;
+                Tuner.transform.localRotation = Quaternion.identity;
+                if (value != null) Tuner.SetViewingDistance(LearnHudLayout.TunerDistanceM);
             }
         }
 
@@ -104,9 +107,14 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
             LearnHud hud = go.AddComponent<LearnHud>();
             hud.EnsureBuilt();
             hud.Head = head;
-            hud._socket = neckSocket;
-            hud.PlaceCard();
+            if (neckSocket != null) hud.SetNeck(neckSocket, null, 0f);
             return hud;
+        }
+
+        void OnDestroy()
+        {
+            // The tuner lives under the head, outside this object, so it has to be removed by hand.
+            if (Tuner != null && Application.isPlaying) Destroy(Tuner.gameObject);
         }
 
         void EnsureBuilt()
@@ -129,15 +137,15 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
 
         /// <summary>
         /// Attaches the HUD to the neck: the socket (the pinned neck frame), the nut end of each string in that frame
-        /// (metres; index 0 = string 1 ... 5 = string 6) and the distance from the nut to fret 5 in metres (0 keeps the
-        /// default for a 648 mm scale).
+        /// (metres; index 0 = string 1 ... 5 = string 6; null = a nut centred on the socket's origin) and the distance from
+        /// the nut to fret 5 in metres (0 keeps the default for a 648 mm scale). A null socket detaches the HUD.
         /// </summary>
         public void SetNeck(Transform neckSocket, Vector3[] nutEndLocal, float nutToCardFretM)
         {
             EnsureBuilt();
             _socket = neckSocket;
             if (nutToCardFretM > 0f) _cardLocal = LearnHudLayout.NeckCardLocal(nutToCardFretM, LearnHudLayout.CardHeightM);
-            Marks.SetStringAnchors(neckSocket, nutEndLocal);
+            Marks.SetStringAnchors(neckSocket, nutEndLocal != null && nutEndLocal.Length > 0 ? nutEndLocal : s_NutCentre);
             PlaceCard();
         }
 
@@ -212,7 +220,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
         {
             ClearMessage();
             Marks.ClearAll();
-            Tuner.Clear();
+            if (Tuner != null) Tuner.Clear();   // the tuner lives under the head and goes if the head is destroyed first
         }
 
         void Request()
