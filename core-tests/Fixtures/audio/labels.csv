@@ -1,1 +1,19 @@
 file,group,chord,string,expected_midi,label,take,source,env
+tuner/open-1-E4-quiet__01.wav,tuner,,1,64,open-1-E4-quiet,01,Voice Memos (Mac),quiet
+tuner/open-1-E4-quiet__02.wav,tuner,,1,64,open-1-E4-quiet,02,Voice Memos (Mac),quiet
+tuner/open-1-E4-quiet__03.wav,tuner,,1,64,open-1-E4-quiet,03,Voice Memos (Mac),quiet
+tuner/open-2-B3-quiet__01.wav,tuner,,2,59,open-2-B3-quiet,01,Voice Memos (Mac),quiet
+tuner/open-2-B3-quiet__02.wav,tuner,,2,59,open-2-B3-quiet,02,Voice Memos (Mac),quiet
+tuner/open-2-B3-quiet__03.wav,tuner,,2,59,open-2-B3-quiet,03,Voice Memos (Mac),quiet
+tuner/open-3-G3-quiet__01.wav,tuner,,3,55,open-3-G3-quiet,01,Voice Memos (Mac),quiet
+tuner/open-3-G3-quiet__02.wav,tuner,,3,55,open-3-G3-quiet,02,Voice Memos (Mac),quiet
+tuner/open-3-G3-quiet__03.wav,tuner,,3,55,open-3-G3-quiet,03,Voice Memos (Mac),quiet
+tuner/open-4-D3-quiet__01.wav,tuner,,4,50,open-4-D3-quiet,01,Voice Memos (Mac),quiet
+tuner/open-4-D3-quiet__02.wav,tuner,,4,50,open-4-D3-quiet,02,Voice Memos (Mac),quiet
+tuner/open-4-D3-quiet__03.wav,tuner,,4,50,open-4-D3-quiet,03,Voice Memos (Mac),quiet
+tuner/open-5-A2-quiet__01.wav,tuner,,5,45,open-5-A2-quiet,01,Voice Memos (Mac),quiet
+tuner/open-5-A2-quiet__02.wav,tuner,,5,45,open-5-A2-quiet,02,Voice Memos (Mac),quiet
+tuner/open-5-A2-quiet__03.wav,tuner,,5,45,open-5-A2-quiet,03,Voice Memos (Mac),quiet
+tuner/open-6-E2-quiet__01.wav,tuner,,6,40,open-6-E2-quiet,01,Voice Memos (Mac),quiet
+tuner/open-6-E2-quiet__02.wav,tuner,,6,40,open-6-E2-quiet,02,Voice Memos (Mac),quiet
+tuner/open-6-E2-quiet__03.wav,tuner,,6,40,open-6-E2-quiet,03,Voice Memos (Mac),quiet

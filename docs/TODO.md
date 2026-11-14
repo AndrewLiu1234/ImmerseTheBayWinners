@@ -53,7 +53,7 @@ ticks only the boxes their half proves; Person 1 sets `done` after the device ch
 
 ## SL1 — Tuner   [track: CORE+XR] [owner: Person 2 (YIN) · Person 1 (needle UI)] [status: doing] [depends: SL0]
 **User-visible outcome:** tune each string with a needle.
-**Acceptance (automated):** - [ ] YIN within ±3 cents on synthetic E2–E4 ✓ (Person 2: max 0.069 c, core-tests/Audio/YinPitchTrackerTests.cs, L1) and within ±10 cents on recorded open strings (open: no recordings yet; TunerRecordedEvalTests ready)
+**Acceptance (automated):** - [ ] YIN within ±3 cents on synthetic E2–E4 ✓ (Person 2: max 0.069 c, core-tests/Audio/YinPitchTrackerTests.cs, L1) and within ±10 cents on recorded open strings ✓ (Person 2: 18/18 dev clips, max 6.3 c, quiet, MacBook Voice Memos; TunerRecordedEvalTests, L2; venue eval set + baseline still open)
 **Acceptance (device):** - [ ] matches a clip-on or phone tuner within 10 cents
 **Max time:** 2.5h.
 
