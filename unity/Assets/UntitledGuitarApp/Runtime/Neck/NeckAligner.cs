@@ -446,7 +446,7 @@ namespace UntitledGuitarApp.Runtime.Neck
             {
                 // Honest: the fit error is NOT the nut error (Person 2's G1 caution), so the player is asked to check the nut.
                 SetLines("Aligned", GoodColor,
-                         "fit " + outcome.ResidualRmsMm.ToString("0") + " mm · nut " + (outcome.NutDistanceM * 100f).ToString("0") + " cm", PromptColor,
+                         "fit " + outcome.ResidualRmsMm.ToString("0") + "mm · nut " + (outcome.NutDistanceM * 100f).ToString("0") + "cm", PromptColor,
                          offTheNut, HintColor, string.Empty, HintColor);
                 _retryOffered = false;
                 _resultSeconds = SuccessShowSeconds;

@@ -643,7 +643,7 @@ namespace UntitledGuitarApp.Tests.EditMode
             foreach (string b in NeckAligner.StepLineB) Assert.LessOrEqual(b.Length, NeckAligner.LineMaxChars, b);
             Assert.LessOrEqual(NeckAligner.HoldHint.Length, NeckAligner.LineMaxChars);
             // Results, worst-case numbers (built the same way as NeckAligner.ShowResult).
-            Assert.LessOrEqual(("fit 15 mm · nut 90 cm").Length, NeckAligner.LineMaxChars);
+            Assert.LessOrEqual(("fit 15mm · nut 90cm").Length, NeckAligner.LineMaxChars);
             Assert.LessOrEqual(("Off the nut? Press Z").Length, NeckAligner.LineMaxChars);
             Assert.LessOrEqual(("nut moved 999 mm").Length, NeckAligner.LineMaxChars);
             Assert.LessOrEqual(("Space: try again").Length, NeckAligner.LineMaxChars);
