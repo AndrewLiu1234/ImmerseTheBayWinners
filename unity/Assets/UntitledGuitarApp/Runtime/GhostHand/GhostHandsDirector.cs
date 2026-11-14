@@ -143,7 +143,7 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             {
                 if (u > 0f) _fretting.Blend(from, to, StrumMath.Ease(u), dt);
                 else _fretting.Hold(from);
-                _fretting.Hand.SetFade(_frettingFade);
+                _fretting.Fade(_frettingFade);
             }
 
             _lastStrum = StrumMath.Sample(true, frame.Waiting, frame.Beat, frame.StrumSlots, frame.SlotsPerBeat);
@@ -161,7 +161,7 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             if (_fretting != null)
             {
                 _fretting.Hold(_frettingFrom);
-                _fretting.Hand.SetFade(1f);
+                _fretting.Fade(1f);
             }
             _lastStrum = StrumMath.Sample(false, false, 0.0, null, 1);
             DriveStrumming(dt);
@@ -223,6 +223,11 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             }
 
             public bool Alive { get { return Hand != null && Hand.IsAvailable; } }
+
+            public void Fade(float fade)
+            {
+                if (Alive) Hand.SetFade(fade);
+            }
 
             public void Hold(string pose)
             {
