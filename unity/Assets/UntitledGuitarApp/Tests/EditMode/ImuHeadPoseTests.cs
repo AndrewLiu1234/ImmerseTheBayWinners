@@ -358,6 +358,10 @@ namespace UntitledGuitarApp.Tests.EditMode
                 J("{'t':1,'q':[0,0,0,1],'x':[1,2,}"), J("{'t':1,'q':[0,0,0,1],'x':{'a':1]}"), J("{'t':1,'q':[0,0,0,1],'x':[1,2}"),
                 J("{'t':1,'q':[0,0,0,1],'x':[1,,2]}"), J("{'t':1,'q':[0,0,0,1],'x':{'a'}}"), J("{'t':1,'q':[0,0,0,1],'x':{1:2}}"),
                 J("{'t':1,'q':[0,0,0,1],'x':tru}"), J("{'t':1,'q':[0,0,0,1],'x':nul}"), J("{'t':1,'q':[0,0,0,1],'x':truex}"),
+                // literals that are wrong only in their last characters (the structure around them stays valid)
+                J("{'t':1,'q':[0,0,0,1],'x':trux}"), J("{'t':1,'q':[0,0,0,1],'x':nul1}"), J("{'t':1,'q':[0,0,0,1],'x':fals3}"),
+                J("{'t':1,'q':[0,0,0,1],'x':truE}"), J("{'t':1,'q':[0,0,0,1],'x':nulll}"), J("{'t':1,'q':[0,0,0,1],'x':falsee}"),
+                J("{'t':1,'q':[0,0,0,1],'x':True}"), J("{'t':1,'q':[0,0,0,1],'x':NULL}"), J("{'t':1,'q':[0,0,0,1],'x':None}"),
                 J("{'t':1,'q':[0,0,0,1],'x':'unterminated}"), J("{'t':1,'q':[0,0,0,1],'x':'bad \\q escape'}"),
                 J("{'t':1,'q':[0,0,0,1],'x':'bad \\u12G4 escape'}"), J("{'t':1,'q':[0,0,0,1],'x':'short \\u12'}"),
                 J("{'t':1,'q':[0,0,0,1],'x':'raw\ttab'}"), J("{'t':1,'q':[0,0,0,1],'x':'raw\nnewline'}"),
@@ -424,12 +428,34 @@ namespace UntitledGuitarApp.Tests.EditMode
             for (int i = 0; i < 5000; i++) deepObjects.Append("{\"a\":");
             Assert.IsFalse(Accepts("{\"x\":" + deepObjects + "1,\"t\":1,\"q\":[0,0,0,1]}"), "5000 nested objects");
 
-            string ok = new string('[', 60) + new string(']', 60);
-            ExpectParse("{\"x\":" + ok + ",\"t\":1,\"q\":[0,0,0,1]}", 1, 0, 0, 0, 1);
-            string tooDeep = new string('[', 70) + new string(']', 70);
-            Assert.IsFalse(Accepts("{\"x\":" + tooDeep + ",\"t\":1,\"q\":[0,0,0,1]}"), "nesting beyond 64 levels is refused");
+            // Well-formed nesting: 64 levels inside an unknown key are fine, 65 are refused (arrays and objects alike).
+            foreach (int levels in new[] { 1, 10, 60, 64 })
+            {
+                ExpectParse("{\"x\":" + NestedArrays(levels) + ",\"t\":1,\"q\":[0,0,0,1]}", 1, 0, 0, 0, 1);
+                ExpectParse("{\"x\":" + NestedObjects(levels) + ",\"t\":1,\"q\":[0,0,0,1]}", 1, 0, 0, 0, 1);
+            }
+            foreach (int levels in new[] { 65, 70, 200 })
+            {
+                Assert.IsFalse(Accepts("{\"x\":" + NestedArrays(levels) + ",\"t\":1,\"q\":[0,0,0,1]}"), levels + " nested arrays");
+                Assert.IsFalse(Accepts("{\"x\":" + NestedObjects(levels) + ",\"t\":1,\"q\":[0,0,0,1]}"), levels + " nested objects");
+            }
             Assert.IsFalse(Accepts("{\"x\":[}],\"t\":1,\"q\":[0,0,0,1]}"), "mismatched brackets");
             Assert.IsFalse(Accepts("{\"x\":{]},\"t\":1,\"q\":[0,0,0,1]}"), "mismatched brackets");
+            Assert.IsFalse(Accepts("{\"x\":[[1,2}],\"t\":1,\"q\":[0,0,0,1]}"), "mismatched inner bracket");
+        }
+
+        static string NestedArrays(int levels)
+        {
+            return new string('[', levels) + "1" + new string(']', levels);
+        }
+
+        static string NestedObjects(int levels)
+        {
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < levels; i++) sb.Append("{\"a\":");
+            sb.Append('1');
+            sb.Append('}', levels);
+            return sb.ToString();
         }
 
         // ================================================================================================ parser: properties
