@@ -1,7 +1,8 @@
 #if UNITY_EDITOR
-// PlayAlongPreview: plays riptide-loop and happy-birthday through the TEMPORARY dev clock (Runtime/Practice/Dev) into the play
-// HUD (PlayAlongPresenter), with the floating neck and the posed fretting ghost hand, and renders the glasses' LEFT eye at
-// eight moments of each song, to PNG files, with no glasses and no Play Mode.
+// PlayAlongPreview: plays riptide-loop and happy-birthday through Core's play-along session (Runtime/Practice/CorePlayAlong,
+// wait mode, SIMULATED strums) into the play HUD (PlayAlongPresenter), with the floating neck (Core's chord shapes through
+// CoreNeckLayout) and the posed fretting ghost hand, and renders the glasses' LEFT eye at eight moments of each song, to PNG
+// files, with no glasses and no Play Mode.
 //
 // Batch mode (never -nographics: rendering needs the graphics device; refused while the editor has the project open):
 //   Unity -batchmode -quit -projectPath <repo>/unity -executeMethod UntitledGuitarApp.Editor.PlayAlongPreview.RenderPreviews
@@ -28,6 +29,7 @@
 //
 // In Edit Mode Update and LateUpdate do not run, so this script advances everything itself (clock, presenter, card,
 // count-in, hand) in 1/60 s steps, and renders each frame twice (the first render fills the font texture).
+// The simulated strums are not logged here (LogSimulatedStrums = false), to keep the editor console readable.
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -38,13 +40,12 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
+using UntitledGuitarApp.Core.Songs;
 using UntitledGuitarApp.Runtime.Flags;
 using UntitledGuitarApp.Runtime.GhostHand;
 using UntitledGuitarApp.Runtime.Hud.Play;
 using UntitledGuitarApp.Runtime.Neck;
-using UntitledGuitarApp.Runtime.Neck.Dev;
 using UntitledGuitarApp.Runtime.Practice;
-using UntitledGuitarApp.Runtime.Practice.Dev;
 
 namespace UntitledGuitarApp.Editor
 {
@@ -69,7 +70,7 @@ namespace UntitledGuitarApp.Editor
         sealed class Moment
         {
             public string Name;
-            public Func<DevPlayAlongClock, bool> When;
+            public Func<CorePlayAlong, bool> When;
             public bool Done;
         }
 
@@ -174,9 +175,9 @@ namespace UntitledGuitarApp.Editor
         static string RenderSong(string songId, bool plant, string folder, RenderTexture target, Texture2D texture,
             StringBuilder json, List<string> written, ref bool firstFrame, ref int plantedOverlaps)
         {
-            DevSong song;
+            Song song;
             string error;
-            if (!DevSongReader.LoadFile(DevSongReader.PathFor(DevSongReader.SongsFolder, songId), out song, out error))
+            if (!CorePlayAlong.TryLoadSong(songId, out song, out error))
                 return "song " + songId + " did not load: " + error;
 
             Scene scene = EditorSceneManager.NewPreviewScene();
@@ -191,7 +192,7 @@ namespace UntitledGuitarApp.Editor
                 var head = new GameObject("Head");
                 head.transform.SetParent(root.transform, false);
                 FloatingNeck neck = FloatingNeck.Create(root.transform);
-                if (!neck.Build(DevNeckLayout.Create())) return "the dev neck layout did not build";
+                if (!neck.Build(CoreNeckLayout.Create(CoreNeckLayout.DefaultGeometry))) return "the Core neck layout did not build";
                 neck.PlaceFloating(head.transform);
 
                 PlayAlongPresenter presenter = PlayAlongPresenter.Create(root.transform, head.transform, neck);
@@ -205,31 +206,32 @@ namespace UntitledGuitarApp.Editor
                 float ipdM = (flags.render != null ? flags.render.ipdMm : 63f) * 0.001f;
                 Camera eye = MakeEye(head.transform, scene, ipdM);
 
-                var clock = new DevPlayAlongClock();
-                float preset = DevTimeline.NearestPreset(WantedPreset, flags.tempoPresets);
-                if (!clock.Start(song, preset, true)) return "the clock refused " + songId;
+                var play = new CorePlayAlong();
+                play.LogSimulatedStrums = false;
+                float preset = PlayAlongMath.NearestPreset(WantedPreset, flags.tempoPresets);
+                if (!play.Start(song, preset, true, null)) return "Core's session refused " + songId;
                 presenter.SetSong(song);
-                if (handOk) hand.SetPose(song.Runs[0].Chord, true);
+                if (handOk) hand.SetPose(play.Timeline.Spans[0].Chord, true);
 
-                List<Moment> moments = MomentsFor(song);
+                List<Moment> moments = MomentsFor(play, presenter);
                 float t = 0f;
                 int index = 0;
                 bool resultsSettled = false;
                 while (index < moments.Count)
                 {
                     if (t > MaxSongSeconds) return songId + ": moment " + NextPending(moments) + " never came";
-                    clock.Tick(Step);
-                    presenter.PresentClock(clock, Step);
+                    play.Tick(Step);
+                    presenter.PresentPlayAlong(play, Step);
                     presenter.Card.Advance(Step);
                     presenter.Card.CountIn.Advance(Step);
                     if (handOk)
                     {
-                        string shape = clock.Frame.Chord ?? clock.Frame.NextChord;
+                        string shape = play.Frame.Chord ?? play.Frame.NextChord;
                         if (shape != null) hand.SetPose(shape, false);
                         hand.Tick(Step);
                     }
                     t += Step;
-                    if (clock.State == DevPlayState.Ended && !resultsSettled)
+                    if (play.Phase == PlayAlongPhase.Ended && !resultsSettled)
                     {
                         resultsSettled = true;
                         continue;   // one more step so the results card is up
@@ -237,7 +239,7 @@ namespace UntitledGuitarApp.Editor
                     for (int m = 0; m < moments.Count; m++)
                     {
                         Moment moment = moments[m];
-                        if (moment.Done || !moment.When(clock)) continue;
+                        if (moment.Done || !moment.When(play)) continue;
                         moment.Done = true;
                         index++;
                         string name = songId + "-" + moment.Name;
@@ -249,7 +251,7 @@ namespace UntitledGuitarApp.Editor
                         List<Element> hud = CollectHud(presenter, eye);
                         List<Element> others = CollectNeckAndHand(neck, presenter.ShownShape, handOk ? hand : null, eye);
                         List<string> overlaps = Overlaps(hud, others);
-                        AppendFrame(json, ref firstFrame, name, clock, presenter, handOk, hud, others, overlaps, Lit(pixels));
+                        AppendFrame(json, ref firstFrame, name, play, presenter, handOk, hud, others, overlaps, Lit(pixels));
                     }
                 }
 
@@ -258,7 +260,8 @@ namespace UntitledGuitarApp.Editor
                     // A real HUD part (a disc under the card) put exactly on the first fingertip dot: the checker must flag it.
                     FingertipDot[] dots = new FingertipDot[FloatingNeck.MaxDots];
                     StringMark[] marks = new StringMark[NeckLayout.StringCount];
-                    int n = DevNeckLayout.ChordShape(neck.Layout, presenter.ShownShape ?? "G", dots, marks);
+                    string shape = presenter.ShownShape ?? "G";
+                    int n = CoreNeckLayout.ChordMarks(CoreNeckLayout.DefaultGeometry, shape, dots, marks);
                     if (n > 0)
                     {
                         HudShape planted = HudShape.Create(presenter.Card.transform, "PlantedOverlap", HudShape.Disc);
@@ -272,14 +275,14 @@ namespace UntitledGuitarApp.Editor
                         written.Add(png);
                         List<Element> hud = CollectHud(presenter, eye);
                         hud.AddRange(Gather("planted", planted.Transform, eye));
-                        List<Element> others = CollectNeckAndHand(neck, presenter.ShownShape ?? "G", null, eye);
+                        List<Element> others = CollectNeckAndHand(neck, shape, null, eye);
                         List<string> overlaps = Overlaps(hud, others);
                         plantedOverlaps = 0;
                         for (int i = 0; i < overlaps.Count; i++)
                         {
                             if (overlaps[i].IndexOf("planted", StringComparison.Ordinal) >= 0 && overlaps[i].IndexOf("dot", StringComparison.Ordinal) >= 0) plantedOverlaps++;
                         }
-                        AppendFrame(json, ref firstFrame, "planted-overlap", clock, presenter, false, hud, others, overlaps, Lit(pixels));
+                        AppendFrame(json, ref firstFrame, "planted-overlap", play, presenter, false, hud, others, overlaps, Lit(pixels));
                     }
                 }
 
@@ -304,22 +307,27 @@ namespace UntitledGuitarApp.Editor
             return "?";
         }
 
-        /// <summary>The eight moments of a song (any order in time; each is captured the first frame it is true).</summary>
-        static List<Moment> MomentsFor(DevSong song)
+        /// <summary>
+        /// The eight moments of a song (any order in time; each is captured the first frame it is true). Span numbers are Core's
+        /// (one per chord of the file); Happy Birthday's span 2 is the D that continues across the first line break.
+        /// </summary>
+        static List<Moment> MomentsFor(CorePlayAlong play, PlayAlongPresenter presenter)
         {
-            DevChordRun[] runs = song.Runs;
-            int lyricLine = Math.Min(2, song.Lines.Length - 1);
-            double lineStart = song.Lines[lyricLine].StartBeat;
+            IReadOnlyList<ChordSpan> spans = play.Timeline.Spans;
+            double pickup = play.Song.PickupBeats;
+            Func<int, double> start = i => PlayAlongMath.FrameBeat(spans[i].StartBeat, pickup);
+            double lineStart = presenter.LineStartBeat(2);
+            if (double.IsNaN(lineStart)) lineStart = presenter.LineStartBeat(0);
             return new List<Moment>
             {
-                new Moment { Name = "01-count-in", When = c => c.State == DevPlayState.CountIn && DevTimeline.CountInBeatsLeft(c.Beat, song.StartBeat) == 2 },
-                new Moment { Name = "02-wait-first-chord", When = c => c.Waiting && c.RunIndex == 0 && c.WaitSeconds >= 0.3f },
-                new Moment { Name = "03-mid-chord", When = c => !c.Waiting && c.RunIndex == 1 && c.Beat >= runs[1].StartBeat + 0.5 * runs[1].Beats },
-                new Moment { Name = "04-one-beat-before-change", When = c => !c.Waiting && c.RunIndex == 2 && c.Frame.BeatsToChange <= 1.0 },
-                new Moment { Name = "05-waiting", When = c => c.Waiting && c.RunIndex == 3 && c.WaitSeconds >= 0.3f },
-                new Moment { Name = "06-confirmed", When = c => !c.Waiting && c.RunIndex == 3 && c.Frame.ChordConfirmed && c.Beat >= runs[3].StartBeat + 0.25 },
-                new Moment { Name = "07-lyric-line-3", When = c => !c.Waiting && c.State == DevPlayState.Playing && c.Beat >= lineStart + 1.0 },
-                new Moment { Name = "08-results", When = c => c.State == DevPlayState.Ended },
+                new Moment { Name = "01-count-in", When = c => c.Phase == PlayAlongPhase.CountIn && PlayAlongMath.CountInBeatsLeft(c.Frame.Beat, -pickup) == 2 },
+                new Moment { Name = "02-wait-first-chord", When = c => c.Waiting && c.CurrentSpan == 0 && c.HoldSeconds >= 0.3 },
+                new Moment { Name = "03-mid-chord", When = c => !c.Waiting && c.CurrentSpan == 1 && c.Frame.Beat >= start(1) + 0.5 * spans[1].Beats },
+                new Moment { Name = "04-one-beat-before-change", When = c => !c.Waiting && c.CurrentSpan == 2 && c.Frame.BeatsToChange <= 1.0 },
+                new Moment { Name = "05-waiting", When = c => c.Waiting && c.CurrentSpan == 3 && c.HoldSeconds >= 0.3 },
+                new Moment { Name = "06-confirmed", When = c => !c.Waiting && c.CurrentSpan == 3 && c.Frame.ChordConfirmed && c.Frame.Beat >= start(3) + 0.25 },
+                new Moment { Name = "07-lyric-line-3", When = c => !c.Waiting && c.Phase == PlayAlongPhase.Playing && c.Frame.Beat >= lineStart + 1.0 },
+                new Moment { Name = "08-results", When = c => c.Phase == PlayAlongPhase.Ended },
             };
         }
 
@@ -462,7 +470,7 @@ namespace UntitledGuitarApp.Editor
             var list = new List<Element>();
             var dots = new FingertipDot[FloatingNeck.MaxDots];
             var marks = new StringMark[NeckLayout.StringCount];
-            int n = chord != null ? DevNeckLayout.ChordShape(neck.Layout, chord, dots, marks) : 0;
+            int n = chord != null ? Math.Max(0, CoreNeckLayout.ChordMarks(CoreNeckLayout.DefaultGeometry, chord, dots, marks)) : 0;
             float radiusM = neck.Sizes.dotRadiusMm > 0f ? neck.Sizes.dotRadiusMm * 0.001f : 0.004f;
             Transform socket = neck.Socket;
             for (int i = 0; i < n; i++)
@@ -581,19 +589,22 @@ namespace UntitledGuitarApp.Editor
 
         // ------------------------------------------------------------------ report
 
-        static void AppendFrame(StringBuilder json, ref bool first, string name, DevPlayAlongClock clock, PlayAlongPresenter presenter,
+        static void AppendFrame(StringBuilder json, ref bool first, string name, CorePlayAlong play, PlayAlongPresenter presenter,
             bool handOk, List<Element> hud, List<Element> others, List<string> overlaps, int lit)
         {
             if (!first) json.Append(",\n");
             first = false;
-            PracticeFrame f = clock.Frame;
-            DevPlayResults r = clock.Results;
+            PracticeFrame f = play.Frame;
+            PlayAlongResults r = play.Results;
             json.Append("    {\"name\": ").Append(Q(name))
-                .Append(", \"state\": ").Append(Q(clock.State.ToString()))
+                .Append(", \"phase\": ").Append(Q(play.Phase.ToString()))
                 .Append(", \"active\": ").Append(f.Active ? "true" : "false")
-                .Append(", \"beat\": ").Append(F((float)clock.Beat))
-                .Append(", \"songSeconds\": ").Append(F((float)clock.SongSeconds))
-                .Append(", \"tempoPreset\": ").Append(F(clock.TempoPreset))
+                .Append(", \"beat\": ").Append(F((float)f.Beat))
+                .Append(", \"adapterSeconds\": ").Append(F((float)play.Now))
+                .Append(", \"coreSpan\": ").Append(play.CurrentSpan)
+                .Append(", \"holdSeconds\": ").Append(F((float)play.HoldSeconds))
+                .Append(", \"simulatedStrums\": ").Append(play.SimulatedStrums)
+                .Append(", \"tempoPreset\": ").Append(F(play.TempoPreset))
                 .Append(", \"beatsPerSecond\": ").Append(F(f.BeatsPerSecond))
                 .Append(", \"chord\": ").Append(Q(f.Chord))
                 .Append(", \"nextChord\": ").Append(Q(f.NextChord))
@@ -608,7 +619,8 @@ namespace UntitledGuitarApp.Editor
                 .Append(", \"neckDots\": ").Append(presenter.Neck.DotCount)
                 .Append(", \"rings\": ").Append(presenter.Rings.ActiveChanges)
                 .Append(", \"results\": ").Append(presenter.ShowingResults
-                    ? "{\"hit\": " + r.ChordsHit + ", \"total\": " + r.ChordsTotal + ", \"meanTimingMs\": " + (float.IsNaN(r.MeanTimingMs) ? "null" : F(r.MeanTimingMs)) + ", \"simulated\": " + (r.Simulated ? "true" : "false") + "}"
+                    ? "{\"hit\": " + r.ChordsHit + ", \"missed\": " + r.ChordsMissed + ", \"skipped\": " + r.ChordsSkipped + ", \"total\": " + r.ChordsTotal
+                      + ", \"meanTimingMs\": " + (float.IsNaN(r.MeanTimingMs) ? "null" : F(r.MeanTimingMs)) + ", \"simulated\": " + (r.Simulated ? "true" : "false") + "}"
                     : "null")
                 .Append(", \"posedHand\": ").Append(handOk ? "true" : "false")
                 .Append(", \"litPixels\": ").Append(lit)
