@@ -88,6 +88,17 @@ namespace UntitledGuitarApp.Runtime
             if (Mode == DemoMode.Learn && _chords == 0) Mode = DemoMode.Idle;
         }
 
+        /// <summary>
+        /// Picks the song, chord and tempo preset directly (smoke-run arguments, a future picker). Each index is clamped; the mode
+        /// is not changed and nothing restarts: follow with a mode command, which restarts.
+        /// </summary>
+        public void SetIndices(int songIndex, int chordIndex, int tempoIndex)
+        {
+            SongIndex = Clamp(songIndex, _songs);
+            ChordIndex = Clamp(chordIndex, _chords);
+            TempoIndex = Clamp(tempoIndex, _tempos);
+        }
+
         public DemoChange Apply(DemoCommand command)
         {
             LastRefusal = null;
@@ -115,7 +126,8 @@ namespace UntitledGuitarApp.Runtime
                     return Mode == DemoMode.Play ? Restart() : DemoChange.TempoForNextPlay;
                 }
                 case DemoCommand.Skip:
-                    if (Mode != DemoMode.Learn) return Refuse("skip only works in learn mode");
+                    // learn: the next stage; play: release a wait-mode hold
+                    if (Mode == DemoMode.Idle) return Refuse("skip does nothing while idle");
                     return DemoChange.Skip;
                 case DemoCommand.Recenter:
                     return DemoChange.Recenter;

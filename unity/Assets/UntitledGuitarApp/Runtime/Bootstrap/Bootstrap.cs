@@ -20,7 +20,8 @@ namespace UntitledGuitarApp.Runtime
     /// IMU head pose driving that head (head-locked when packets stop), the spectator view on the Mac screen, the
     /// head-locked HUD (chord label, mic meter, SIMULATED badge), audio capture (mic, or WAV replay when flags say
     /// audioSource = wav), gaze-dwell input with its reticle, and the floating neck with the G chord's fingertip dots and the
-    /// capsule fretting ghost hand forming G on it. Keys: R recenters the IMU heading and re-places the neck (Space is gaze
+    /// capsule fretting ghost hand forming G on it. Operator keys (DemoKeys, run by DemoDirector, which also composes the strumming hand, play-along and learn mode):
+    /// L learn, P play, N next song/chord, [ ] tempo, S skip, R recenter the IMU heading and re-place the neck, I/Esc idle (Space is gaze
     /// confirm). In the editor, menu UGA > Editor Sim Rig on the Head gives mouse-look; it writes the head's world rotation
     /// after the IMU (execution order 10000 vs -100), so it simply wins while attached.
     /// The neck layout and the G dots come from Person 2's Core (FretboardGeometry + ChordLibrary) through
@@ -76,6 +77,9 @@ namespace UntitledGuitarApp.Runtime
         public PosedGhostHand PosedFrettingHand { get; private set; }
         /// <summary>Every pose file in StreamingAssets/poses (12 from Blender: fretting rest/G/C/D/Em/Am, six strumming).</summary>
         public GhostPoseLibrary Poses { get; private set; }
+        /// <summary>The operator's modes over this rig (idle / learn / play, DemoKeys); null if it failed to compose, and the
+        /// walking skeleton still runs.</summary>
+        public DemoDirector Demo { get; private set; }
 
         readonly FingertipDot[] _dots = new FingertipDot[FloatingNeck.MaxDots];
         readonly StringMark[] _marks = new StringMark[6];
@@ -87,6 +91,7 @@ namespace UntitledGuitarApp.Runtime
         int _statusFps = -1, _statusRate = -1, _statusImuHz = -1;
         bool _statusCapturing, _statusReplay, _statusStereo, _statusTracking;
         string _statusDevice = "";
+        string _statusDemo = "";
         float _smokeQuitAt = -1f;
         string _snapshotPath;
         bool _composed;
@@ -159,6 +164,14 @@ namespace UntitledGuitarApp.Runtime
             Reticle.Head = Rig.Head;
 
             ComposeNeckAndHand(flags);
+            try
+            {
+                Demo = DemoDirector.Create(this, flags);   // strumming hand, play-along and learn mode, driven by DemoKeys
+            }
+            catch (Exception e)
+            {
+                UGALog.Error("demo_failed", e.ToString());   // the walking skeleton keeps running without the modes
+            }
 
             // (stereo.apply already logs the target display; UGALog.Event takes at most three key/value pairs)
             UGALog.Event("boot_done", "stereo", Rig.IsStereo, "displays", Display.displays.Length, "dots", _dotCount);
@@ -229,11 +242,7 @@ namespace UntitledGuitarApp.Runtime
         void Update()
         {
             FlagStore.Poll();
-            if (HeadPose != null && Input.GetKeyDown(KeyCode.R))
-            {
-                HeadPose.Recenter();   // the current heading becomes "forward" (logs imu_recenter)
-                if (Neck != null && Rig != null) Neck.PlaceFloating(Rig.Head, _neckFollowsHead);
-            }
+            if (Demo == null && HeadPose != null && Input.GetKeyDown(KeyCode.R)) RecenterView();   // else DemoKeys handles R
             if (Meter != null && Mic != null)
             {
                 Meter.SetLevel(Mic.LevelRms, Mic.LevelPeak);
@@ -259,7 +268,15 @@ namespace UntitledGuitarApp.Runtime
             }
         }
 
-        /// <summary>Two lines on the Mac-screen spectator, rebuilt only when what they show has changed.</summary>
+        /// <summary>The current heading becomes "forward" (logs imu_recenter) and the floating neck is placed in front again.</summary>
+        public void RecenterView()
+        {
+            if (HeadPose != null) HeadPose.Recenter();
+            if (Neck != null && Rig != null) Neck.PlaceFloating(Rig.Head, _neckFollowsHead);
+        }
+
+        /// <summary>Two lines on the Mac-screen spectator (the operator's demo line first when the modes are composed),
+        /// rebuilt only when what they show has changed.</summary>
         void UpdateStatus()
         {
             if (Spectator == null || Rig == null) return;
@@ -271,16 +288,20 @@ namespace UntitledGuitarApp.Runtime
             bool stereo = Rig.IsStereo;
             bool tracking = HeadPose != null && HeadPose.State == HeadTrackingState.Tracking;
             int imuHz = HeadPose != null ? Mathf.RoundToInt(HeadPose.PacketRateHz) : 0;
+            string demo = Demo != null ? Demo.StatusText : "";   // DemoDirector rebuilds it only on change
             if (fps == _statusFps && rate == _statusRate && capturing == _statusCapturing && replay == _statusReplay &&
                 stereo == _statusStereo && tracking == _statusTracking && imuHz == _statusImuHz &&
-                string.Equals(device, _statusDevice, StringComparison.Ordinal))
+                string.Equals(device, _statusDevice, StringComparison.Ordinal) && ReferenceEquals(demo, _statusDemo))
                 return;
             _statusFps = fps; _statusRate = rate; _statusCapturing = capturing; _statusReplay = replay;
             _statusStereo = stereo; _statusDevice = device; _statusTracking = tracking; _statusImuHz = imuHz;
-            string audio = replay ? "WAV replay (simulated)" : capturing ? "mic: " + device : "mic: not capturing";
-            string imu = tracking ? "IMU " + imuHz + " Hz" : "IMU off: head-locked";
-            Spectator.SetStatus(audio + "  " + (rate / 1000f).ToString("0.#") + " kHz",
-                                (stereo ? "stereo" : "2D") + " on display " + (Rig.TargetDisplay + 1) + "  " + fps + " fps  " + imu);
+            _statusDemo = demo;
+            string audio = (replay ? "WAV replay (simulated)" : capturing ? "mic: " + device : "mic: not capturing") +
+                           "  " + (rate / 1000f).ToString("0.#") + " kHz";
+            string display = (stereo ? "stereo" : "2D") + " on display " + (Rig.TargetDisplay + 1) + "  " + fps + " fps  " +
+                             (tracking ? "IMU " + imuHz + " Hz" : "IMU off: head-locked");
+            if (string.IsNullOrEmpty(demo)) Spectator.SetStatus(audio, display);
+            else Spectator.SetStatus(demo, audio + "  ·  " + display);
         }
 
         void ReadSmokeArgument()

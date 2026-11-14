@@ -24,7 +24,7 @@ namespace UntitledGuitarApp.Runtime
         };
 
         /// <summary>One line for the operator (spectator screen or log): what each key does.</summary>
-        public const string Legend = "L learn · P play · N next · [ ] tempo · S skip step · R recenter · I/Esc idle";
+        public const string Legend = "L learn · P play · N next · [ ] tempo · S skip · R recenter · I/Esc idle";
 
         /// <summary>The first command whose key <paramref name="pressedThisFrame"/> reports as pressed; None if none is.</summary>
         public static DemoCommand CommandFor(Func<KeyCode, bool> pressedThisFrame)

@@ -93,15 +93,33 @@ namespace UntitledGuitarApp.Tests.EditMode
         }
 
         [Test]
-        public void SkipOnlyInLearn_RecenterAnywhere()
+        public void Skip_WorksInLearnAndPlay_NotIdle_RecenterAnywhere()
         {
             DemoState s = Make();
-            Assert.AreEqual(DemoChange.None, s.Apply(DemoCommand.Skip));
+            Assert.AreEqual(DemoChange.None, s.Apply(DemoCommand.Skip), "idle: nothing to skip");
             Assert.AreEqual(DemoChange.Recenter, s.Apply(DemoCommand.Recenter));
             s.Apply(DemoCommand.Learn);
             int g = s.Generation;
             Assert.AreEqual(DemoChange.Skip, s.Apply(DemoCommand.Skip));
             Assert.AreEqual(g, s.Generation, "skip is not a restart");
+            s.Apply(DemoCommand.Play);
+            g = s.Generation;
+            Assert.AreEqual(DemoChange.Skip, s.Apply(DemoCommand.Skip), "play: releases a wait-mode hold");
+            Assert.AreEqual(g, s.Generation);
+        }
+
+        [Test]
+        public void SetIndices_Clamps_AndChangesNeitherModeNorGeneration()
+        {
+            DemoState s = Make(songs: 3, chords: 5, tempos: 2, startTempo: 0);
+            s.Apply(DemoCommand.Play);
+            int g = s.Generation;
+            s.SetIndices(7, -2, 1);
+            Assert.AreEqual(2, s.SongIndex);
+            Assert.AreEqual(0, s.ChordIndex);
+            Assert.AreEqual(1, s.TempoIndex);
+            Assert.AreEqual(DemoMode.Play, s.Mode);
+            Assert.AreEqual(g, s.Generation);
         }
 
         [Test]
@@ -155,6 +173,17 @@ namespace UntitledGuitarApp.Tests.EditMode
             foreach (KeyCode k in DemoKeys.Keys) Assert.IsTrue(seen.Add(k), "duplicate key " + k);
             StringAssert.Contains("L learn", DemoKeys.Legend);
             StringAssert.Contains("R recenter", DemoKeys.Legend);
+        }
+
+        [Test]
+        public void ArgumentValue_ReadsTheWordAfterTheFlag()
+        {
+            string[] args = { "player", "-batchmode", "-ugaDemoMode", "play", "-ugaSong", "happy-birthday", "-ugaTempo" };
+            Assert.AreEqual("play", DemoDirector.ArgumentValue(args, DemoDirector.ModeArgument));
+            Assert.AreEqual("happy-birthday", DemoDirector.ArgumentValue(args, DemoDirector.SongArgument));
+            Assert.IsNull(DemoDirector.ArgumentValue(args, DemoDirector.TempoArgument), "a flag with nothing after it");
+            Assert.IsNull(DemoDirector.ArgumentValue(args, DemoDirector.ChordArgument), "absent");
+            Assert.IsNull(DemoDirector.ArgumentValue(null, DemoDirector.ModeArgument));
         }
 
         [Test]
