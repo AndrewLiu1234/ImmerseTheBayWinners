@@ -25,8 +25,9 @@
 // WHY NOT A RUN-TIME MEASUREMENT (the code before 14 Nov 12:00): it read Renderer.localBounds of an "H" against
 // Font.GetCharacterInfo, with an unverified fallback (0.1 unit per font pixel). In the full-app frame of 14 Nov 11:38 the
 // chord name "G", asked for 4.0 degrees, measured 3.28 (0.82 of the request; 0.79 for the cap height once the G's overshoot,
-// 1516 vs 1466 font units in Arial Bold, is taken out). NeckLabel (Runtime/Neck) had the same fault: its bounds gave 0.64 of
-// the request after a few renders and its fallback 0.769 before any, so one request gave two sizes depending on the frame.
+// 1516 vs 1466 font units in Arial Bold, is taken out). Cause: the bounds width of an "H" is its ADVANCE (1479 font units),
+// not its ink width (1172), so the size came out at 1172 / 1479 = 0.792 of the request; the calibration replayed that path
+// and measured 0.796 to 0.838 (0.838 at font size 67, where glyph metrics are rounded to whole pixels).
 using System;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -60,13 +61,14 @@ namespace UntitledGuitarApp.Runtime.Hud
         /// <summary>
         /// MEASURED, not documented: the cap height of a bold "H" (Arial Bold, the built-in font) in the TextMesh's own units,
         /// per unit of fontSize, at characterSize 1. World cap height = fontSize * CapUnitsPerFontSize * localScale * parent scale.
-        /// PROVISIONAL VALUE (round 1, 14 Nov ~12:15): NeckLabel.DigitUnitsPerFontSize (0.0551, measured from 50% edges of a bold
-        /// "1" in three Unity renders of 14 Nov, at its real distance from the eye) times Arial Bold's H / 1 height ratio,
-        /// 1466 / 1472 font units (the 'glyf' table of /System/Library/Fonts/Supplemental/Arial Bold.ttf, read with fontTools)
-        /// = 0.0549. Editor/HudTextCalibration.cs renders "H" at 1.2 to 4 degrees and 1.0 / 1.2 m with a glasses-eye camera and
-        /// measures it; this value is replaced by that measurement (see the calibration JSON named in the commit).
+        /// Source: Editor/HudTextCalibration.cs, run in the user's editor on 14 Nov ~12:40 (Unity 2021.3.3f1, Metal, Gamma;
+        /// build/previews/hudtext/hudtext-calibration.json): "H" at 1.2 / 2 / 3 / 4 degrees and 1.0 / 1.2 m measured 0.071411 to
+        /// 0.07159 units per font size (mean 0.071521; the lowest at font size 67), with a control quad of known height read at
+        /// 0.999 [0.999..1.000] and a planted 0.80 quad at 0.801 by the same code. This is the textbook figure (0.1 unit per
+        /// font pixel x Arial's 0.716 em cap height = 0.0716) within 0.2%. With it every request is drawn within 0.15%.
+        /// (The provisional 0.0549 of round 1 came from NeckLabel's earlier constant, which was 1.30 too small; see NeckLabel.)
         /// </summary>
-        public const float CapUnitsPerFontSize = 0.0549f;
+        public const float CapUnitsPerFontSize = 0.07152f;
 
         // Arial cap height is 1466/2048 em. Only used to pick a font raster size (sharpness), not the world size.
         const float CapHeightEm = 0.716f;

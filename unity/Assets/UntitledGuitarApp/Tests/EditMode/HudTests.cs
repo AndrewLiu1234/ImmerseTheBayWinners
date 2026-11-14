@@ -135,9 +135,13 @@ namespace UntitledGuitarApp.Tests.EditMode
         [Test]
         public void CapConstant_IsTheCalibratedValue()
         {
-            // Changing this number needs a new Editor/HudTextCalibration.cs run (the JSON named in the commit), not a guess.
-            Assert.AreEqual(0.0549f, HudText.CapUnitsPerFontSize, 1e-7);
-            Assert.AreEqual(223 * 0.0549f, HudText.CapHeightUnits(223), 1e-5);
+            // Changing this number needs a new Editor/HudTextCalibration.cs run (build/previews/hudtext/hudtext-calibration.json:
+            // "H" measured 0.071411 to 0.07159 units per font size, mean 0.071521, control quad 0.999), not a guess.
+            Assert.AreEqual(0.07152f, HudText.CapUnitsPerFontSize, 1e-7);
+            Assert.AreEqual(223 * 0.07152f, HudText.CapHeightUnits(223), 1e-5);
+            // every per-size measurement is drawn within 0.2% with this one constant
+            foreach (double measured in new[] { 0.071411, 0.071502, 0.07159, 0.071581 })
+                Assert.AreEqual(1.0, measured / HudText.CapUnitsPerFontSize, 0.002);
         }
 
         // Expected values computed here from the definition, independently of HudText's own code path:
