@@ -397,6 +397,80 @@ namespace UntitledGuitarApp.Tests.EditMode
             }
         }
 
+        // ------------------------------------------------------------------ the message zone beside the floating neck
+
+        // Every learn message, as an estimated block (widths from LearnText's bold-Arial advances, sizes from the widgets'
+        // constants; FingerStepPrompt's private HeadlineY 2.0 / PipY -2.6 / gap 0.7 and StrumVerdict's gap 0.8 restated), placed
+        // the way LearnHud.UseZoneCard places it, against the floating-neck view's measured occupants (orchestrator's zone map,
+        // left eye): fretting hand az -10..-2 / el up to +5.3, strings el -5.5..-2.6, finger numbers down to -7.5, X/O column
+        // az -15..-13. Must stay in the free zone RIGHT of the hand, normal and largeText. An estimate; the composed render is the real check.
+        struct Block { public string Name; public float Width, Top, Bottom; }
+
+        static List<Block> MessageBlocks(float k)
+        {
+            var list = new List<Block>();
+            string[] tips =
+            {
+                "Arch finger 3, B string muted", "Arch finger 1, high E muted", "Arch finger 1, D string muted", "Arch finger 3, G string muted",
+                LearnFlow.AllCorrectTip, LearnFlow.StrumPrompt, LearnFlow.PluckPromptFor(LearnChords.Get("G")),
+            };
+            foreach (string t in tips)
+            {
+                string a, b;
+                LearnText.WrapTwoLines(t, out a, out b);
+                bool icon = t.StartsWith("Arch") || t == LearnFlow.AllCorrectTip;
+                float w = (icon ? TipLine.IconDegrees + TipLine.GapDegrees : 0f) + TipLine.BlockWidthInCaps(a, b) * TipLine.TextDegrees;
+                float half = b.Length > 0 ? 0.5f * TipLine.LineStepInCaps * TipLine.TextDegrees + 0.7f * TipLine.TextDegrees : 0.7f * TipLine.TextDegrees;
+                half = Mathf.Max(half, icon ? 0.5f * TipLine.IconDegrees : 0f);
+                list.Add(new Block { Name = "tip " + t, Width = w * k, Top = half * k, Bottom = -half * k });
+            }
+            foreach (LearnChord chord in new[] { LearnChords.Get("G"), LearnChords.Get("C"), LearnChords.Get("D"), LearnChords.Get("Em"), LearnChords.Get("Am") })
+            {
+                for (int i = 0; i < chord.StepCount; i++)
+                {
+                    LearnChordStep st = chord.Step(i);
+                    float text = Mathf.Max(LearnText.WidthInCaps(LearnText.FingerHeadline(st.finger)) * FingerStepPrompt.HeadlineDegrees,
+                                           LearnText.WidthInCaps(LearnText.StringFret(st.stringNumber, st.fret)) * FingerStepPrompt.DetailDegrees);
+                    list.Add(new Block { Name = chord.Name + " finger " + st.finger, Width = (FingerStepPrompt.BadgeDegrees + 0.7f + text) * k,
+                                         Top = (2.0f + 0.7f * FingerStepPrompt.HeadlineDegrees) * k, Bottom = (-2.6f - 0.5f * FingerStepPrompt.ActivePipDegrees) * k });
+                }
+            }
+            float clean = StrumVerdict.CleanMarkDegrees + 0.8f + LearnText.WidthInCaps(StrumVerdict.CleanText) * StrumVerdict.CleanTextDegrees;
+            list.Add(new Block { Name = "strum clean", Width = clean * k, Top = 0.5f * StrumVerdict.CleanMarkDegrees * k, Bottom = -0.5f * StrumVerdict.CleanMarkDegrees * k });
+            return list;
+        }
+
+        [Test]
+        public void EveryMessageFitsTheZoneRightOfTheHand_NormalAndLargeText()
+        {
+            foreach (float k in new[] { 1f, 1.35f })
+            {
+                foreach (Block b in MessageBlocks(k))
+                {
+                    float left = LearnHudLayout.ZoneLeftDegrees(LearnHudLayout.ZoneCardLeftDegrees, LearnHudLayout.ZoneCardRightLimitDegrees,
+                                                                LearnHudLayout.ZoneCardMinLeftDegrees, b.Width);
+                    float right = left + b.Width;
+                    float top = LearnHudLayout.ZoneCardElevationDegrees + b.Top;
+                    float bottom = LearnHudLayout.ZoneCardElevationDegrees + b.Bottom;
+                    string what = b.Name + (k > 1f ? " (largeText)" : "") + ": az " + left.ToString("0.0") + ".." + right.ToString("0.0")
+                                  + ", el " + bottom.ToString("0.0") + ".." + top.ToString("0.0");
+                    Assert.GreaterOrEqual(left, -1.001f, what + " starts within 1 deg of the hand (right edge -2)");
+                    Assert.LessOrEqual(right, 21f, what + " leaves the comfortable view (az 21)");
+                    Assert.LessOrEqual(top, 11.4f, what + " leaves the comfortable view (el 11.4)");
+                    Assert.GreaterOrEqual(bottom, -1.5f, what + " reaches down to the strings (-2.6)");
+                }
+            }
+        }
+
+        [Test]
+        public void ZoneLeftEdgeMovesLeftOnlyForAWideMessageAndNeverPastItsMinimum()
+        {
+            Assert.AreEqual(1f, LearnHudLayout.ZoneLeftDegrees(1f, 20.5f, -1f, 10f), 1e-5f);
+            Assert.AreEqual(-0.5f, LearnHudLayout.ZoneLeftDegrees(1f, 20.5f, -1f, 21f), 1e-5f);
+            Assert.AreEqual(-1f, LearnHudLayout.ZoneLeftDegrees(1f, 20.5f, -1f, 40f), 1e-5f);
+            Assert.AreEqual(1f, LearnHudLayout.ZoneLeftDegrees(1f, 20.5f, -1f, float.PositiveInfinity), 1e-5f);
+        }
+
         // ------------------------------------------------------------------ the SIMULATED dev run
 
         [Test]

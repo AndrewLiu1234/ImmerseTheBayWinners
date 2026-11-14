@@ -70,6 +70,13 @@ namespace UntitledGuitarApp.Runtime.Practice.Learn
         /// </summary>
         public bool ShareNeckColumn = true;
 
+        /// <summary>
+        /// While the neck floats (no real-neck alignment), put the message in the free zone RIGHT of the fretting hand
+        /// (LearnHud.UseZoneCard: left-aligned from 1 deg right of centre, 4 deg up) instead of on the neck above fret 5, where
+        /// the floating neck's hand and finger numbers are. Default true. An aligned neck keeps the neck card.
+        /// </summary>
+        public bool ZoneCardWhenFloating = true;
+
         public LearnHud Hud { get { return _hud; } }
         public FloatingNeck Neck { get { return _neck; } }
         public LearnFlow Flow { get { return _flow; } }
@@ -122,6 +129,11 @@ namespace UntitledGuitarApp.Runtime.Practice.Learn
             }
             LearnNeckColumn.ChordMarks(chord, _chordMarks);
             ShowChordOnNeckAndHand(chord);
+            if (_hud != null)
+            {
+                if (ZoneCardWhenFloating && (_neck == null || _neck.Mode == NeckMode.Floating)) _hud.UseZoneCard();
+                else _hud.UseNeckCard();
+            }
             UGALog.Event("learn_begin", "chord", chord.Name, "hand", HandKind);
             return _flow.Begin(chord);
         }
