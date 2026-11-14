@@ -62,6 +62,103 @@ namespace UntitledGuitarApp.Core.Audio
         /// <summary>A gap without pitch longer than this (s) restarts the smoothing, so a new pluck shows its own pitch at once.</summary>
         public double TunerHoldSec { get; }
 
+        // ---- Pluck check (SL2, §19 "Pluck verdict" + "Clean / quality") ----
+        /// <summary>Attack skipped after the onset, s (§19: 40 ms). The pick transient is broadband and its first periods are
+        /// inharmonic; YIN on them reads octave errors.</summary>
+        public double PluckAttackSkipSec { get; }
+        /// <summary>Window after the attack over which the median f0 is taken, s (§19: 200 ms ≈ 11 hops). Long enough to outvote
+        /// a bad frame, short enough to stay inside the ring of a short-ringing pluck.</summary>
+        public double PluckAnalysisSec { get; }
+        /// <summary>Minimum YIN confidence for a frame to vote (§19: &gt; 0.8; = 1 − <see cref="MaxAperiodicity"/>).</summary>
+        public double PluckMinConfidence { get; }
+        /// <summary>Confidently pitched analysis frames needed for the pluck to have a pitch (fewer when the window holds fewer
+        /// frames). 3 frames = pitch audible from 40 to ≥ 125 ms: a muted thud dies inside the 40 ms skip (0 frames), while a
+        /// short-ringing note still pitches its first 3–5 frames even at 10 dB SNR. A fraction of all frames failed here:
+        /// noise swallows a short ring's later frames (synthetic grid: ShortRing 0/52 at 20 dB with "≥ 40 %").</summary>
+        public int PluckMinPitchedFrames { get; }
+        /// <summary>A median f0 within this many cents of a hypothesis matches it (flag audio.pluckCentsTol = 45). Hypotheses
+        /// are ≥ 100 cents apart, so 45 leaves a 10-cent no-man's-land (→ Unclear) and tolerates a slightly out-of-tune string.</summary>
+        public double PluckMatchCents { get; }
+        /// <summary>Octave alternatives (f/2, 2f of the YIN median) are tried only when the direct reading matches no hypothesis,
+        /// and need harmonic support: power at f's sub-octave odd partials vs f's own partials at or above (f/2 accepted) or
+        /// below (2f accepted) this ratio. 0.05 = −13 dB: looser than YIN's own 0.01 because the expected-note prior already
+        /// narrows the choice to a handful of notes.</summary>
+        public double PluckOctaveSupportRatio { get; }
+        /// <summary>Harmonics of a hypothesis summed for the rise/salience tests. 4 covers the strong low partials of a plucked
+        /// string; the fundamental alone is weak on low E through a laptop mic.</summary>
+        public int PluckPartials { get; }
+        /// <summary>The matched note's partial power must rise by this much from the pre-onset frame to the first analysis
+        /// frame (dB, §19 "onset-relative spectral rise"), so a string still ringing from the previous pluck is not credited to
+        /// this one. 6 dB = a fresh pluck at least doubles the amplitude of a string that still rings at half level.</summary>
+        public double PluckRiseDb { get; }
+        /// <summary>Broadband attack rise (dB: max 512-sample block RMS around the onset vs the pre-onset RMS) meaning "the pick
+        /// hit something". A pitchless window without it is Unclear (nothing played), with it Muted. 3 dB ≈ 10× the
+        /// block-to-block RMS jitter of steady noise.</summary>
+        public double PluckAttackRiseDb { get; }
+        /// <summary>Fallback when YIN gives no usable pitch (too few confident frames, or a pre-existing ring): a hypothesis whose
+        /// <see cref="PluckPartials"/> partials rose by <see cref="PluckRiseDb"/> and carry at least this fraction of the first
+        /// analysis frame's energy is taken as the note. 0.05: white noise alone puts ≈ 0.01 there (synthetic, 4 partials), a
+        /// short-ringing D3 at 10 dB SNR ≈ 0.09, a free note ≈ 0.2 (Karplus–Strong spreads energy over many partials).</summary>
+        public double PluckMinSalience { get; }
+        /// <summary>… and the first analysis frame must be no more than this many dB below the attack (else the "note" is the
+        /// residue of a deadened string: a muted thud is ≈ 50 dB down 40 ms after the pick, a short ring ≈ 8 dB).</summary>
+        public double PluckSustainDb { get; }
+        /// <summary>Ring-out target, s (§19 quality: every expected string still rings ≥ 0.8 s). Shorter → ShortRing
+        /// ("let string N ring"). Judged only when the window reaches this far past the onset.</summary>
+        public double RingOutSec { get; }
+        /// <summary>Partials tracked for ring-out. 2 (fundamental + octave): higher ones collide with a neighbouring string that
+        /// still rings (G3's 5th partial 980 Hz sits 8 Hz from B3's 4th, 988 Hz — synthetic: a free B3 over a ringing G3 read
+        /// 0.56 s with 4 partials) and die first on any real string anyway.</summary>
+        public int RingPartials { get; }
+        /// <summary>Sustain = time for the fitted decay of the first <see cref="RingPartials"/> partials to fall this many dB
+        /// from the first analysis frame. 30 dB: a free steel string (T60 ≥ 2 s) needs ≥ 1 s for it; a finger leaning on the
+        /// string (T60 ≈ 0.8 s) gets there in 0.4 s. Pass line: T60 ≈ 1.5 s.</summary>
+        public double RingDropDb { get; }
+        /// <summary>Ring probes count only when this many dB above the same partials' pre-onset level (room noise, other
+        /// strings). 6 dB: a pure-noise probe (2 partials ≈ χ² with 4 dof) passes 4× its mean 0.3 % of the time, vs 9 % at 3 dB —
+        /// a 3 dB floor let the noise extend a short ring to 0.8 s at 20 dB SNR (synthetic). The decay fit, not the last
+        /// crossing, decides the sustain, so a note sinking into the noise early is not penalised.</summary>
+        public double RingFloorDb { get; }
+        /// <summary>If the probes vanish while the fitted decay still predicts a level this many dB above the floor, the note was
+        /// cut (a finger damped it) and the sustain is the last audible probe. 10 dB ≫ the ±3 dB probe jitter.</summary>
+        public double RingCutDb { get; }
+        /// <summary>Step between ring-out probes, s. 50 ms resolution on the reported sustain is plenty for a "let it ring" tip
+        /// and costs ~16 two-partial Goertzels instead of 75.</summary>
+        public double RingStepSec { get; }
+
+        // ---- Onsets (SL6, §19 "Onset": spectral flux + adaptive median threshold) ----
+        /// <summary>FFT size for the onset detector, samples (§19: 1024 = 21 ms @ 48 kHz). Short enough to place a strum within one
+        /// 512-sample hop; long enough for 47 Hz bins below 4 kHz. Must be a power of two ≥ <see cref="HopSize"/>.</summary>
+        public int OnsetFftSize { get; }
+        /// <summary>Highest bin used in the flux, Hz. 4 kHz (§19): pick/strum energy is mostly below it, and the optional
+        /// metronome click (6–8 kHz) never registers as a strum.</summary>
+        public double OnsetMaxHz { get; }
+        /// <summary>Log compression log(1 + γ·amplitude) of each bin before differencing. γ = 1000 makes the flux respond to
+        /// relative change (a soft pluck on a quiet room counts like a loud strum), and a −60 dBFS bin still sits on the curve's knee.</summary>
+        public double OnsetLogGamma { get; }
+        /// <summary>SuperFlux maximum filter: each bin is compared with the max of the previous spectrum over ±this many bins
+        /// (Böck &amp; Widmer 2013). 1 bin = ±47 Hz: a ringing chord's beating partials stop reading as new energy (synthetic:
+        /// a ringing G's flux drops from ≈ 0.2 to ≤ 0.1) while a new pick attack, broadband, still reads ≈ 2.</summary>
+        public int OnsetMaxFilterBins { get; }
+        /// <summary>The flux compares the newest spectrum with the one this many hops earlier. 2 hops = 21 ms = one full
+        /// non-overlapping 1024 frame: a strum's strings arrive over ~30 ms, and with lag 1 each hop saw only part of the rise
+        /// (synthetic: re-strums on ringing strings read 0.2–0.4 vs a 0.06 background with lag 1).</summary>
+        public int OnsetDiffLagHops { get; }
+        /// <summary>Adaptive threshold = k · median(flux over the last <see cref="OnsetMedianSec"/>) + <see cref="OnsetMinFlux"/>
+        /// (§19: k = 1.5). Steady noise gives a flux with ≈ 10 % spread, so 1.5× its median is several σ above it.</summary>
+        public double OnsetThresholdK { get; }
+        /// <summary>Median window, s (§19: 300 ms ≈ 28 hops). Shorter than one slot at the fastest preset (300 ms at 100 bpm
+        /// eighths), so ringing chords and room noise set the floor, not the previous strum.</summary>
+        public double OnsetMedianSec { get; }
+        /// <summary>Absolute flux floor added to the threshold (mean log-compressed rise per bin). Matters right after silence,
+        /// when the median is 0: a ringing chord's flux stays ≤ 0.2 between strums, an up-strum over 3–4 ringing top strings
+        /// reaches 0.3–0.8, a strum after silence ≈ 2.7 (synthetic, SuperFlux lag 2). 0.15 = 0.30 floor gave up-strum misses
+        /// (strum F1 0.67 at 100 % tempo); 0.1 with lag 1 let the ring itself trigger.</summary>
+        public double OnsetMinFlux { get; }
+        /// <summary>Minimum time between onsets, s (§19: 60 ms). A strum's 6 strings arrive within ~30–50 ms and must count once;
+        /// the fastest pattern (16ths at 100 bpm) is 150 ms apart.</summary>
+        public double OnsetMinGapSec { get; }
+
         public AudioConfig(
             int frameSize = 2048,
             int hopSize = 512,
@@ -77,7 +174,33 @@ namespace UntitledGuitarApp.Core.Audio
             double octaveUpSlack = 0.03,
             double tunerInTuneCents = 5.0,
             double tunerSmoothingSec = 0.12,
-            double tunerHoldSec = 0.25)
+            double tunerHoldSec = 0.25,
+            double pluckAttackSkipSec = 0.040,
+            double pluckAnalysisSec = 0.200,
+            double pluckMinConfidence = 0.8,
+            int pluckMinPitchedFrames = 3,
+            double pluckMatchCents = 45.0,
+            double pluckOctaveSupportRatio = 0.05,
+            int pluckPartials = 4,
+            double pluckRiseDb = 6.0,
+            double pluckAttackRiseDb = 3.0,
+            double pluckMinSalience = 0.05,
+            double pluckSustainDb = 20.0,
+            double ringOutSec = 0.8,
+            int ringPartials = 2,
+            double ringDropDb = 30.0,
+            double ringFloorDb = 6.0,
+            double ringCutDb = 10.0,
+            double ringStepSec = 0.05,
+            int onsetFftSize = 1024,
+            double onsetMaxHz = 4000.0,
+            double onsetLogGamma = 1000.0,
+            int onsetMaxFilterBins = 1,
+            int onsetDiffLagHops = 2,
+            double onsetThresholdK = 1.5,
+            double onsetMedianSec = 0.3,
+            double onsetMinFlux = 0.15,
+            double onsetMinGapSec = 0.06)
         {
             if (frameSize < 256) throw new ArgumentOutOfRangeException(nameof(frameSize));
             if (hopSize < 1 || hopSize > frameSize) throw new ArgumentOutOfRangeException(nameof(hopSize));
@@ -92,12 +215,46 @@ namespace UntitledGuitarApp.Core.Audio
             if (!(tunerInTuneCents > 0)) throw new ArgumentOutOfRangeException(nameof(tunerInTuneCents));
             if (!(tunerSmoothingSec >= 0)) throw new ArgumentOutOfRangeException(nameof(tunerSmoothingSec));
             if (!(tunerHoldSec > 0)) throw new ArgumentOutOfRangeException(nameof(tunerHoldSec));
+            if (!(pluckAttackSkipSec >= 0) || pluckAttackSkipSec > 0.5) throw new ArgumentOutOfRangeException(nameof(pluckAttackSkipSec));
+            if (!(pluckAnalysisSec > 0) || pluckAnalysisSec > 2) throw new ArgumentOutOfRangeException(nameof(pluckAnalysisSec));
+            if (!(pluckMinConfidence >= 0) || pluckMinConfidence > 1) throw new ArgumentOutOfRangeException(nameof(pluckMinConfidence));
+            if (pluckMinPitchedFrames < 1) throw new ArgumentOutOfRangeException(nameof(pluckMinPitchedFrames));
+            if (!(pluckMatchCents > 0) || pluckMatchCents >= 100) throw new ArgumentOutOfRangeException(nameof(pluckMatchCents));
+            if (!(pluckOctaveSupportRatio > 0)) throw new ArgumentOutOfRangeException(nameof(pluckOctaveSupportRatio));
+            if (pluckPartials < 1 || pluckPartials > 8) throw new ArgumentOutOfRangeException(nameof(pluckPartials));
+            if (!(pluckRiseDb >= 0)) throw new ArgumentOutOfRangeException(nameof(pluckRiseDb));
+            if (!(pluckAttackRiseDb >= 0)) throw new ArgumentOutOfRangeException(nameof(pluckAttackRiseDb));
+            if (!(pluckMinSalience > 0) || pluckMinSalience > 1) throw new ArgumentOutOfRangeException(nameof(pluckMinSalience));
+            if (!(pluckSustainDb > 0)) throw new ArgumentOutOfRangeException(nameof(pluckSustainDb));
+            if (!(ringOutSec > 0) || ringOutSec > 5) throw new ArgumentOutOfRangeException(nameof(ringOutSec));
+            if (!(ringDropDb > 0)) throw new ArgumentOutOfRangeException(nameof(ringDropDb));
+            if (ringPartials < 1 || ringPartials > 8) throw new ArgumentOutOfRangeException(nameof(ringPartials));
+            if (!(ringFloorDb >= 0)) throw new ArgumentOutOfRangeException(nameof(ringFloorDb));
+            if (!(ringCutDb >= 0)) throw new ArgumentOutOfRangeException(nameof(ringCutDb));
+            if (!(ringStepSec > 0)) throw new ArgumentOutOfRangeException(nameof(ringStepSec));
+            if (onsetFftSize < 64 || (onsetFftSize & (onsetFftSize - 1)) != 0 || onsetFftSize < hopSize)
+                throw new ArgumentOutOfRangeException(nameof(onsetFftSize), "power of two ≥ hopSize");
+            if (!(onsetMaxHz > 0)) throw new ArgumentOutOfRangeException(nameof(onsetMaxHz));
+            if (!(onsetLogGamma > 0)) throw new ArgumentOutOfRangeException(nameof(onsetLogGamma));
+            if (onsetMaxFilterBins < 0 || onsetMaxFilterBins > 8) throw new ArgumentOutOfRangeException(nameof(onsetMaxFilterBins));
+            if (onsetDiffLagHops < 1 || onsetDiffLagHops > 8) throw new ArgumentOutOfRangeException(nameof(onsetDiffLagHops));
+            if (!(onsetThresholdK >= 1)) throw new ArgumentOutOfRangeException(nameof(onsetThresholdK));
+            if (!(onsetMedianSec > 0) || onsetMedianSec > 5) throw new ArgumentOutOfRangeException(nameof(onsetMedianSec));
+            if (!(onsetMinFlux >= 0)) throw new ArgumentOutOfRangeException(nameof(onsetMinFlux));
+            if (!(onsetMinGapSec >= 0) || onsetMinGapSec > 2) throw new ArgumentOutOfRangeException(nameof(onsetMinGapSec));
 
             FrameSize = frameSize; HopSize = hopSize; MinHz = minHz; MaxHz = maxHz;
             YinThreshold = yinThreshold; MaxAperiodicity = maxAperiodicity; SilenceRmsDbfs = silenceRmsDbfs;
             OctaveCorrection = octaveCorrection; OctaveSupportRatio = octaveSupportRatio; OctaveCheckPartials = octaveCheckPartials;
             OctaveDownDipRatio = octaveDownDipRatio; OctaveUpSlack = octaveUpSlack;
             TunerInTuneCents = tunerInTuneCents; TunerSmoothingSec = tunerSmoothingSec; TunerHoldSec = tunerHoldSec;
+            PluckAttackSkipSec = pluckAttackSkipSec; PluckAnalysisSec = pluckAnalysisSec; PluckMinConfidence = pluckMinConfidence;
+            PluckMinPitchedFrames = pluckMinPitchedFrames; PluckMatchCents = pluckMatchCents;
+            PluckOctaveSupportRatio = pluckOctaveSupportRatio; PluckPartials = pluckPartials; PluckRiseDb = pluckRiseDb;
+            PluckAttackRiseDb = pluckAttackRiseDb; PluckMinSalience = pluckMinSalience; PluckSustainDb = pluckSustainDb;
+            RingOutSec = ringOutSec; RingPartials = ringPartials; RingDropDb = ringDropDb; RingFloorDb = ringFloorDb; RingCutDb = ringCutDb; RingStepSec = ringStepSec;
+            OnsetFftSize = onsetFftSize; OnsetMaxHz = onsetMaxHz; OnsetLogGamma = onsetLogGamma; OnsetMaxFilterBins = onsetMaxFilterBins; OnsetDiffLagHops = onsetDiffLagHops; OnsetThresholdK = onsetThresholdK;
+            OnsetMedianSec = onsetMedianSec; OnsetMinFlux = onsetMinFlux; OnsetMinGapSec = onsetMinGapSec;
         }
 
         public static readonly AudioConfig Default = new AudioConfig();
