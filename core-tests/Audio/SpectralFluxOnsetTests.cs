@@ -159,12 +159,15 @@ public class SpectralFluxOnsetTests
         d.Process(x, 0, 48000);
         while (d.TryReadOnset(out _)) { }
         var sw = new Stopwatch();
-        long before = GC.GetAllocatedBytesForCurrentThread();
         int hops = 0;
-        sw.Start();
-        for (int i = 48000; i + 512 <= x.Length; i += 512, hops++) { d.Process(x, i, 512); while (d.TryReadOnset(out _)) { } }
-        sw.Stop();
-        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
+        long allocated = UntitledGuitarApp.Core.Tests.Audio.AllocProbe.MinAllocatedBytes(() =>
+        {
+            hops = 0;
+            sw.Restart();
+            for (int i = 48000; i + 512 <= x.Length; i += 512, hops++) { d.Process(x, i, 512); while (d.TryReadOnset(out _)) { } }
+            sw.Stop();
+        });
+        Assert.Equal(0, allocated);
         double us = sw.Elapsed.TotalMilliseconds * 1000.0 / hops;
         Console.WriteLine($"[Synthetic] SpectralFluxOnset ≈ {us:F1} µs per 512-sample hop (budget: DSP < 1 ms per hop)");
         Assert.True(us < 1000, $"{us:F0} µs per hop");

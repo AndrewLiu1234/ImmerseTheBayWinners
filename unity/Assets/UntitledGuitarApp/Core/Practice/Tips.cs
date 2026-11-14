@@ -74,6 +74,35 @@ namespace UntitledGuitarApp.Core.Practice
         /// <summary>"Heard {X} — target is {Y}" (strum check, SL3).</summary>
         public static string WrongChord(string heard, string target) => $"Heard {heard} — target is {target}";
 
+        public const string StrumTopFour = "Strum only the top four";
+        public const string StrumAgain = "Strum again, let it ring";
+
+        /// <summary>
+        /// Tip for a strum-check result (SL3), or null when clean. Wrong chord: "Heard {X} — target is {Y}". Extra bass strings:
+        /// "Strum only the top four" when the chord's bass is string 4 (D, Dm; Appendix B2), else "Skip string {s}". One-string
+        /// faults reuse the pluck wording (finger numbers from <paramref name="expected"/>). Nothing heard / ambiguous:
+        /// "Strum again, let it ring".
+        /// </summary>
+        public static string ForStrum(in StrumCheckResult r, ChordShape expected)
+        {
+            if (r.Clean) return null;
+            switch (r.Issue)
+            {
+                case StrumIssue.None: return null;
+                case StrumIssue.WrongChord: return WrongChord(r.BestMatch ?? "?", r.ExpectedChord);
+                case StrumIssue.ExtraString:
+                    if (expected != null && expected.BassString == 4) return StrumTopFour;
+                    return r.IssueString >= 1 && r.IssueString <= Tuning.StringCount ? $"Skip string {r.IssueString}" : StrumTopFour;
+                case StrumIssue.OpenStringInstead:
+                case StrumIssue.WrongFretLow:
+                case StrumIssue.WrongFretHigh:
+                case StrumIssue.Muted:
+                    if (r.IssueString < 1 || r.IssueString > Tuning.StringCount) return StrumAgain;
+                    return ForPluck(r.StringVerdict, r.IssueString, r.IssueExpectedMidi, expected, r.IssueString, r.IssueHeardMidi);
+                default: return StrumAgain;
+            }
+        }
+
         /// <summary>The finger most likely leaning on open string <paramref name="s"/>: the one on the bass-side neighbour
         /// (s + 1), else the treble-side neighbour (s − 1); 0 if neither neighbour is fretted.</summary>
         public static int ArchFinger(int s, ChordShape chord)

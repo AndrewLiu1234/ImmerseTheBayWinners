@@ -63,9 +63,9 @@ ticks only the boxes their half proves; Person 1 sets `done` after the device ch
 **Acceptance (device):** - [ ] a deliberately muted B string on G is flagged in 4 of 5 tries
 **Max time:** 3h.
 
-## SL3 — Strum check (chord level)   [track: CORE+XR] [owner: Person 2 · Person 1] [status: todo] [depends: SL2]
+## SL3 — Strum check (chord level)   [track: CORE+XR] [owner: Person 2 · Person 1] [status: doing] [depends: SL2]
 **User-visible outcome:** a strum gets ✓ or its top chord-level issue within 350 ms.
-**Acceptance (automated):** - [ ] synthetic chord accuracy ≥ 95%, false-clean ≤ 3% · dataset accuracy reported (GuitarSet, GUITAR CHORDS V3), not gated
+**Acceptance (automated):** - [ ] synthetic chord accuracy ≥ 95%, false-clean ≤ 3% ✓ (Person 2: 99.6% / 0.3%, core-tests/Audio/StrumVerifierTests.cs, L1) · dataset accuracy reported (GuitarSet, GUITAR CHORDS V3), not gated (open: harness in StrumRecordedEvalTests; data/ absent)
 **Acceptance (device):** - [ ] 5 chords × 4 strums: at least 18 of 20 judged right
 **Max time:** 3h.
 
