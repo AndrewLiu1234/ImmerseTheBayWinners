@@ -24,8 +24,10 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
+using UntitledGuitarApp.Core.Audio;
 using UntitledGuitarApp.Core.Practice;
 using UntitledGuitarApp.Core.Songs;
+using UntitledGuitarApp.Core.Theory;
 using UntitledGuitarApp.Runtime.Flags;
 using UntitledGuitarApp.Runtime.Logging;
 
@@ -94,6 +96,9 @@ namespace UntitledGuitarApp.Runtime.Practice
         Song _song;
         SongTimeline _timeline;
         PlayAlongSession _session;
+        StrumFeed _feed;                       // real strums (SL3): onset -> strum check -> OnStrum
+        int _feedRate = -1;
+        IReadOnlyList<ChordShape> _confusers;  // the song's distinct chords, built once per run
         int[] _nextDifferent = new int[0];
         string[] _strumSlots;
         int _slotsPerBeat = 1;
@@ -150,6 +155,9 @@ namespace UntitledGuitarApp.Runtime.Practice
 
         /// <summary>Strums this adapter simulated so far.</summary>
         public int SimulatedStrums { get { return _simulatedStrums; } }
+
+        /// <summary>Real (audio-detected) strums routed into Core's session so far.</summary>
+        public int RealStrums { get { return _realStrums; } }
 
         /// <summary>The score (final once Phase is Ended).</summary>
         public PlayAlongResults Results { get { return _phase == PlayAlongPhase.Ended ? _results : BuildResults(); } }
@@ -263,6 +271,9 @@ namespace UntitledGuitarApp.Runtime.Practice
             _nextDifferent = PlayAlongMath.NextDifferent(timeline.Spans);
             _strumSlots = song.Strum != null && song.Strum.Slots != null && song.Strum.Slots.Count > 0 ? song.Strum.Slots.ToArray() : null;
             _slotsPerBeat = _strumSlots != null ? PlayAlongMath.SlotsPerBeat(song.Strum.Subdivision, song.BeatsPerBar) : 1;
+            _confusers = TimelineConfusers(timeline);
+            _feed = null;
+            _feedRate = -1;
             _now = 0;
             _countInSec = song.BeatsPerBar * _spb;
             _phase = PlayAlongPhase.CountIn;
@@ -276,6 +287,9 @@ namespace UntitledGuitarApp.Runtime.Practice
             _song = null;
             _timeline = null;
             _session = null;
+            _feed = null;
+            _feedRate = -1;
+            _confusers = null;
             _nextDifferent = new int[0];
             _strumSlots = null;
             _slotsPerBeat = 1;
@@ -328,6 +342,75 @@ namespace UntitledGuitarApp.Runtime.Practice
             Observe();
             if (_target.Finished) Finish();
             UpdateFrame();
+        }
+
+        /// <summary>
+        /// Real strum audio (the detector's entry, SL3): mic or WAV samples on the adapter's clock. Every onset is judged by
+        /// Core's StrumFeed against the chord sounding now and routed with StrumRouting into the session's OnStrum. Onsets
+        /// during the count-in are dropped (nothing to judge yet), so a count-in strum can never start the song early. The
+        /// feed is built lazily at the first call (origin = the adapter's clock now, so feed times line up with <see cref="Now"/>);
+        /// <paramref name="sampleRate"/> changing rebuilds it. Main thread; allocates nothing per frame.
+        /// </summary>
+        public void FeedAudio(float[] samples, int offset, int count, int sampleRate)
+        {
+            if (_phase != PlayAlongPhase.CountIn && _phase != PlayAlongPhase.Playing) return;
+            if (_session == null || samples == null || sampleRate < 8000) return;
+            if (_feed == null || sampleRate != _feedRate)
+            {
+                _feed = new StrumFeed(AudioConfig.Default, sampleRate, _now);
+                _feedRate = sampleRate;
+            }
+            ChordShape expected = null;
+            if (_phase == PlayAlongPhase.Playing && _target.CurrentIndex >= 0 && _target.CurrentIndex < _timeline.Spans.Count)
+                ChordLibrary.TryGet(_timeline.Spans[_target.CurrentIndex].Chord, out expected);
+            _feed.Process(samples, offset, count, expected, _confusers);
+            StrumEvent e;
+            while (_feed.TryRead(out e))
+            {
+                if (_phase != PlayAlongPhase.Playing || _session == null) continue;   // count-in strums never reach the session
+                ChordTarget before = _target;
+                _target = StrumRouting.Feed(_session, e);
+                _realStrums++;
+                IReadOnlyList<ChordSpan> spans = _timeline.Spans;
+                if (before.CurrentIndex >= 0 && !string.IsNullOrEmpty(e.HeardChord))
+                {
+                    if (before.CurrentIndex < spans.Count &&
+                        string.Equals(spans[before.CurrentIndex].Chord, e.HeardChord, StringComparison.Ordinal))
+                        _confirmedSpan = before.CurrentIndex;
+                    else if (before.CurrentIndex - 1 >= 0 && before.CurrentIndex - 1 < spans.Count &&
+                             string.Equals(spans[before.CurrentIndex - 1].Chord, e.HeardChord, StringComparison.Ordinal))
+                        _confirmedSpan = before.CurrentIndex - 1;
+                }
+                UGALog.Event("play_strum_real", "chord", e.HeardChord, "span", before.CurrentIndex, "held", before.Holding);
+                Observe();
+                if (_target.Finished) Finish();
+            }
+            UpdateFrame();
+        }
+
+        /// <summary>Forgets the strum feed (call when the mic restarts or its epoch changes: the stream has a gap). It rebuilds lazily in <see cref="FeedAudio"/>.</summary>
+        public void ResetAudio()
+        {
+            _feed = null;
+            _feedRate = -1;
+        }
+
+        /// <summary>The song's distinct chords as Core shapes (the strum check's confusers). Allocates once per song.</summary>
+        static IReadOnlyList<ChordShape> TimelineConfusers(SongTimeline timeline)
+        {
+            var list = new List<ChordShape>();
+            if (timeline == null) return list;
+            for (int i = 0; i < timeline.Spans.Count; i++)
+            {
+                string name = timeline.Spans[i].Chord;
+                ChordShape shape;
+                if (string.IsNullOrEmpty(name) || !ChordLibrary.TryGet(name, out shape)) continue;
+                bool known = false;
+                for (int k = 0; k < list.Count; k++)
+                    if (string.Equals(list[k].Name, shape.Name, StringComparison.Ordinal)) { known = true; break; }
+                if (!known) list.Add(shape);
+            }
+            return list;
         }
 
         // ------------------------------------------------------------------ internals

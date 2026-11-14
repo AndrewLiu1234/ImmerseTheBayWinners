@@ -15,6 +15,7 @@ using System.Globalization;
 using System.IO;
 using UnityEngine;
 using UntitledGuitarApp.Core.Songs;
+using UntitledGuitarApp.Runtime.Audio;
 using UntitledGuitarApp.Runtime.Flags;
 using UntitledGuitarApp.Runtime.GhostHand;
 using UntitledGuitarApp.Runtime.Logging;
@@ -53,6 +54,9 @@ namespace UntitledGuitarApp.Runtime
         bool _pendingAlign;
         bool _resultsDimmed;
         bool _scriptedChecks;
+        LearnAudioDriver _learnDriver;
+        readonly float[] _audioChunk = new float[LearnAudioDriver.ChunkSamples];
+        int _playAudioEpoch = -1;
         Hud.HudText _checksLabel;
 
         /// <summary>The disclosure shown while learn/play verdicts are scripted and the replay badge is not showing.</summary>
@@ -75,6 +79,8 @@ namespace UntitledGuitarApp.Runtime
         public LearnPresenter Learn { get; private set; }
         public LearnMicTuner LearnTuner { get; private set; }
         public DevLearnScript LearnScript { get; private set; }
+        /// <summary>The real-audio learn verdict driver (Core's pluck/strum checks), or null when learn mode could not compose.</summary>
+        public LearnAudioDriver LearnDriver { get { return _learnDriver; } }
 
         /// <summary>One line for the Mac-screen spectator: mode, item, phase and the operator's keys. Rebuilt only on change.</summary>
         public string StatusText { get { return _statusText; } }
@@ -129,6 +135,7 @@ namespace UntitledGuitarApp.Runtime
             LearnView.SetNeck(neck.Socket, nut, layout.fretXMm[Hud.Learn.LearnHudLayout.CardFret] * NeckMath.MetresPerMm);
             Learn = LearnPresenter.Create(boot.transform, LearnView, neck, boot.PosedFrettingHand, boot.FrettingHand);
             LearnTuner = LearnMicTuner.Create(boot.transform, boot.Mic, Learn);
+            _learnDriver = LearnAudioDriver.Create(boot.transform, boot.Mic, Learn);
             LearnScript = DevLearnScript.Create(boot.transform, Learn);
             LearnScript.LiveTuner = LearnTuner;
         }
@@ -172,6 +179,7 @@ namespace UntitledGuitarApp.Runtime
         {
             Hud.SimulatedBadge badge = _boot.Badge;
             if (badge == null) return;
+            _scriptedChecks = ScriptedChecksNow();   // per frame: the audio path can come and go mid-run
             bool show = ShowScriptedChecks(_scriptedChecks, badge.IsShowing);
             if (_checksLabel == null)
             {
@@ -188,6 +196,21 @@ namespace UntitledGuitarApp.Runtime
                                               distance > 0.01f ? distance : 1f);
             }
             if (_checksLabel.Visible != show) _checksLabel.Visible = show;
+        }
+
+        /// <summary>Which modes have scripted (invented) verdicts right now: learn when the dev run is playing (or the real
+        /// driver cannot hear the mic), play when the adapter simulates its strums. Idle never does. Pure except for state reads.</summary>
+        bool ScriptedChecksNow()
+        {
+            if (State == null) return false;
+            if (State.Mode == DemoMode.Learn)
+            {
+                bool script = LearnScript != null && LearnScript.Playing;
+                if (!script && _learnDriver != null && _learnDriver.Active && !_learnDriver.IsLive) return true;   // real checks are off
+                return script;
+            }
+            if (State.Mode == DemoMode.Play) return PlayAlong == null || PlayAlong.SimulateStrums;
+            return false;
         }
 
         void Handle(DemoCommand command)
@@ -207,7 +230,11 @@ namespace UntitledGuitarApp.Runtime
             UGALog.Event("demo_key", "command", command.ToString(), "change", change.ToString(), "why", State.LastRefusal ?? "");
             if (change == DemoChange.Skip)
             {
-                if (State.Mode == DemoMode.Learn && LearnScript != null) LearnScript.Skip();
+                if (State.Mode == DemoMode.Learn)
+                {
+                    if (_learnDriver != null && _learnDriver.Active) _learnDriver.Skip();
+                    else if (LearnScript != null) LearnScript.Skip();
+                }
                 else if (State.Mode == DemoMode.Play && PlayAlong != null) PlayAlong.Skip();
             }
             else if (change == DemoChange.Recenter)
@@ -222,6 +249,7 @@ namespace UntitledGuitarApp.Runtime
             FlagSet flags = FlagStore.Current;
             // Leave every mode first, then enter the one State asks for.
             if (LearnScript != null && LearnScript.Playing) LearnScript.Stop();
+            if (_learnDriver != null && _learnDriver.Active) _learnDriver.Stop();
             if (PlayAlong != null && PlayAlong.Phase != PlayAlongPhase.Idle) PlayAlong.Stop();
             if (Play != null)
             {
@@ -235,11 +263,9 @@ namespace UntitledGuitarApp.Runtime
             if (_boot.Meter != null && _boot.Meter.gameObject.activeSelf != (State.Mode == DemoMode.Idle))
                 _boot.Meter.gameObject.SetActive(State.Mode == DemoMode.Idle);
             if (_resultsDimmed) DimForResults(false);
-            // Honesty: learn's pluck/strum verdicts and play's strums are scripted until Core's checks land (SL2/SL3), so a
-            // "SIMULATED CHECKS" label shows even on a live mic. It is a separate label: SimulatedBadge stays a function of the
-            // audioSource flag alone (its HudTests guard forbids any public way to change it), and its "SIMULATED INPUT" wins.
-            _scriptedChecks = State.Mode == DemoMode.Learn ||
-                              (State.Mode == DemoMode.Play && PlayAlong != null && PlayAlong.SimulateStrums);
+            // Honesty: UpdateChecksLabel recomputes _scriptedChecks every frame (learn falls back to the scripted run only
+            // without a usable mic; play simulates only without audio). It is a separate label: SimulatedBadge stays a
+            // function of the audioSource flag alone, and its "SIMULATED INPUT" wins.
 
             if (State.Mode == DemoMode.Learn) EnterLearn(flags);
             else if (State.Mode == DemoMode.Play) EnterPlay(flags);
@@ -259,13 +285,27 @@ namespace UntitledGuitarApp.Runtime
             SetChordLabel(false, null);
             string name = LearnChords.NameAt(flags, State.ChordIndex);
             if (Hands != null) Hands.Idle(name, 0f);   // pose the chord and rest the strumming hand once; then learn owns the hand
-            if (LearnScript == null)
+            if (Learn == null)
             {
                 UGALog.Warn("demo_learn", "learn mode is not available (no neck layout)");
                 return;
             }
             LearnChord chord = LearnChords.Get(name);
-            if (chord == null || !LearnScript.Play(chord)) UGALog.Warn("demo_learn", "could not start learn mode for " + name);
+            if (chord == null)
+            {
+                UGALog.Warn("demo_learn", "could not start learn mode for " + name);
+                return;
+            }
+            // Real verdicts (Core's pluck/strum checks on the mic) when audio is usable; the scripted dev run otherwise (no
+            // mic or WAV replay), with the SIMULATED CHECKS label. UpdateChecksLabel follows whichever is running.
+            if (_learnDriver != null && _learnDriver.IsLive)
+            {
+                if (!_learnDriver.Play(chord)) UGALog.Warn("demo_learn", "the real learn driver could not start for " + name);
+            }
+            else if (LearnScript != null && !LearnScript.Play(chord))
+            {
+                UGALog.Warn("demo_learn", "could not start learn mode for " + name);
+            }
         }
 
         void EnterPlay(FlagSet flags)
@@ -290,6 +330,9 @@ namespace UntitledGuitarApp.Runtime
                 UGALog.Warn("demo_play", id + ": Core's session refused the song");
                 return;
             }
+            // Real strums from the mic (or the WAV) when audio is usable; otherwise the adapter simulates them, labelled.
+            PlayAlong.SimulateStrums = !PlayAudioIsLive();
+            _playAudioEpoch = -1;
             Play.SetSong(song);
         }
 
@@ -297,6 +340,7 @@ namespace UntitledGuitarApp.Runtime
         {
             if (PlayAlong == null || Play == null) return;
             PlayAlong.Tick(dt);
+            TickPlayAudio();
             PlayAlong.FillFrame(ref _practice);
             Play.PresentPlayAlong(PlayAlong, dt);
             if (_practice.Chord != null) _lastPlayChord = _practice.Chord;
@@ -310,6 +354,38 @@ namespace UntitledGuitarApp.Runtime
             if (Hands == null) return;
             if (_practice.Active) Hands.Apply(_practice, dt);
             else Hands.Idle(_lastPlayChord, dt);
+        }
+
+        /// <summary>True while real audio (mic or WAV replay) can drive the strum checks.</summary>
+        bool PlayAudioIsLive()
+        {
+            MicCapture mic = _boot != null ? _boot.Mic : null;
+            return mic != null && mic.IsCapturing && LearnAudioDriver.SupportedRate(mic.SampleRate);
+        }
+
+        /// <summary>
+        /// Feeds the mic (or WAV) into CorePlayAlong's strum feed, which routes judged strums into Core's session. Without
+        /// audio the adapter simulates its strums (honest fallback, labelled); when audio returns, real strums take over.
+        /// </summary>
+        void TickPlayAudio()
+        {
+            if (PlayAlong == null || _boot == null) return;
+            if (PlayAlong.Phase != PlayAlongPhase.CountIn && PlayAlong.Phase != PlayAlongPhase.Playing) return;
+            if (!PlayAudioIsLive())
+            {
+                PlayAlong.SimulateStrums = true;
+                return;
+            }
+            MicCapture mic = _boot.Mic;
+            if (mic.Epoch != _playAudioEpoch)
+            {
+                _playAudioEpoch = mic.Epoch;   // the stream has a gap (or just started): the feed rebuilds lazily
+                PlayAlong.ResetAudio();
+            }
+            int n;
+            while ((n = mic.Read(_audioChunk, 0, _audioChunk.Length)) > 0)
+                PlayAlong.FeedAudio(_audioChunk, 0, n, mic.SampleRate);
+            PlayAlong.SimulateStrums = false;
         }
 
         void DimForResults(bool on)

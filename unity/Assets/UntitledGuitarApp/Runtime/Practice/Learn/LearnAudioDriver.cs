@@ -21,7 +21,10 @@ using UntitledGuitarApp.Core.Theory;
 using UntitledGuitarApp.Runtime.Audio;
 using UntitledGuitarApp.Runtime.Hud.Learn;
 using UntitledGuitarApp.Runtime.Logging;
+using UntitledGuitarApp.Runtime.Neck;
 using CoreStage = UntitledGuitarApp.Core.Practice.LearnStage;
+using FingertipDot = UntitledGuitarApp.Runtime.Neck.FingertipDot;
+using NeckMark = UntitledGuitarApp.Runtime.Neck.StringMark;
 
 namespace UntitledGuitarApp.Runtime.Practice.Learn
 {
@@ -40,6 +43,8 @@ namespace UntitledGuitarApp.Runtime.Practice.Learn
         StrumFeed _strum;
         IReadOnlyList<ChordShape> _confusers;
         readonly float[] _chunk = new float[ChunkSamples];
+        readonly FingertipDot[] _dots = new FingertipDot[FloatingNeck.MaxDots];
+        readonly NeckMark[] _neckMarks = new NeckMark[6];
         bool _active;
         int _rate = -1, _epoch = -1;
         bool _drained;
@@ -88,12 +93,19 @@ namespace UntitledGuitarApp.Runtime.Practice.Learn
             return driver;
         }
 
-        /// <summary>Starts the real run for <paramref name="chord"/> (Core's shape). False for an unknown chord or no presenter.</summary>
+        /// <summary>
+        /// Starts the real run for <paramref name="chord"/>: the presenter begins (neck dots, flow) and Core's session is
+        /// created. Tuning is REAL and auto-advances (the presenter's default; the dev script's override is off here).
+        /// False for an unknown chord or no presenter.
+        /// </summary>
         public bool Play(LearnChord chord)
         {
             if (_presenter == null || chord == null) return false;
             ChordShape shape;
             if (!ChordLibrary.TryGet(chord.Name, out shape)) return false;
+            int dotCount = LearnChords.ToNeck(chord, _dots, _neckMarks);   // Core's dots on the default neck Bootstrap builds
+            _presenter.AutoAdvanceTuning = true;
+            if (!_presenter.Begin(chord, dotCount >= 0 ? _dots : null, dotCount)) return false;
             _shape = shape;
             _session = new LearnChordSession(shape, Time.realtimeSinceStartupAsDouble);
             _confusers = StrumVerifier.DefaultConfusers(shape);
