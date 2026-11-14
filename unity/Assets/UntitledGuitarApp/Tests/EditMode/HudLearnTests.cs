@@ -723,33 +723,59 @@ namespace UntitledGuitarApp.Tests.EditMode
         [Test]
         public void StringMarks_MarkShapesHaveDifferentOutlines()
         {
-            // Not just different enum values: the drawings themselves differ in width, height or inked area by more than 10%.
+            // Not just different enum values: the drawings themselves differ. Each one is sampled on a 16 x 16 grid over its
+            // box; for every pair, at least 4 in 10 of the cells inked by either are inked by only one of them.
+            const int Grid = 16;
             var g = new StrokeGeometry();
-            var w = new float[Marks.Length];
-            var h = new float[Marks.Length];
-            var area = new float[Marks.Length];
+            var ink = new bool[Marks.Length][];
             for (int i = 0; i < Marks.Length; i++)
             {
                 LearnGlyphs.Build(StringMarkStyle.Glyph(Marks[i]), g);
-                Vector2 min, max;
-                Assert.IsTrue(g.TryGetBounds(out min, out max));
-                w[i] = max.x - min.x;
-                h[i] = max.y - min.y;
-                area[i] = g.TriangleArea();
+                ink[i] = Rasterize(g, Grid);
+                int cells = 0;
+                foreach (bool b in ink[i]) if (b) cells++;
+                Assert.GreaterOrEqual(cells, 20, Marks[i] + " covers too little of its box to be seen");
             }
             for (int i = 0; i < Marks.Length; i++)
             {
                 for (int j = i + 1; j < Marks.Length; j++)
                 {
-                    bool differs = Differs(w[i], w[j]) || Differs(h[i], h[j]) || Differs(area[i], area[j]);
-                    Assert.IsTrue(differs, Marks[i] + " and " + Marks[j] + " look alike");
+                    int either = 0, onlyOne = 0;
+                    for (int c = 0; c < Grid * Grid; c++)
+                    {
+                        if (ink[i][c] || ink[j][c]) either++;
+                        if (ink[i][c] != ink[j][c]) onlyOne++;
+                    }
+                    Assert.GreaterOrEqual((float)onlyOne, 0.4f * either, Marks[i] + " and " + Marks[j] + " look alike (" + onlyOne + " of " + either + " cells differ)");
                 }
             }
         }
 
-        static bool Differs(float a, float b)
+        // Which cells of an n x n grid over the box [-0.5, 0.5]^2 have their centre inside one of the triangles.
+        static bool[] Rasterize(StrokeGeometry g, int n)
         {
-            return Mathf.Abs(a - b) > 0.1f * Mathf.Max(a, b);
+            var cells = new bool[n * n];
+            for (int row = 0; row < n; row++)
+            {
+                for (int col = 0; col < n; col++)
+                {
+                    float x = -0.5f + (col + 0.5f) / n;
+                    float y = -0.5f + (row + 0.5f) / n;
+                    for (int t = 0; t + 2 < g.Triangles.Count && !cells[row * n + col]; t += 3)
+                    {
+                        Vector3 a = g.Vertices[g.Triangles[t]];
+                        Vector3 b = g.Vertices[g.Triangles[t + 1]];
+                        Vector3 c = g.Vertices[g.Triangles[t + 2]];
+                        float d1 = (x - b.x) * (a.y - b.y) - (a.x - b.x) * (y - b.y);
+                        float d2 = (x - c.x) * (b.y - c.y) - (b.x - c.x) * (y - c.y);
+                        float d3 = (x - a.x) * (c.y - a.y) - (c.x - a.x) * (y - a.y);
+                        bool negative = d1 < 0f || d2 < 0f || d3 < 0f;
+                        bool positive = d1 > 0f || d2 > 0f || d3 > 0f;
+                        if (!(negative && positive)) cells[row * n + col] = true;
+                    }
+                }
+            }
+            return cells;
         }
 
         [Test]
@@ -1229,11 +1255,35 @@ namespace UntitledGuitarApp.Tests.EditMode
             Assert.LessOrEqual(Mathf.Abs(LearnHudLayout.TunerElevationDegrees) + TunerNeedle.BlockHalfHeightDegrees, halfHeight);
             Assert.LessOrEqual(Mathf.Abs(LearnHudLayout.TunerAzimuthDegrees) + TunerNeedle.BlockHalfWidthDegrees, halfWidth);
 
-            // The widest status line with its icon fits the declared half width.
-            float status = TunerNeedle.StatusIconDegrees + 0.5f + LearnText.WidthInCaps(TunerNeedle.TooHighText) * TunerNeedle.StatusDegrees;
-            Assert.LessOrEqual(0.5f * status, TunerNeedle.BlockHalfWidthDegrees);
-            // The dial itself: radius 8, ticks to 1.13 radii, sits above the pivot.
+            // Every instruction, with its icon, fits the declared half width; so does the dial (its +-50 cent ticks reach
+            // 0.7414 radii to each side).
+            TunerState[] states = { TunerState.Listening, TunerState.TooLow, TunerState.TooHigh, TunerState.InTune };
+            foreach (TunerState state in states)
+                Assert.LessOrEqual(0.5f * TunerNeedle.StatusWidthDegrees(state, 6), TunerNeedle.BlockHalfWidthDegrees, state.ToString());
             Assert.AreEqual(8f, TunerNeedle.DialRadiusDegrees);
+            Assert.LessOrEqual(0.7414f * TunerNeedle.DialRadiusDegrees, TunerNeedle.BlockHalfWidthDegrees);
+        }
+
+        [Test]
+        public void Tuner_InstructionsUseWordsABeginnerKnows_OnTwoShortLines()
+        {
+            Assert.AreEqual("Pluck string 6", TunerNeedle.StatusText(TunerState.Listening, 6));
+            Assert.AreEqual("Too low: tighten", TunerNeedle.StatusText(TunerState.TooLow, 6));
+            Assert.AreEqual("Too high: loosen", TunerNeedle.StatusText(TunerState.TooHigh, 6));
+            Assert.AreEqual("In tune!", TunerNeedle.StatusText(TunerState.InTune, 6));
+            Assert.AreEqual(string.Empty, TunerNeedle.StatusText(TunerState.Idle, 6));
+
+            string a, b;
+            LearnText.WrapTwoLines(TunerNeedle.TooLowText, out a, out b);
+            Assert.AreEqual("Too low", a);       // what is wrong...
+            Assert.AreEqual("tighten", b);       // ...and what to do about it
+            LearnText.WrapTwoLines(TunerNeedle.TooHighText, out a, out b);
+            Assert.AreEqual("Too high", a);
+            Assert.AreEqual("loosen", b);
+
+            // "Too low" / "tighten" with its arrow: 2.0 + 0.5 + the wider line (5.28 cap heights at 1.6 degrees).
+            Assert.AreEqual(10.94, TunerNeedle.StatusWidthDegrees(TunerState.TooLow, 6), 0.05);
+            Assert.AreEqual(14.65, TunerNeedle.StatusWidthDegrees(TunerState.Listening, 6), 0.05);
         }
 
         [Test]

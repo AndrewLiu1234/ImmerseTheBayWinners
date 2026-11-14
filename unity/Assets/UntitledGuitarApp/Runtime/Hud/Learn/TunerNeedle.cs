@@ -14,8 +14,9 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
     /// "in tune". "In tune" needs the pointer inside +-5 cents for 0.3 s and is kept until it leaves +-8 cents. The words
     /// change at most 3 times a second. It only displays: the pitch comes from Core through <see cref="SetReading"/>.
     ///
-    /// With the debugOverlay flag a line shows the cents; largeText enlarges everything. The object's origin is the
-    /// centre of the whole block (about 14 degrees high, 11 wide). Faces +Z: parent it to the head (StereoRig's Head)
+    /// With the debugOverlay flag a line shows the cents; largeText enlarges everything. The instruction is set on two
+    /// short lines ("Too low" / "tighten"), so the whole block stays as narrow as the dial: about 17 degrees high and
+    /// 12 wide, centred on the object's origin. Faces +Z: parent it to the head (StereoRig's Head)
     /// with identity rotation, at LearnHudLayout.TunerHeadLocal(). Main thread only.
     /// </summary>
     [DisallowMultipleComponent]
@@ -32,23 +33,26 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
         public const float StatusIconDegrees = 2.0f;
         public const float DebugDegrees = HudText.MinTextDegrees;
 
-        /// <summary>Half the height of the whole tuner block, degrees (dial top to the status line; the debug line adds 2.4 below).</summary>
-        public const float BlockHalfHeightDegrees = 6.9f;
+        /// <summary>Half the height of the whole tuner block, degrees (dial top to the second status line; the debug line adds 2.6 below).</summary>
+        public const float BlockHalfHeightDegrees = 8.4f;
 
-        /// <summary>Half the width of the whole tuner block, degrees (the status line is the widest part).</summary>
-        public const float BlockHalfWidthDegrees = 10f;
+        /// <summary>Half the width of the whole tuner block, degrees ("Pluck string 6" is the widest part).</summary>
+        public const float BlockHalfWidthDegrees = 7.5f;
+
+        /// <summary>Gap between the status icon and the words, degrees.</summary>
+        public const float StatusGapDegrees = 0.5f;
 
         public const string TooLowText = "Too low: tighten";
         public const string TooHighText = "Too high: loosen";
         public const string InTuneText = "In tune!";
 
         // Vertical positions, degrees, measured from the dial's pivot (the block is then centred on the object's origin).
-        const float PivotY = -2.25f;
+        const float PivotY = -0.8f;
         const float NoteY = 2.3f;
         const float StringY = -0.9f;
-        const float StatusY = -3.6f;
-        const float DebugY = -6.0f;
-        const float StatusGapDegrees = 0.5f;
+        const float StatusY = -4.8f;        // centre of the status block (one line, or two)
+        const float DebugY = -9.0f;
+        const float StatusLineStepInCaps = 1.8f;
 
         const float ZoneRestOpacity = 0.55f;
         const float StaleNeedleOpacity = 0.35f;
@@ -62,6 +66,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
         LearnLabel _note;
         LearnLabel _string;
         LearnLabel _status;
+        LearnLabel _status2;
         LearnLabel _debug;
 
         TunerModel _model;
@@ -75,7 +80,8 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
         TunerState _pendingState = TunerState.Idle;
         TunerState _shownState = TunerState.Idle;
         int _shownString;
-        string _statusText = string.Empty;
+        string _status1 = string.Empty;
+        string _status2Text = string.Empty;
         bool _statusHasIcon;
 
         float _needleDegreesShown = float.NaN;
@@ -123,6 +129,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
             _note = LearnLabel.Create(transform, "Note", TextAnchor.MiddleCenter, LearnPalette.Text);
             _string = LearnLabel.Create(transform, "String", TextAnchor.MiddleCenter, LearnPalette.Info);
             _status = LearnLabel.Create(transform, "Status", TextAnchor.MiddleLeft, LearnPalette.Info);
+            _status2 = LearnLabel.Create(transform, "Status2", TextAnchor.MiddleLeft, LearnPalette.Info);
             _statusIcon = HudShape.Create(transform, "StatusIcon", LearnGlyph.ArrowUp);
             _statusIcon.Color = LearnPalette.Caution;
             _debug = LearnLabel.Create(transform, "Debug", TextAnchor.MiddleCenter, LearnPalette.Info);
@@ -141,6 +148,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
             SizeText(_note, NoteDegrees);
             SizeText(_string, StringDegrees);
             SizeText(_status, StatusDegrees);
+            SizeText(_status2, StatusDegrees);
             SizeText(_debug, DebugDegrees);
             _statusIcon.SetSize(Meters(StatusIconDegrees));
 
@@ -260,6 +268,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
         void ApplyState(TunerState state)
         {
             _shownState = state;
+            string words = StatusText(state, _wantString);
             LearnGlyph icon = LearnGlyph.Check;
             Color textColor = LearnPalette.Text;
             Color iconColor = LearnPalette.Caution;
@@ -269,29 +278,28 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
             switch (state)
             {
                 case TunerState.TooLow:
-                    _statusText = TooLowText;
                     icon = LearnGlyph.ArrowUp;       // the pitch has to go up
                     break;
                 case TunerState.TooHigh:
-                    _statusText = TooHighText;
                     icon = LearnGlyph.ArrowDown;
                     break;
                 case TunerState.InTune:
-                    _statusText = InTuneText;
                     icon = LearnGlyph.Check;
                     textColor = LearnPalette.Good;
                     iconColor = LearnPalette.Good;
                     inTune = true;
                     break;
                 default:
-                    _statusText = LearnText.PluckPrompt(_wantString);
                     textColor = LearnPalette.Info;
                     _statusHasIcon = false;
                     break;
             }
 
-            _status.SetText(_statusText);
+            LearnText.WrapTwoLines(words, out _status1, out _status2Text);
+            _status.SetText(_status1);
             _status.Text.Color = textColor;
+            _status2.SetText(_status2Text);
+            _status2.Text.Color = textColor;
             if (_statusHasIcon)
             {
                 _statusIcon.Glyph = icon;
@@ -309,11 +317,38 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
             float cap = _status.Text.CapHeightMeters;
             float icon = _statusHasIcon ? Meters(StatusIconDegrees) : 0f;
             float gap = _statusHasIcon ? Meters(StatusGapDegrees) : 0f;
-            float text = LearnText.WidthInCaps(_statusText) * cap;
+            float text = TipLine.BlockWidthInCaps(_status1, _status2Text) * cap;
             float left = -0.5f * (icon + gap + text);
             float y = Meters(PivotY + StatusY);
+            float half = _status2Text.Length > 0 ? 0.5f * StatusLineStepInCaps * cap : 0f;
             _statusIcon.transform.localPosition = new Vector3(left + 0.5f * icon, y, 0f);
-            _status.Transform.localPosition = new Vector3(left + icon + gap, y, 0f);
+            _status.Transform.localPosition = new Vector3(left + icon + gap, y + half, 0f);
+            _status2.Transform.localPosition = new Vector3(left + icon + gap, y - half, 0f);
+        }
+
+        /// <summary>The instruction for a state: "Pluck string 6", "Too low: tighten", "Too high: loosen" or "In tune!" (empty when idle). Pure.</summary>
+        public static string StatusText(TunerState state, int stringNumber)
+        {
+            switch (state)
+            {
+                case TunerState.Listening: return LearnText.PluckPrompt(stringNumber);
+                case TunerState.TooLow: return TooLowText;
+                case TunerState.TooHigh: return TooHighText;
+                case TunerState.InTune: return InTuneText;
+                default: return string.Empty;
+            }
+        }
+
+        /// <summary>
+        /// Width in degrees of the status block for a state: the icon and gap (when the state has an icon) plus the wider
+        /// of its one or two lines, before the largeText multiplier. Pure; used to check that the block stays narrow.
+        /// </summary>
+        public static float StatusWidthDegrees(TunerState state, int stringNumber)
+        {
+            string a, b;
+            LearnText.WrapTwoLines(StatusText(state, stringNumber), out a, out b);
+            bool hasIcon = state == TunerState.TooLow || state == TunerState.TooHigh || state == TunerState.InTune;
+            return (hasIcon ? StatusIconDegrees + StatusGapDegrees : 0f) + TipLine.BlockWidthInCaps(a, b) * StatusDegrees;
         }
 
         void ApplyOpacity()
@@ -330,6 +365,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
             _note.Opacity = o;
             _string.Opacity = o;
             _status.Opacity = o;
+            _status2.Opacity = _status2Text.Length > 0 ? o : 0f;
             _statusIcon.Opacity = o;
             _statusIcon.Visible = on && _statusHasIcon;
             _debug.Opacity = _debugOn ? o : 0f;
