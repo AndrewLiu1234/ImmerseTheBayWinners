@@ -28,6 +28,23 @@ STATUS_EVERY_S = 5.0
 NO_DATA_RETRY_S = 2.0
 EXIT_OK, EXIT_NO_HIDAPI, EXIT_NO_DEVICE, EXIT_OPEN_FAILED, EXIT_NO_DATA, EXIT_LOST = 0, 2, 3, 4, 5, 6
 
+# How a command is written (imu-protocol.md §3): ar-drivers-rs's zero-padded 64-byte frame, Monado's and
+# xrealAirLinuxDriver's exact frame, and both behind ar-drivers-rs's Windows-style leading 0x00 (on macOS
+# hidapi strips a leading 0x00 and passes report id 0; hidapi.md). Retries cycle through all four.
+CMD_FORMS = (("64", 64, False), ("exact", 0, False), ("0x00+64", 64, True), ("0x00+exact", 0, True))
+
+
+def command_bytes(make, form):
+    """make: xi.start_imu_command or xi.stop_imu_command; form: an entry of CMD_FORMS."""
+    _, pad, report_id_zero = form
+    frame = make(pad)
+    return b"\x00" + frame if report_id_zero else frame
+
+
+def forms_from(first):
+    i = [f[0] for f in CMD_FORMS].index(first)
+    return CMD_FORMS[i:] + CMD_FORMS[:i]
+
 
 def import_hid():
     """Import the hidapi package (module name `hid`) or exit with a clear message."""
@@ -162,8 +179,22 @@ def run_device(args):
     pipeline = xi.ImuPipeline(kp=args.kp, still_seconds=args.still_seconds,
                               bias_tracking=not args.no_bias_tracking, dt_source=args.dt_source)
     monitor = xi.DriftMonitor()
-    pad_options = [xi.COMMAND_PAD, 0] if args.cmd_len == "64" else [0, xi.COMMAND_PAD]
+    forms = forms_from(args.cmd_len)
+    form = forms[0]
     code = EXIT_OK
+
+    def send_start(attempt):
+        """Write START_IMU_DATA in forms[attempt]; on a write error try the next form at once."""
+        while attempt < len(forms):
+            f = forms[attempt]
+            n = write_command(dev, command_bytes(xi.start_imu_command, f))
+            if n >= 0:
+                print("Sent START_IMU_DATA (0x19, 0x01) as '%s': %d bytes." % (f[0], n))
+                return attempt, f
+            print("Writing START_IMU_DATA as '%s' failed (%s)." % (f[0], dev.error()))
+            attempt += 1
+        return attempt, forms[-1]
+
     try:
         # Drop anything already queued (Monado sensor_clear_queue does the same), then start the stream.
         for _ in range(64):
@@ -171,16 +202,12 @@ def run_device(args):
                 break
         t0 = time.monotonic()
         status = Status(t0)
-        attempt = 0
-        n = write_command(dev, xi.start_imu_command(pad_options[0]))
-        if n < 0:
-            print("Writing the start command failed (%s); retrying with the other length." % dev.error())
-            attempt = 1
-            n = write_command(dev, xi.start_imu_command(pad_options[1]))
-        print("Sent START_IMU_DATA (0x19, 0x01), %d bytes. Hold the glasses still for ~2 s..." % n)
+        attempt, form = send_start(0)
+        print("Hold the glasses still for ~2 s (start-up gyro bias)...")
         last_start = t0
         dumped = 0
         announced = False
+        flowing = False
         responses_shown = 0
         last_watch = 0.0
         while True:
@@ -199,6 +226,9 @@ def run_device(args):
                 imu_before, responses_before = pipeline.imu_packets, pipeline.response_count
                 q = pipeline.feed(data, host_time=now)
                 status.imu += pipeline.imu_packets - imu_before
+                if pipeline.imu_packets and not flowing:
+                    print("IMU packets are arriving (%d-byte reports; start command form '%s')." % (len(data), form[0]))
+                    flowing = True
                 if pipeline.response_count != responses_before and responses_shown < 8:
                     r = pipeline.last_response
                     print("response: msgid=0x%02x len=%d data=%s crc_ok=%s" % (
@@ -222,16 +252,16 @@ def run_device(args):
                         last_watch = now
             if pipeline.imu_packets == 0:
                 if now - t0 >= args.no_data_timeout:
-                    print("\nNo IMU packets in %.0f s. Other reports seen: %s. Responses: %d. Check: the glasses "
-                          "are plugged in, no other app holds them, then try --cmd-len %s and --dump 20."
-                          % (args.no_data_timeout, pipeline.other or "none", pipeline.response_count,
-                             "exact" if args.cmd_len == "64" else "64"), file=sys.stderr)
+                    print("\nNo IMU packets in %.0f s (tried command forms: %s). Other reports seen: %s. "
+                          "Replies: %d. Check that the glasses are plugged in and no other app holds them, "
+                          "then run --list and --dump 20." % (
+                              args.no_data_timeout, ", ".join(f[0] for f in forms[:attempt + 1]),
+                              pipeline.other or "none", pipeline.response_count), file=sys.stderr)
                     code = EXIT_NO_DATA
                     break
-                if now - last_start >= NO_DATA_RETRY_S and attempt < 3:
-                    attempt += 1
-                    n = write_command(dev, xi.start_imu_command(pad_options[attempt % 2]))
-                    print("No IMU data yet: resent START_IMU_DATA (%d bytes)." % n)
+                if now - last_start >= NO_DATA_RETRY_S and attempt + 1 < len(forms):
+                    print("No IMU data yet.")
+                    attempt, form = send_start(attempt + 1)
                     last_start = now
             if status.due(now):
                 print_status(status, now, pipeline, monitor, args)
@@ -241,8 +271,8 @@ def run_device(args):
         print("\nLost the glasses: %s (%s)" % (e, dev.error()), file=sys.stderr)
         code = EXIT_LOST
     finally:
-        try:
-            write_command(dev, xi.stop_imu_command(pad_options[0]))  # xrealAirLinuxDriver stops the stream on close
+        try:  # xrealAirLinuxDriver stops the stream on close; use the form the start command last used
+            write_command(dev, command_bytes(xi.stop_imu_command, form))
         except (IOError, OSError, ValueError):
             pass
         dev.close()
@@ -326,8 +356,9 @@ def parse_args(argv=None):
     ap.add_argument("--still-seconds", type=float, default=1.5, help="still time for the start-up gyro bias")
     ap.add_argument("--kp", type=float, default=0.5, help="Mahony gravity gain, rad/s per unit error (default 0.5)")
     ap.add_argument("--no-bias-tracking", action="store_true", help="disable the run-time gyro offset tracker")
-    ap.add_argument("--cmd-len", choices=["64", "exact"], default="64",
-                    help="command write length: 64 zero-padded bytes (ar-drivers-rs) or exact (Monado)")
+    ap.add_argument("--cmd-len", choices=[f[0] for f in CMD_FORMS], default="64",
+                    help="first command form to write: 64 zero-padded bytes (ar-drivers-rs), exact (Monado), "
+                         "or either behind a 0x00 byte; retries try the others (default 64)")
     ap.add_argument("--dt-source", choices=["device", "host"], default="device",
                     help="integrate with device timestamps (default) or host arrival times")
     ap.add_argument("--no-data-timeout", type=float, default=10.0, help="give up after this many seconds without IMU data")

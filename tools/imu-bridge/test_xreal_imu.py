@@ -5,6 +5,8 @@ Run from the repo root:  python3 -m unittest discover -s tools/imu-bridge -p 'te
 The packet and command bytes below are copied from docs/apis/glasses/imu-protocol.md (§3 and §11);
 DocCopyTest fails if the doc and these copies ever drift apart.
 """
+import contextlib
+import io
 import json
 import math
 import os
@@ -409,6 +411,131 @@ class WireFormatTest(unittest.TestCase):
         a = bridge.parse_args(["--port", "47801", "--list"])
         self.assertEqual((a.port, a.list), (47801, True))
         self.assertTrue(bridge.parse_args(["--fake"]).fake)
+
+
+# ------------------------------------------------------------------------------------------------
+# bridge.run_device against an emulated Air 2 Ultra (no hardware, no sockets)
+# ------------------------------------------------------------------------------------------------
+
+class FakeUltraHid(object):
+    """Stands in for the `hid` module: an Air 2 Ultra whose IMU interface (2) behaves as imu-protocol.md
+    describes (512-byte reports, 0x19 start/stop). `accepts(frame)` decides which written frames it
+    obeys, after hidapi's macOS rule of dropping a leading 0x00 (hidapi.md)."""
+
+    def __init__(self, accepts=lambda frame: True, bias_raw=(300, -200, 100)):
+        self.accepts = accepts
+        self.bias_raw = bias_raw
+        self.writes = []
+        self.streaming = False
+        self.pending = []
+        self.ts = 10 ** 9
+        self.opened = None
+        self.closed = False
+
+    def enumerate(self, vendor_id=0, product_id=0):
+        return [{"vendor_id": 0x3318, "product_id": 0x0426, "interface_number": i, "path": b"DevSrvsID:%d" % i,
+                 "usage_page": 0xFF00, "usage": 1, "product_string": "emulated"} for i in (0, 1, 2, 3)]
+
+    def device(self):
+        return self
+
+    def open_path(self, path):
+        self.opened = path
+
+    def write(self, data):
+        data = bytes(data)
+        self.writes.append(data)
+        frame = data[1:] if data[:1] == b"\x00" else data
+        r = xi.parse_command_response(frame)
+        if r and r.crc_ok and r.msgid == 0x19 and self.accepts(frame):
+            self.streaming = r.data == b"\x01"
+            self.pending.append(frame[:9] + bytes(503))  # reply: the same frame, as X's 0xaa 0x53 check implies
+        return len(data)
+
+    def read(self, max_length, timeout_ms=0):
+        if self.pending:
+            return list(self.pending.pop(0)[:max_length])
+        if not self.streaming:
+            return []
+        self.ts += 10 ** 6
+        pkt = xi.encode_imu_packet(timestamp_ns=self.ts, gyro_raw=self.bias_raw, accel_raw=(0, 0, 8192), length=512)
+        return list(pkt[:max_length])
+
+    def error(self):
+        return "emulated error"
+
+    def close(self):
+        self.closed = True
+
+
+class RecordingSender(object):
+    def __init__(self, port, send_hz):
+        self.sent = []
+        self.seq = 0
+
+    def maybe_send(self, now, t, q, src, status):
+        self.sent.append(json.loads(xi.encode_datagram(t, q, seq=self.seq, src=src).decode("utf-8")))
+        self.seq += 1
+        status.sent += 1
+        return True
+
+    def close(self):
+        pass
+
+
+class BridgeDeviceLoopTest(unittest.TestCase):
+    def run_bridge(self, fake, argv):
+        senders = []
+
+        def make_sender(port, hz):
+            senders.append(RecordingSender(port, hz))
+            return senders[-1]
+
+        saved = (bridge.import_hid, bridge.Sender, bridge.NO_DATA_RETRY_S, bridge.STATUS_EVERY_S)
+        bridge.import_hid, bridge.Sender = (lambda: fake), make_sender
+        bridge.NO_DATA_RETRY_S, bridge.STATUS_EVERY_S = 0.05, 0.1
+        out = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+                code = bridge.run_device(bridge.parse_args(argv))
+        finally:
+            bridge.import_hid, bridge.Sender, bridge.NO_DATA_RETRY_S, bridge.STATUS_EVERY_S = saved
+        return code, senders[0].sent, out.getvalue()
+
+    def test_streams_level_identity_and_stops_the_stream_on_exit(self):
+        fake = FakeUltraHid()
+        code, sent, out = self.run_bridge(fake, ["--duration", "0.6", "--watch"])
+        self.assertEqual(code, 0, out)
+        self.assertEqual(fake.opened, b"DevSrvsID:2")  # the Ultra's IMU interface
+        self.assertEqual(fake.writes[0], xi.start_imu_command(64))
+        self.assertEqual(fake.writes[-1], xi.stop_imu_command(64))
+        self.assertTrue(fake.closed)
+        self.assertGreater(len(sent), 10)
+        for d in sent:
+            self.assertEqual(list(d)[:2], ["t", "q"])
+            self.assertAlmostEqual(sum(c * c for c in d["q"]), 1.0, places=5)
+        for a in xi.unity_euler_deg(sent[-1]["q"]):
+            self.assertAlmostEqual(a, 0.0, delta=0.05)
+        self.assertIn("IMU packets are arriving (512-byte reports", out)
+        self.assertIn("yaw drift", out)  # at least one status line was printed without error
+        self.assertIn("response: msgid=0x19", out)
+
+    def test_retries_other_command_forms_until_data_flows(self):
+        fake = FakeUltraHid(accepts=lambda frame: len(frame) == 9)  # obeys only the exact 9-byte frame
+        code, sent, out = self.run_bridge(fake, ["--duration", "0.6"])
+        self.assertEqual(code, 0, out)
+        self.assertEqual([len(w) for w in fake.writes[:2]], [64, 9])
+        self.assertIn("start command form 'exact'", out)
+        self.assertEqual(fake.writes[-1], xi.stop_imu_command(0))
+        self.assertGreater(len(sent), 10)
+
+    def test_gives_up_with_a_clear_message_when_no_data_comes(self):
+        fake = FakeUltraHid(accepts=lambda frame: False)
+        code, sent, out = self.run_bridge(fake, ["--no-data-timeout", "0.5"])
+        self.assertEqual(code, bridge.EXIT_NO_DATA)
+        self.assertEqual(sent, [])
+        self.assertEqual([len(w) for w in fake.writes[:4]], [64, 9, 65, 10])  # all four forms, then stop
+        self.assertIn("No IMU packets", out)
 
 
 if __name__ == "__main__":
