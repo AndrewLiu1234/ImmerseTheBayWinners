@@ -4,8 +4,21 @@
 // Batch mode (do NOT pass -nographics: rendering needs the graphics device):
 //   Unity -batchmode -quit -projectPath <repo>/unity -executeMethod UntitledGuitarApp.Editor.HudLearnPreview.RenderPreviews
 //         -hudPreviewOut <folder> -logFile -
-// In the editor: menu UGA/Render Learn HUD Previews. Output folder: the argument after -hudPreviewOut (default build/previews,
-// relative to the Unity project folder). Nothing is saved to the project: each state is built in a temporary preview scene.
+// In the editor: menu UGA/Render Learn HUD Previews (no dialogs; the user's open scene is never touched). Output folder: the
+// argument after -hudPreviewOut, default <repo>/build/previews/learn (a relative folder is taken from the repository root, the
+// folder above unity/, like the neck preview); the folder is logged. Nothing is saved to the project: each state is built in
+// a temporary preview scene (EditorSceneManager.NewPreviewScene).
+//
+// COMPOSED PASS (composed-*.png, composed-contact-sheet.png, composed-report.json): the floating neck with the chord's X / O
+// marks and dots, the fretting ghost hand (the Blender-posed hand when its FBX and poses load, else the capsule hand: the JSON
+// says which) and the Learn HUD, driven by LearnPresenter and the SIMULATED DevLearnScript through every moment of a run (tune,
+// finger by finger, the pluck check with its deliberate mistake, the retry, the strum), seen by the glasses' LEFT eye (head at
+// the origin, eye half the IPD to the left). Then two largeText frames of the judge profile (tools/flags/judge.json: Em,
+// largeText) and two PLANTED frames that must be flagged: the old behaviour (learn marks in their own row beside the neck's
+// X / O) and the message card moved onto the hand. The check is RELATIONAL: every visible learn part (text at its TRUE asked
+// size, see TextTrueSizeInflation; shapes) against every neck X / O mark, finger number and dot, against the hand's rendered
+// silhouette (a mask from a hand-only render) and against the other learn parts. The run throws (batch exit 1) when a
+// planted frame is NOT flagged.
 //
 // For each state it writes <name>-black.png (exactly the frame the glasses get: black is what they do not show) and
 // <name>-grey.png (the same light added to a mid-grey background, in linear light, the way an additive display adds to
@@ -55,9 +68,19 @@ using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
 using UntitledGuitarApp.Runtime.Flags;
+using UntitledGuitarApp.Runtime.GhostHand;
 using UntitledGuitarApp.Runtime.Hud;
 using UntitledGuitarApp.Runtime.Hud.Learn;
+using UntitledGuitarApp.Runtime.Practice.Learn;
+using UntitledGuitarApp.Runtime.Practice.Learn.Dev;
 using UntitledGuitarApp.Runtime.Spectator;
+using CoreNeckLayout = UntitledGuitarApp.Runtime.Neck.CoreNeckLayout;
+using FingertipDot = UntitledGuitarApp.Runtime.Neck.FingertipDot;
+using FloatingNeck = UntitledGuitarApp.Runtime.Neck.FloatingNeck;
+using NeckLabel = UntitledGuitarApp.Runtime.Neck.NeckLabel;
+using NeckLayout = UntitledGuitarApp.Runtime.Neck.NeckLayout;
+using NeckMark = UntitledGuitarApp.Runtime.Neck.StringMark;
+using NeckMath = UntitledGuitarApp.Runtime.Neck.NeckMath;
 
 namespace UntitledGuitarApp.Editor
 {
@@ -65,7 +88,7 @@ namespace UntitledGuitarApp.Editor
     public static class HudLearnPreview
     {
         public const string OutArgument = "-hudPreviewOut";
-        public const string DefaultOutFolder = "build/previews";
+        public const string DefaultOutFolder = "build/previews/learn";   // relative to the repository root
         public const string MenuPath = "UGA/Render Learn HUD Previews";
         public const string ReportFileName = "preview-report.txt";
 
@@ -106,8 +129,7 @@ namespace UntitledGuitarApp.Editor
         [MenuItem(MenuPath, false, 210)]
         static void RenderFromMenu()
         {
-            string folder = Render(Path.Combine(ProjectRoot, DefaultOutFolder));
-            EditorUtility.RevealInFinder(Path.Combine(folder, ReportFileName));
+            Render(ResolveOutFolder(null, ProjectRoot));
         }
 
         static string ProjectRoot
@@ -115,7 +137,10 @@ namespace UntitledGuitarApp.Editor
             get { return Path.GetDirectoryName(Application.dataPath); }
         }
 
-        /// <summary>The folder named after -hudPreviewOut (relative paths are relative to the project folder), or the default.</summary>
+        /// <summary>
+        /// The folder named after -hudPreviewOut, or the default build/previews/learn. A relative folder is taken from the
+        /// repository root (the folder above <paramref name="projectRoot"/>, the Unity project), like the neck preview's.
+        /// </summary>
         public static string ResolveOutFolder(string[] args, string projectRoot)
         {
             string folder = DefaultOutFolder;
@@ -129,7 +154,9 @@ namespace UntitledGuitarApp.Editor
                     break;
                 }
             }
-            return Path.IsPathRooted(folder) ? folder : Path.Combine(projectRoot ?? string.Empty, folder);
+            if (Path.IsPathRooted(folder)) return folder;
+            string repoRoot = string.IsNullOrEmpty(projectRoot) ? string.Empty : Path.GetDirectoryName(Path.GetFullPath(projectRoot));
+            return Path.GetFullPath(Path.Combine(repoRoot ?? string.Empty, folder));
         }
 
         // ------------------------------------------------------------------ the run
@@ -140,6 +167,7 @@ namespace UntitledGuitarApp.Editor
                 throw new InvalidOperationException("HudLearnPreview needs the graphics device: run Unity without -nographics.");
 
             Directory.CreateDirectory(folder);
+            Debug.Log("[HudLearnPreview] rendering into " + folder);
             float verticalFov = SpectatorLayout.VerticalFovFromDiagonal(DiagonalFovDegrees, EyeWidth / (float)EyeHeight);
 
             var report = new StringBuilder(8192);
@@ -158,6 +186,7 @@ namespace UntitledGuitarApp.Editor
             var texture = new Texture2D(EyeWidth, EyeHeight, TextureFormat.RGBA32, false);
             RenderTexture target = RenderTexture.GetTemporary(EyeWidth, EyeHeight, 24, RenderTextureFormat.ARGB32);
             int problems = 0;
+            ComposedResult composed = null;
             try
             {
                 problems += RenderState("learn-01-tuner-flat", false, folder, verticalFov, target, texture, overGrey, report,
@@ -176,6 +205,7 @@ namespace UntitledGuitarApp.Editor
                     rig => rig.Hud.ShowStrum(false, "Heard C, target is G"));
                 problems += RenderState("learn-08-all-marks", true, folder, verticalFov, target, texture, overGrey, report,
                     ShowAllMarks);
+                composed = RenderComposedPass(folder, verticalFov, target, texture, overGrey, report);
             }
             finally
             {
@@ -185,10 +215,18 @@ namespace UntitledGuitarApp.Editor
             }
 
             report.AppendLine(problems == 0 ? "RESULT: no problems flagged" : "RESULT: " + problems + " problem(s) flagged (search for !!)");
+            if (composed != null)
+                report.AppendLine("COMPOSED: " + composed.Frames + " frames, " + composed.RealOverlaps + " overlap(s) in real frames, planted "
+                    + composed.PlantedFired + "/" + composed.Planted + " flagged" + (composed.Error != null ? ", FAILED: " + composed.Error : ""));
             report.AppendLine("shape shader: " + (ShaderFallbackSeen ? "FALLBACK (font shader); HudLearn.shader did not load" : "HudLearn.shader"));
             string reportPath = Path.Combine(folder, ReportFileName);
             File.WriteAllText(reportPath, report.ToString());
-            Debug.Log("[HudLearnPreview] wrote 16 PNG files and " + ReportFileName + " to " + folder + " (" + problems + " problem(s) flagged)");
+            Debug.Log("[HudLearnPreview] wrote 16 PNG files, " + (composed != null ? composed.Frames * 2 + 1 : 0) + " composed PNG files, "
+                + ReportFileName + " and " + ComposedJsonName + " to " + folder + " (" + problems + " problem(s) flagged; composed: "
+                + (composed != null ? composed.RealOverlaps + " overlap(s), planted " + composed.PlantedFired + "/" + composed.Planted : "not run") + ")");
+            if (composed == null || composed.Error != null || composed.PlantedFired < composed.Planted)
+                throw new InvalidOperationException("HudLearnPreview composed pass: " + (composed == null ? "did not run"
+                    : composed.Error ?? "a PLANTED overlap was not flagged, so the overlap check cannot be trusted") + " (see " + reportPath + ")");
             return folder;
         }
 
@@ -544,6 +582,7 @@ namespace UntitledGuitarApp.Editor
 
         sealed class ScreenPart
         {
+            public string Kind;      // composed pass: "neck X/O", "neck finger number", "neck dot" (null for HUD parts)
             public string Name;
             public string Label;
             public Transform Parent;
@@ -667,6 +706,549 @@ namespace UntitledGuitarApp.Editor
                 if (d < min) min = d;
                 if (d > max) max = d;
             }
+        }
+
+        // ------------------------------------------------------------------ composed pass (see the file header)
+
+        public const string ComposedJsonName = "composed-report.json";
+        public const string ComposedSheetName = "composed-contact-sheet.png";
+
+        /// <summary>
+        /// HudText draws its text about 18% smaller than asked until branch person1/sl0-hud-text lands; the composed overlap
+        /// check grows every text box by this factor about the text's own origin (its anchor), so it judges the layout at the
+        /// TRUE asked size. Set it to 1 once HudText is fixed (over-estimating can only flag more, never less).
+        /// </summary>
+        public const float TextTrueSizeInflation = 1f / 0.82f;
+
+        /// <summary>Hand-silhouette pixels a learn part may cover before it counts as an overlap (about a 5 x 5 px corner).</summary>
+        public const int HandPixelTolerance = 24;
+
+        const int ThumbScale = 4, SheetColumns = 4;
+
+        sealed class ComposedResult
+        {
+            public int Frames, RealOverlaps, Planted, PlantedFired;
+            public string Error;
+            public readonly List<string> FrameJson = new List<string>();
+            public Color32[] Sheet;
+            public int SheetRows, Index;
+        }
+
+        sealed class ComposedRig
+        {
+            public GameObject Root;
+            public Transform Head;
+            public Camera Eye;
+            public FloatingNeck Neck;
+            public LearnHud Hud;
+            public LearnPresenter Presenter;
+            public DevLearnScript Script;
+            public PosedGhostHand Posed;
+            public CapsuleHand Capsule;
+            public LearnWidget[] Widgets;
+        }
+
+        delegate void ComposedTweak(ComposedRig rig);
+
+        static ComposedResult RenderComposedPass(string folder, float verticalFov, RenderTexture target, Texture2D texture, byte[] overGrey,
+            StringBuilder report)
+        {
+            var result = new ComposedResult();
+            report.AppendLine("=== COMPOSED PASS: floating neck + fretting ghost hand + Learn HUD, LearnPresenter + SIMULATED DevLearnScript, left eye");
+            report.AppendLine("text boxes judged at " + F(TextTrueSizeInflation) + "x their drawn size (HudText draws ~18% small until person1/sl0-hud-text)");
+            report.AppendLine();
+            const int Planned = 16;   // the most frames this pass renders (main run + judge + planted), for the contact sheet
+            result.SheetRows = (Planned + SheetColumns - 1) / SheetColumns;
+            result.Sheet = new Color32[SheetColumns * (EyeWidth / ThumbScale) * result.SheetRows * (EyeHeight / ThumbScale)];
+            try
+            {
+                // 1. The run the app would show with the current flags (G unless FlagSet.chords says otherwise), every moment.
+                ComposedRun(result, "composed", null, false, null, null, folder, verticalFov, target, texture, overGrey, report);
+
+                // 2. The judge profile (tools/flags/judge.json: Em, largeText) over the real defaults, two moments.
+                FlagsForJudge(folder, report, () =>
+                    ComposedRun(result, "composed-judge-largetext", new[] { "finger-3", "pluck-" }, false, null, null, folder, verticalFov,
+                        target, texture, overGrey, report));
+
+                // 3. PLANTED: the old behaviour (learn marks in their own row while the neck keeps its X / O) must be flagged.
+                ComposedRun(result, "composed-planted-old-two-rows", new[] { "pluck-" }, true, rig => rig.Presenter.ShareNeckColumn = false,
+                    null, folder, verticalFov, target, texture, overGrey, report);
+
+                // 4. PLANTED: the message card moved onto the fretting hand must be flagged against the hand's silhouette.
+                ComposedRun(result, "composed-planted-card-on-hand", new[] { "finger-2" }, true, null, PutCardOnHand,
+                    folder, verticalFov, target, texture, overGrey, report);
+            }
+            catch (Exception e)
+            {
+                result.Error = e.GetType().Name + ": " + e.Message;
+                report.AppendLine("  !! COMPOSED PASS FAILED: " + e);
+            }
+
+            WriteContactSheet(Path.Combine(folder, ComposedSheetName), result, texture);
+            var json = new StringBuilder(8192);
+            json.Append("{\n  \"generatedBy\": \"UntitledGuitarApp.Editor.HudLearnPreview (composed pass)\",\n");
+            json.Append("  \"unity\": ").Append(Q(Application.unityVersion)).Append(",\n");
+            json.Append("  \"eye\": \"left, ").Append(EyeWidth).Append("x").Append(EyeHeight).Append(", vertical fov ").Append(F(verticalFov)).Append(" deg\",\n");
+            json.Append("  \"textTrueSizeInflation\": ").Append(F(TextTrueSizeInflation)).Append(",\n");
+            json.Append("  \"overlapTolerancePx\": ").Append(F(OverlapTolerancePx)).Append(",\n");
+            json.Append("  \"handPixelTolerance\": ").Append(HandPixelTolerance).Append(",\n");
+            json.Append("  \"contactSheet\": ").Append(Q(ComposedSheetName)).Append(", \"contactSheetOrder\": \"row-major, in the order of frames\",\n");
+            json.Append("  \"realOverlaps\": ").Append(result.RealOverlaps).Append(",\n");
+            json.Append("  \"planted\": ").Append(result.Planted).Append(", \"plantedFlagged\": ").Append(result.PlantedFired).Append(",\n");
+            json.Append("  \"error\": ").Append(result.Error == null ? "null" : Q(result.Error)).Append(",\n");
+            json.Append("  \"frames\": [\n");
+            for (int i = 0; i < result.FrameJson.Count; i++) json.Append(result.FrameJson[i]).Append(i + 1 < result.FrameJson.Count ? ",\n" : "\n");
+            json.Append("  ]\n}\n");
+            File.WriteAllText(Path.Combine(folder, ComposedJsonName), json.ToString());
+            report.AppendLine("composed: " + result.Frames + " frames; " + result.RealOverlaps + " overlap(s) in real frames; planted flagged "
+                + result.PlantedFired + "/" + result.Planted);
+            report.AppendLine();
+            return result;
+        }
+
+        // The judge profile, as scripts/use-flags.sh would install it: the real defaults with tools/flags/judge.json laid over
+        // them (falling back to the two judge values that matter here). The editor's own flags are put back afterwards.
+        static void FlagsForJudge(string folder, StringBuilder report, Action body)
+        {
+            bool wasInitialized = FlagStore.IsInitialized;
+            string oldDefaults = FlagStore.DefaultsPath, oldOverride = FlagStore.OverridePath;
+            string defaults = Path.Combine(Application.streamingAssetsPath, FlagStore.DefaultsFileName);
+            string judge = Path.GetFullPath(Path.Combine(ProjectRoot, "..", "tools", "flags", "judge.json"));
+            if (!File.Exists(judge))
+            {
+                judge = Path.Combine(folder, "composed-judge-flags.json");
+                File.WriteAllText(judge, "{ \"profile\": \"judge\", \"anchorMode\": \"headLocked\", \"chords\": [\"Em\"], \"largeText\": true }\n");
+            }
+            try
+            {
+                FlagStore.Initialize(defaults, judge);
+                report.AppendLine("judge flags: " + judge + " over " + defaults + " -> chords " + (FlagStore.Current.chords != null
+                    ? string.Join(",", FlagStore.Current.chords) : "(none)") + ", largeText " + FlagStore.Current.largeText);
+                body();
+            }
+            finally
+            {
+                if (wasInitialized) FlagStore.Initialize(oldDefaults, oldOverride);
+                else FlagStore.ResetForTests();
+            }
+        }
+
+        // The card spot moved to the middle of the hand (socket-local), so the message must land on the hand's silhouette.
+        static void PutCardOnHand(ComposedRig rig)
+        {
+            GameObject hand = rig.Presenter.HandObject;
+            if (hand == null) return;
+            Renderer[] renderers = hand.GetComponentsInChildren<Renderer>(false);
+            if (renderers.Length == 0) return;
+            Bounds b = renderers[0].bounds;
+            for (int i = 1; i < renderers.Length; i++) b.Encapsulate(renderers[i].bounds);
+            rig.Hud.CardLocal = rig.Neck.Socket.InverseTransformPoint(b.center);
+        }
+
+        // One learn run in a fresh preview scene, captured at its moments (all of them, or the first whose name starts with each
+        // of momentPrefixes). planted = the frames must be flagged. setup runs before the run starts, atMoment before each capture.
+        static void ComposedRun(ComposedResult result, string prefix, string[] momentPrefixes, bool planted, ComposedTweak setup,
+            ComposedTweak atMoment, string folder,
+            float verticalFov, RenderTexture target, Texture2D texture, byte[] overGrey, StringBuilder report)
+        {
+            Scene scene = EditorSceneManager.NewPreviewScene();
+            GameObject root = null;
+            try
+            {
+                root = new GameObject("HudLearnPreview " + prefix);
+                SceneManager.MoveGameObjectToScene(root, scene);
+                ComposedRig rig = BuildComposedRig(root, scene, verticalFov);
+                if (setup != null) setup(rig);
+                if (!rig.Script.Play()) throw new InvalidOperationException("DevLearnScript.Play failed (no chord from the flags?)");
+                DevLearnTimeline run = rig.Script.Timeline;
+                report.AppendLine("--- " + prefix + ": chord " + run.Chord.Name + ", hand " + rig.Presenter.HandKind + ", largeText "
+                    + FlagStore.Current.largeText + ", mistake \"" + run.MistakeTip + "\", run " + F(run.Duration) + " s");
+
+                var moments = new List<DevLearnMoment>();
+                for (int i = 0; i < run.Moments.Count; i++)
+                {
+                    if (momentPrefixes == null) { moments.Add(run.Moments[i]); continue; }
+                    for (int k = 0; k < momentPrefixes.Length; k++)
+                    {
+                        if (!run.Moments[i].name.StartsWith(momentPrefixes[k], StringComparison.Ordinal)) continue;
+                        bool taken = false;
+                        for (int m = 0; m < moments.Count; m++) taken |= moments[m].name.StartsWith(momentPrefixes[k], StringComparison.Ordinal);
+                        if (!taken) moments.Add(run.Moments[i]);
+                    }
+                }
+
+                float clock = 0f;
+                for (int m = 0; m < moments.Count; m++)
+                {
+                    while (clock + Step <= moments[m].time)
+                    {
+                        StepComposed(rig, Step);
+                        clock += Step;
+                    }
+                    if (atMoment != null)
+                    {
+                        atMoment(rig);
+                        StepComposed(rig, Step);
+                    }
+                    string name = prefix + "-" + (result.Index + 1).ToString("00", CultureInfo.InvariantCulture) + "-" + run.Chord.Name + "-" + moments[m].name;
+                    CaptureComposed(result, rig, name, moments[m], planted, folder, target, texture, overGrey, report);
+                }
+            }
+            finally
+            {
+                if (root != null) UnityEngine.Object.DestroyImmediate(root);
+                EditorSceneManager.ClosePreviewScene(scene);
+            }
+        }
+
+        static ComposedRig BuildComposedRig(GameObject root, Scene scene, float verticalFov)
+        {
+            var rig = new ComposedRig { Root = root };
+            var head = new GameObject("Head");                       // the wearer's head at rest: origin, looking along +z
+            head.transform.SetParent(root.transform, false);
+            rig.Head = head.transform;
+
+            var eye = new GameObject("LeftEye");
+            eye.transform.SetParent(head.transform, false);
+            FlagSet flags = FlagStore.Current;
+            float ipd = flags.render != null && flags.render.ipdMm > 0f ? flags.render.ipdMm * 0.001f : 0.063f;
+            eye.transform.localPosition = new Vector3(-0.5f * ipd, 0f, 0f);
+            Camera camera = eye.AddComponent<Camera>();
+            camera.enabled = false;
+            camera.clearFlags = CameraClearFlags.SolidColor;
+            camera.backgroundColor = new Color(0f, 0f, 0f, 1f);
+            camera.fieldOfView = verticalFov;
+            camera.aspect = EyeWidth / (float)EyeHeight;
+            camera.nearClipPlane = 0.05f;
+            camera.farClipPlane = 20f;
+            camera.allowHDR = false;
+            camera.allowMSAA = false;
+            camera.useOcclusionCulling = false;
+            camera.scene = scene;
+            rig.Eye = camera;
+
+            // As Bootstrap composes it: the neck from Core's geometry, hanging in front of the head; the hand on its socket.
+            rig.Neck = FloatingNeck.Create(root.transform);
+            NeckLayout layout = CoreNeckLayout.Create(CoreNeckLayout.DefaultGeometry);
+            if (!rig.Neck.Build(layout)) throw new InvalidOperationException("the Core neck layout failed NeckLayout.Validate");
+            rig.Neck.PlaceFloating(rig.Head, true);
+
+            try
+            {
+                var library = new GhostPoseLibrary();
+                library.Reload();
+                PosedGhostHand posed = PosedGhostHand.Create(rig.Neck.Socket, GhostPose.HandFretting, library);
+                if (posed != null && posed.IsAvailable) rig.Posed = posed;
+                else if (posed != null) UnityEngine.Object.DestroyImmediate(posed.gameObject);
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning("[HudLearnPreview] the posed ghost hand could not be built (" + e.Message + "); using the capsule hand");
+            }
+            if (rig.Posed == null) rig.Capsule = CapsuleHand.Create(rig.Neck.Socket, true);
+
+            rig.Hud = LearnHud.Create(root.transform, rig.Head, rig.Neck.Socket);
+            var nutEnds = new Vector3[StringMarks.StringCount];
+            for (int s = 1; s <= StringMarks.StringCount; s++)
+                nutEnds[s - 1] = NeckMath.LocalMetres(0f, layout.stringHeightMm, layout.stringZAtNutMm[s - 1]);
+            float cardFret = layout.fretXMm.Length > LearnHudLayout.CardFret ? layout.fretXMm[LearnHudLayout.CardFret] * NeckMath.MetresPerMm : 0f;
+            rig.Hud.SetNeck(rig.Neck.Socket, nutEnds, cardFret);
+
+            rig.Presenter = LearnPresenter.Create(root.transform, rig.Hud, rig.Neck, rig.Posed, rig.Capsule);
+            rig.Script = DevLearnScript.Create(root.transform, rig.Presenter);
+            rig.Script.HandleKeys = false;
+            rig.Widgets = root.GetComponentsInChildren<LearnWidget>(true);
+            return rig;
+        }
+
+        // What Update and LateUpdate do in Play Mode, in their order (Edit Mode runs neither).
+        static void StepComposed(ComposedRig rig, float dt)
+        {
+            rig.Script.Advance(dt);
+            rig.Presenter.Tick(dt);
+            rig.Hud.Tick(dt);
+            for (int i = 0; i < rig.Widgets.Length; i++) rig.Widgets[i].Tick(dt);
+            if (rig.Posed != null) rig.Posed.Tick(dt);
+            if (rig.Capsule != null) rig.Capsule.Tick(dt);
+            rig.Presenter.LateTick();
+            rig.Hud.Marks.PlaceNow();
+            rig.Hud.PlaceCard();
+        }
+
+        static void CaptureComposed(ComposedResult result, ComposedRig rig, string name, DevLearnMoment moment, bool planted, string folder,
+            RenderTexture target, Texture2D texture, byte[] overGrey, StringBuilder report)
+        {
+            RenderCamera(rig.Eye, target);                                  // fills the font texture
+            for (int i = 0; i < rig.Widgets.Length; i++) rig.Widgets[i].RefreshSizes();
+            StepComposed(rig, Step);
+
+            int handPixels;
+            bool[] handMask = RenderHandMask(rig, target, texture, out handPixels);
+            RenderCamera(rig.Eye, target);
+            Color32[] pixels = ReadBack(target, texture);
+
+            report.AppendLine("--- " + name + " (stage " + rig.Presenter.Stage + (planted ? ", PLANTED: must be flagged" : "") + ")");
+            var overlaps = new List<string>();
+            int learnParts, neckParts;
+            CheckComposedOverlaps(rig, handMask, overlaps, out learnParts, out neckParts);
+            for (int i = 0; i < overlaps.Count; i++) report.AppendLine("  " + (planted ? "(planted) " : "!! ") + "OVERLAP: " + overlaps[i]);
+            report.AppendLine("  " + learnParts + " learn parts, " + neckParts + " neck parts (X/O, finger numbers, dots), hand silhouette "
+                + handPixels + " px (" + rig.Presenter.HandKind + "): " + overlaps.Count + " overlap(s)");
+
+            result.Frames++;
+            if (planted)
+            {
+                result.Planted++;
+                if (overlaps.Count > 0) result.PlantedFired++;
+                else report.AppendLine("  !! PLANTED OVERLAP NOT FLAGGED: the check is blind to this case");
+            }
+            else
+            {
+                result.RealOverlaps += overlaps.Count;
+            }
+
+            for (int i = 0; i < pixels.Length; i++) pixels[i].a = 255;
+            AddThumbnail(result, pixels);
+            WritePng(Path.Combine(folder, name + "-black.png"), pixels, texture);
+            for (int i = 0; i < pixels.Length; i++)
+            {
+                Color32 p = pixels[i];
+                pixels[i] = new Color32(overGrey[p.r], overGrey[p.g], overGrey[p.b], 255);
+            }
+            WritePng(Path.Combine(folder, name + "-grey.png"), pixels, texture);
+            report.AppendLine();
+
+            var j = new StringBuilder(1024);
+            j.Append("    { \"name\": ").Append(Q(name)).Append(", \"png\": ").Append(Q(name + "-black.png"))
+             .Append(", \"chord\": ").Append(Q(rig.Presenter.Chord != null ? rig.Presenter.Chord.Name : ""))
+             .Append(", \"moment\": ").Append(Q(moment.name)).Append(", \"stage\": ").Append(Q(rig.Presenter.Stage.ToString()))
+             .Append(", \"largeText\": ").Append(FlagStore.Current.largeText ? "true" : "false")
+             .Append(", \"hand\": ").Append(Q(rig.Presenter.HandKind)).Append(", \"marksInNeckColumn\": ").Append(rig.Presenter.MarksDocked ? "true" : "false")
+             .Append(", \"planted\": ").Append(planted ? "true" : "false")
+             .Append(", \"flagged\": ").Append(overlaps.Count > 0 ? "true" : "false")
+             .Append(", \"learnParts\": ").Append(learnParts).Append(", \"neckParts\": ").Append(neckParts).Append(", \"handPixels\": ").Append(handPixels)
+             .Append(", \"overlaps\": [");
+            for (int i = 0; i < overlaps.Count; i++) j.Append(i > 0 ? ", " : "").Append(Q(overlaps[i]));
+            j.Append("] }");
+            result.FrameJson.Add(j.ToString());
+        }
+
+        // A render of the hand alone (every other renderer switched off for one frame): its lit pixels are its silhouette.
+        static bool[] RenderHandMask(ComposedRig rig, RenderTexture target, Texture2D texture, out int count)
+        {
+            var mask = new bool[EyeWidth * EyeHeight];
+            count = 0;
+            GameObject hand = rig.Presenter.HandObject;
+            if (hand == null || !hand.activeInHierarchy) return mask;
+            Renderer[] all = rig.Root.GetComponentsInChildren<Renderer>(false);
+            var was = new bool[all.Length];
+            for (int i = 0; i < all.Length; i++)
+            {
+                was[i] = all[i].enabled;
+                all[i].enabled = was[i] && all[i].transform.IsChildOf(hand.transform);
+            }
+            try
+            {
+                RenderCamera(rig.Eye, target);
+                Color32[] px = ReadBack(target, texture);
+                for (int i = 0; i < px.Length; i++)
+                {
+                    Color32 p = px[i];
+                    if (p.r <= LitThreshold && p.g <= LitThreshold && p.b <= LitThreshold) continue;
+                    mask[i] = true;
+                    count++;
+                }
+            }
+            finally
+            {
+                for (int i = 0; i < all.Length; i++) all[i].enabled = was[i];
+            }
+            return mask;
+        }
+
+        static void CheckComposedOverlaps(ComposedRig rig, bool[] handMask, List<string> overlaps, out int learnCount, out int neckCount)
+        {
+            Camera camera = rig.Eye;
+            var learn = new List<ScreenPart>();
+            HudText[] texts = rig.Root.GetComponentsInChildren<HudText>(false);
+            for (int i = 0; i < texts.Length; i++)
+            {
+                HudText text = texts[i];
+                if (!text.Visible || text.Text.Length == 0) continue;
+                var renderer = text.GetComponent<MeshRenderer>();
+                if (renderer == null) continue;
+                Bounds b = renderer.localBounds;
+                var trueSize = new Bounds(b.center * TextTrueSizeInflation, b.size * TextTrueSizeInflation);   // about the text's anchor
+                AddScreenPart(learn, camera, text.transform, trueSize, false, "learn text \"" + text.Text.Replace('\n', ' ') + "\" [" + text.name + "]");
+            }
+            HudShape[] shapes = rig.Root.GetComponentsInChildren<HudShape>(false);
+            for (int i = 0; i < shapes.Length; i++)
+            {
+                HudShape shape = shapes[i];
+                if (!shape.Visible || shape.Opacity <= 0f || shape.Glyph == LearnGlyph.Line) continue;
+                var filter = shape.GetComponent<MeshFilter>();
+                if (filter == null || filter.sharedMesh == null) continue;
+                AddScreenPart(learn, camera, shape.transform, filter.sharedMesh.bounds, !LearnGlyphs.FitsUnitBox(shape.Glyph),
+                    "learn shape " + shape.Glyph + " [" + shape.transform.parent.name + "/" + shape.name + "]");
+            }
+
+            var neck = new List<ScreenPart>();
+            FloatingNeck n = rig.Neck;
+            if (n != null && n.gameObject.activeInHierarchy && n.Layout != null)
+            {
+                for (int s = 1; s <= StringMarks.StringCount; s++)
+                {
+                    NeckMark mark = rig.Presenter.NeckMarkShown(s);
+                    Vector3 c, along, across;
+                    float half;
+                    if (mark == NeckMark.None || !rig.Presenter.TryGetColumnSlot(s, out c, out along, out across, out half)) continue;
+                    AddWorldQuad(neck, camera, "neck X/O", "neck " + (mark == NeckMark.Open ? "O" : "X") + " string " + s,
+                        c - (along + across) * half, c + (along - across) * half, c + (along + across) * half, c + (across - along) * half);
+                }
+                NeckLabel[] labels = n.GetComponentsInChildren<NeckLabel>(false);
+                for (int i = 0; i < labels.Length; i++)
+                {
+                    if (!labels[i].Visible) continue;
+                    MeshRenderer mr = labels[i].GetComponentInChildren<MeshRenderer>();
+                    if (mr == null || !mr.enabled) continue;
+                    int before = neck.Count;
+                    AddScreenPart(neck, camera, mr.transform, mr.localBounds, false, "neck finger number [" + labels[i].transform.parent.name + "]");
+                    if (neck.Count > before) neck[neck.Count - 1].Kind = "neck finger number";
+                }
+                float r = n.Sizes.haloRadiusMm;
+                float h = n.Layout.stringHeightMm;
+                for (int i = 0; i < rig.Presenter.DotCount; i++)
+                {
+                    FingertipDot d = rig.Presenter.Dot(i);
+                    Transform f = n.Socket;
+                    AddWorldQuad(neck, camera, "neck dot", "neck dot finger " + d.finger + " string " + d.stringNumber,
+                        f.TransformPoint(NeckMath.LocalMetres(d.xMm - r, h, d.zMm - r)), f.TransformPoint(NeckMath.LocalMetres(d.xMm + r, h, d.zMm - r)),
+                        f.TransformPoint(NeckMath.LocalMetres(d.xMm + r, h, d.zMm + r)), f.TransformPoint(NeckMath.LocalMetres(d.xMm - r, h, d.zMm + r)));
+                }
+            }
+            learnCount = learn.Count;
+            neckCount = neck.Count;
+
+            float pixelsPerDegree = EyeHeight / camera.fieldOfView;
+            for (int i = 0; i < learn.Count; i++)
+            {
+                for (int k = 0; k < neck.Count; k++)
+                {
+                    float depth = OverlapDepthPx(learn[i].Quad, neck[k].Quad);
+                    if (depth > OverlapTolerancePx)
+                        overlaps.Add(neck[k].Kind + ": " + learn[i].Label + " on " + neck[k].Label + " (" + F(depth / pixelsPerDegree) + " deg deep)");
+                }
+                int covered = CountMaskInQuad(handMask, learn[i].Quad);
+                if (covered > HandPixelTolerance) overlaps.Add("hand: " + learn[i].Label + " covers " + covered + " px of the ghost hand");
+                for (int k = i + 1; k < learn.Count; k++)
+                {
+                    if (OverlapByDesign(learn[i], learn[k])) continue;
+                    float depth = OverlapDepthPx(learn[i].Quad, learn[k].Quad);
+                    if (depth > OverlapTolerancePx)
+                        overlaps.Add("learn: " + learn[i].Label + " on " + learn[k].Label + " (" + F(depth / pixelsPerDegree) + " deg deep)");
+                }
+            }
+        }
+
+        static void AddWorldQuad(List<ScreenPart> parts, Camera camera, string kind, string label, Vector3 a, Vector3 b, Vector3 c, Vector3 d)
+        {
+            var part = new ScreenPart { Kind = kind, Name = label, Label = label };
+            if (!ToEyePixels(camera, a, out part.Quad[0]) || !ToEyePixels(camera, b, out part.Quad[1])
+                || !ToEyePixels(camera, c, out part.Quad[2]) || !ToEyePixels(camera, d, out part.Quad[3])) return;
+            parts.Add(part);
+        }
+
+        /// <summary>How many set pixels of <paramref name="mask"/> (EyeWidth x EyeHeight, row 0 at the bottom) lie inside a convex quad. Pure.</summary>
+        static int CountMaskInQuad(bool[] mask, Vector2[] quad)
+        {
+            float minX = float.MaxValue, minY = float.MaxValue, maxX = float.MinValue, maxY = float.MinValue;
+            for (int i = 0; i < 4; i++)
+            {
+                minX = Mathf.Min(minX, quad[i].x); maxX = Mathf.Max(maxX, quad[i].x);
+                minY = Mathf.Min(minY, quad[i].y); maxY = Mathf.Max(maxY, quad[i].y);
+            }
+            int x0 = Mathf.Max(0, Mathf.FloorToInt(minX)), x1 = Mathf.Min(EyeWidth - 1, Mathf.CeilToInt(maxX));
+            int y0 = Mathf.Max(0, Mathf.FloorToInt(minY)), y1 = Mathf.Min(EyeHeight - 1, Mathf.CeilToInt(maxY));
+            int count = 0;
+            for (int y = y0; y <= y1; y++)
+            {
+                for (int x = x0; x <= x1; x++)
+                {
+                    if (!mask[y * EyeWidth + x]) continue;
+                    var p = new Vector2(x + 0.5f, y + 0.5f);
+                    bool pos = false, neg = false;
+                    for (int i = 0; i < 4; i++)
+                    {
+                        Vector2 e = quad[(i + 1) % 4] - quad[i];
+                        float cross = e.x * (p.y - quad[i].y) - e.y * (p.x - quad[i].x);
+                        if (cross > 0f) pos = true; else if (cross < 0f) neg = true;
+                    }
+                    if (!(pos && neg)) count++;
+                }
+            }
+            return count;
+        }
+
+        static void AddThumbnail(ComposedResult result, Color32[] pixels)
+        {
+            int tw = EyeWidth / ThumbScale, th = EyeHeight / ThumbScale;
+            int index = result.Index++;
+            if (index >= SheetColumns * result.SheetRows) return;
+            int col = index % SheetColumns, row = index / SheetColumns;
+            int sheetW = SheetColumns * tw;
+            int baseY = (result.SheetRows - 1 - row) * th;   // pixel rows run bottom-up: the first frame goes top left
+            for (int y = 0; y < th; y++)
+            {
+                for (int x = 0; x < tw; x++)
+                {
+                    int r = 0, g = 0, b = 0;
+                    for (int dy = 0; dy < ThumbScale; dy++)
+                    {
+                        int srow = (y * ThumbScale + dy) * EyeWidth;
+                        for (int dx = 0; dx < ThumbScale; dx++)
+                        {
+                            Color32 p = pixels[srow + x * ThumbScale + dx];
+                            r += p.r; g += p.g; b += p.b;
+                        }
+                    }
+                    int n = ThumbScale * ThumbScale;
+                    bool edge = x == 0 || y == 0;                     // a faint frame line between thumbnails
+                    result.Sheet[(baseY + y) * sheetW + col * tw + x] = edge ? new Color32(60, 60, 60, 255)
+                        : new Color32((byte)(r / n), (byte)(g / n), (byte)(b / n), 255);
+                }
+            }
+        }
+
+        static void WriteContactSheet(string path, ComposedResult result, Texture2D scratch)
+        {
+            if (result.Sheet == null || result.Index == 0) return;
+            int w = SheetColumns * (EyeWidth / ThumbScale), h = result.SheetRows * (EyeHeight / ThumbScale);
+            var sheet = new Texture2D(w, h, TextureFormat.RGBA32, false);
+            try
+            {
+                sheet.SetPixels32(result.Sheet);
+                sheet.Apply(false, false);
+                File.WriteAllBytes(path, sheet.EncodeToPNG());
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(sheet);
+            }
+        }
+
+        static string Q(string s)
+        {
+            if (s == null) return "null";
+            var b = new StringBuilder(s.Length + 2);
+            b.Append('"');
+            for (int i = 0; i < s.Length; i++)
+            {
+                char c = s[i];
+                if (c == '"' || c == '\\') b.Append('\\').Append(c);
+                else if (c < ' ') b.Append("\\u").Append(((int)c).ToString("x4", CultureInfo.InvariantCulture));
+                else b.Append(c);
+            }
+            return b.Append('"').ToString();
         }
 
         static int CountChar(string s, char c)

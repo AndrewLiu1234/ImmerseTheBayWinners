@@ -58,6 +58,14 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
         Vector3 _nutLocal;
         bool _hasAnchors;
         float _glyphSize = 0.01f;
+        float _markDegrees = LearnHudLayout.MarkDegrees;
+
+        // Docked into another row (the neck's X / O column): one fixed point per string in a frame's local space.
+        readonly Vector3[] _slotLocal = new Vector3[StringCount];
+        readonly bool[] _legendOff = new bool[StringCount];
+        Transform _slotFrame;
+        bool _hasSlots;
+        float _slotPitchM;
         bool _active;
         bool _warnedString;
 
@@ -69,6 +77,43 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
 
         /// <summary>How far beyond the nut the row sits, metres.</summary>
         public float BeyondNutM { get; set; } = LearnHudLayout.MarkBeyondNutM;
+
+        /// <summary>
+        /// Size of one mark, degrees (before the largeText multiplier). Default LearnHudLayout.MarkDegrees (1.5). When the
+        /// marks are docked into another row (<see cref="SetSlotAnchors"/>) a mark never grows beyond
+        /// <see cref="DockedFill"/> of that row's spacing, so neighbours cannot touch even with largeText.
+        /// </summary>
+        public float MarkSizeDegrees
+        {
+            get { return _markDegrees; }
+            set
+            {
+                float v = value > 0f && !float.IsInfinity(value) ? value : LearnHudLayout.MarkDegrees;
+                if (v == _markDegrees) return;
+                _markDegrees = v;
+                EnsureBuilt();
+                ApplySizes();
+                RefreshVisuals();
+            }
+        }
+
+        /// <summary>A docked mark fills at most this fraction of the docked row's spacing.</summary>
+        public const float DockedFill = 0.8f;
+
+        /// <summary>True while the marks stand in another row's slots (<see cref="SetSlotAnchors"/>).</summary>
+        public bool IsDocked { get { return _hasSlots; } }
+
+        /// <summary>True while any mark or string number is still on screen (fading ones included).</summary>
+        public bool AnyVisible
+        {
+            get
+            {
+                EnsureBuilt();
+                for (int i = 0; i < StringCount; i++)
+                    if (_faders[i].IsVisible || _gates[i].Pending) return true;
+                return _legend.IsVisible || _legendGate.Pending;
+            }
+        }
 
         /// <summary>Creates the marks under <paramref name="parent"/> (may be null; must be unscaled). <paramref name="viewingDistanceM"/> is used until a head and a neck are known (0 = the default half metre).</summary>
         public static StringMarks Create(Transform parent, float viewingDistanceM)
@@ -100,14 +145,15 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
 
         protected override void ApplySizes()
         {
-            _glyphSize = Meters(LearnHudLayout.MarkDegrees);
+            _glyphSize = Meters(_markDegrees);
+            if (_hasSlots && _slotPitchM > 0f) _glyphSize = Mathf.Min(_glyphSize, DockedFill * _slotPitchM);
             float pitch = Meters(LearnHudLayout.MarkPitchDegrees);
             for (int i = 0; i < StringCount; i++)
             {
                 SizeText(_digits[i], DigitDegrees);
                 _glyphs[i].SetSize(_glyphSize * _faders[i].Scale);
                 // Until a neck socket is given, the row simply runs along this object's own X axis (string 1 on the viewer's right).
-                if (!_hasAnchors) _slots[i].localPosition = new Vector3(LearnHudLayout.MarkSlotOffset(i + 1) * pitch, 0f, 0f);
+                if (!_hasAnchors && !_hasSlots) _slots[i].localPosition = new Vector3(LearnHudLayout.MarkSlotOffset(i + 1) * pitch, 0f, 0f);
             }
         }
 
@@ -136,6 +182,43 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
             _nutLocal = sum / n;
             _hasAnchors = true;
             Place();
+        }
+
+        /// <summary>
+        /// Docks the marks into another row of per-string slots, for example the neck's X / O column, so that a string never
+        /// shows two marks: mark i stands at <paramref name="frame"/>.TransformPoint(<paramref name="slotLocal"/>[i]) (index
+        /// 0 = string 1) and still faces the eye. The values are copied (call it again when the slots move; no allocation).
+        /// Pass a null frame to leave the dock and go back to the row across the nut.
+        /// </summary>
+        public void SetSlotAnchors(Transform frame, Vector3[] slotLocal)
+        {
+            EnsureBuilt();
+            bool dock = frame != null && slotLocal != null && slotLocal.Length >= StringCount;
+            bool changed = dock != _hasSlots;
+            _hasSlots = dock;
+            _slotFrame = dock ? frame : null;
+            if (dock)
+            {
+                for (int i = 0; i < StringCount; i++) _slotLocal[i] = slotLocal[i];
+                float pitch = Vector3.Distance(frame.TransformPoint(slotLocal[0]), frame.TransformPoint(slotLocal[1]));
+                if (Mathf.Abs(pitch - _slotPitchM) > 0.02f * Mathf.Max(pitch, 1e-6f)) changed = true;
+                _slotPitchM = pitch;
+            }
+            if (changed) ApplySizes();
+            Place();
+        }
+
+        /// <summary>
+        /// Keeps a string's dim number hidden even while other marks show (true), for a slot that another mark already
+        /// fills (for example the neck's X on a string that is not played). False gives the number back.
+        /// </summary>
+        public void SuppressLegend(int stringNumber, bool suppress)
+        {
+            EnsureBuilt();
+            if (stringNumber < 1 || stringNumber > StringCount) return;
+            if (_legendOff[stringNumber - 1] == suppress) return;
+            _legendOff[stringNumber - 1] = suppress;
+            RefreshVisuals();
         }
 
         /// <summary>Shows <paramref name="mark"/> for a string (1 = high E ... 6 = low E) for that mark's usual time; None hides it.</summary>
@@ -309,7 +392,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
                 _glyphs[i].Opacity = o;
                 _glyphs[i].Visible = o > 0f;
                 _glyphs[i].SetSize(_glyphSize * _faders[i].Scale);
-                _digits[i].Opacity = legend * (1f - o);   // a mark stands where its string's number was
+                _digits[i].Opacity = _legendOff[i] ? 0f : legend * (1f - o);   // a mark stands where its string's number was
             }
         }
 
@@ -330,6 +413,11 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
         /// <summary>Moves the row onto the neck and turns every mark to face the eyes. Called every frame while anything shows.</summary>
         void Place()
         {
+            if (_hasSlots && _slotFrame != null)
+            {
+                PlaceDocked();
+                return;
+            }
             if (!_hasAnchors || _socket == null) return;
 
             Vector3 nut = _socket.TransformPoint(_nutLocal);
@@ -351,6 +439,30 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
             for (int i = 0; i < StringCount; i++)
             {
                 Vector3 p = LearnHudLayout.MarkSlot(centre, row, i + 1, pitch);
+                Vector3 forward, up;
+                if (LearnHudLayout.TryFacing(eye, p, upHint, out forward, out up))
+                    _slots[i].SetPositionAndRotation(p, Quaternion.LookRotation(forward, up));
+                else
+                    _slots[i].position = p;
+            }
+        }
+
+        // Docked: each mark on its own slot of the other row, facing the eye; sized for the eye's distance to the row's middle.
+        void PlaceDocked()
+        {
+            Vector3 centre = Vector3.zero;
+            for (int i = 0; i < StringCount; i++) centre += _slotFrame.TransformPoint(_slotLocal[i]);
+            centre /= StringCount;
+
+            Transform head = Head;
+            Vector3 eye = head != null ? head.position : _slotFrame.TransformPoint(LearnHudLayout.TypicalEyeInNeckFrame);
+            Vector3 upHint = head != null ? head.up : _slotFrame.TransformVector(LearnHudLayout.TypicalUpInNeckFrame).normalized;
+            float distance = (centre - eye).magnitude;
+            if (LearnHudLayout.DistanceChanged(ViewingDistanceM, distance, ResizeFraction)) SetViewingDistance(distance);
+
+            for (int i = 0; i < StringCount; i++)
+            {
+                Vector3 p = _slotFrame.TransformPoint(_slotLocal[i]);
                 Vector3 forward, up;
                 if (LearnHudLayout.TryFacing(eye, p, upHint, out forward, out up))
                     _slots[i].SetPositionAndRotation(p, Quaternion.LookRotation(forward, up));
