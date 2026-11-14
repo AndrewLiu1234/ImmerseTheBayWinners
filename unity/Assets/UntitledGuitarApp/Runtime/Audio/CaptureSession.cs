@@ -66,6 +66,10 @@ namespace UntitledGuitarApp.Runtime.Audio
         public const double RingSeconds = 2.0;
         /// <summary>One warning when the input has been exactly 0.0 for this long.</summary>
         public const double SilenceWarnSec = 3.0;
+        /// <summary>An overflow episode ends after this long without new losses (the next loss may warn again).</summary>
+        public const double OverflowQuietSec = 1.0;
+        /// <summary>At most one "mic.overflow" warning this often, whatever the episodes do.</summary>
+        public const double OverflowWarnMinIntervalSec = 5.0;
         /// <summary>Shown as <see cref="DeviceName"/> when the default device is used (its real name is not exposed).</summary>
         public const string DefaultDeviceLabel = "(default input)";
 
@@ -105,6 +109,11 @@ namespace UntitledGuitarApp.Runtime.Audio
         long _droppedCarry;
         long _lastReportedLoss;
         double _lastLossWarnSec = -1e9;
+        volatile bool _readerSeen;      // set by the first Read: before it, a full ring is not a loss (nobody is listening)
+        long _lossBaseline;             // raw losses before the first Read (excluded from LostSamples)
+        bool _overflowEpisode;          // warned, and losses have not stopped for OverflowQuietSec yet
+        double _lastLossSec;
+        long _episodeStartLoss;
         double _nextLevelLogSec;
         string[] _loggedDevices;
 
@@ -129,9 +138,13 @@ namespace UntitledGuitarApp.Runtime.Audio
         /// <summary>Copies up to <paramref name="count"/> unread samples (mono floats) into <paramref name="dst"/>; 0 when none. Consumer thread; never blocks.</summary>
         public int Read(float[] dst, int offset, int count)
         {
+            _readerSeen = true;
             FloatRingBuffer r = _ring;
             return r == null ? 0 : r.Read(dst, offset, count);
         }
+
+        /// <summary>True once anything has called <see cref="Read"/>. Until then ring overflow is neither counted nor warned about. Any thread.</summary>
+        public bool HasReader { get { return _readerSeen; } }
 
         /// <summary>True while samples are flowing (microphone delivering frames, or the WAV replay running).</summary>
         public bool IsCapturing { get { return _state == State.Running; } }
@@ -150,14 +163,23 @@ namespace UntitledGuitarApp.Runtime.Audio
 
         // ---- diagnostics ---------------------------------------------------------------------------------------
 
-        /// <summary>Audio lost so far: ring buffer overflow (reader too slow) plus frames skipped after a long main-thread stall.</summary>
+        /// <summary>
+        /// Audio lost since the first <see cref="Read"/>: ring buffer overflow (reader too slow) plus frames skipped after a long
+        /// main-thread stall. Before anything reads, a full ring drops samples nobody was going to hear; those are not counted.
+        /// </summary>
         public long LostSamples
         {
             get
             {
-                FloatRingBuffer r = _ring;
-                return _droppedCarry + (r == null ? 0 : r.DroppedSamples) + _pump.SkippedFrames;
+                long lost = RawLostSamples() - _lossBaseline;
+                return lost > 0 ? lost : 0;
             }
+        }
+
+        long RawLostSamples()
+        {
+            FloatRingBuffer r = _ring;
+            return _droppedCarry + (r == null ? 0 : r.DroppedSamples) + _pump.SkippedFrames;
         }
         public int WarnCount { get; private set; }
         public int RestartCount { get; private set; }
@@ -435,14 +457,37 @@ namespace UntitledGuitarApp.Runtime.Audio
             }
         }
 
+        // One "mic.overflow" warning per overflow EPISODE (losses that keep coming count as one; the episode ends after
+        // OverflowQuietSec without a new loss), at most one per OverflowWarnMinIntervalSec, and none before the first Read: until a
+        // reader exists (nothing reads the mic yet in some modes) the ring simply fills up in ~2.7 s, which is not lost audio.
         void CheckLoss(double nowSec)
         {
+            if (!_readerSeen)
+            {
+                _lossBaseline = RawLostSamples();
+                _lastReportedLoss = 0;
+                return;
+            }
             long lost = LostSamples;
-            if (lost == _lastReportedLoss) return;
-            if (nowSec - _lastLossWarnSec < 5.0) return;
-            Warn("mic.overflow", "audio lost: " + lost + " samples in total (the ring buffer was full because the reader is too slow, or the main thread stalled for more than 1 s)");
+            if (lost == _lastReportedLoss)
+            {
+                if (_overflowEpisode && nowSec - _lastLossSec >= OverflowQuietSec)
+                {
+                    _overflowEpisode = false;
+                    UGALog.Event("mic.overflow_end", "lostTotal", lost, "lostInEpisode", lost - _episodeStartLoss);
+                }
+                return;
+            }
+            _lastLossSec = nowSec;
+            if (!_overflowEpisode && nowSec - _lastLossWarnSec >= OverflowWarnMinIntervalSec)
+            {
+                _overflowEpisode = true;
+                _episodeStartLoss = _lastReportedLoss;
+                _lastLossWarnSec = nowSec;
+                Warn("mic.overflow", "audio lost: " + lost + " samples in total (the reader fell behind and the ring buffer was full, or the main thread stalled for more than 1 s). One warning per episode; mic.overflow_end follows once it keeps up for "
+                    + OverflowQuietSec.ToString("0.#", CultureInfo.InvariantCulture) + " s");
+            }
             _lastReportedLoss = lost;
-            _lastLossWarnSec = nowSec;
         }
 
         void MaybeLogLevel(double nowSec)

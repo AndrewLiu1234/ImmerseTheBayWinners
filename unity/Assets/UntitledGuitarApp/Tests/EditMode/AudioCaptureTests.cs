@@ -1423,6 +1423,59 @@ namespace UntitledGuitarApp.Tests.EditMode
             Assert.AreEqual(0, s.RestartCount);
         }
 
+        // Hardening (Sat 2026-11-14): nothing read the mic yet, so the 2.7 s ring filled up and "mic.overflow" warned every 5 s
+        // for the whole session. A full ring with no reader is not lost audio.
+        [Test]
+        public void Session_NoReaderYet_AFullRingIsNeitherCountedNorWarned()
+        {
+            FakeMic mic = new FakeMic();
+            CaptureSession s = NewSession(mic, MicFlags("MacBook"));
+            s.Start(0.0);
+            double t = Feed(s, mic, 0, 16 * 30, 3000);                    // 30 s at 48 kHz, nobody reads
+            Assert.IsTrue(s.IsCapturing);
+            Assert.IsFalse(s.HasReader);
+            Assert.AreEqual(0, s.WarnCount, "no mic.overflow without a reader");
+            Assert.AreEqual(0, s.LostSamples);
+
+            float[] drain = new float[1 << 18];
+            Assert.Greater(s.Read(drain, 0, drain.Length), 0, "the ring held audio");
+            Assert.IsTrue(s.HasReader);
+            for (int i = 0; i < 32; i++)                                   // 2 s with a reader that keeps up
+            {
+                t = Feed(s, mic, t, 1, 3000);
+                s.Read(drain, 0, drain.Length);
+            }
+            Assert.AreEqual(0, s.WarnCount, "the backlog from before the first Read is not counted later either");
+            Assert.AreEqual(0, s.LostSamples);
+        }
+
+        [Test]
+        public void Session_AReaderThatFallsBehind_WarnsOncePerOverflowEpisode()
+        {
+            FakeMic mic = new FakeMic();
+            CaptureSession s = NewSession(mic, MicFlags("MacBook"));
+            s.Start(0.0);
+            float[] drain = new float[1 << 18];
+            double t = Feed(s, mic, 0, 1, 3000);
+            s.Read(drain, 0, drain.Length);                                // a reader exists
+
+            t = Feed(s, mic, t, 16 * 20, 3000);                            // it stops reading for 20 s: one long episode
+            Assert.Greater(s.LostSamples, 0);
+            Assert.AreEqual(1, s.WarnCount, "one warning for the whole episode, not one every 5 s");
+
+            for (int i = 0; i < 16 * 3; i++)                               // it catches up and keeps up for 3 s: the episode ends
+            {
+                t = Feed(s, mic, t, 1, 3000);
+                s.Read(drain, 0, drain.Length);
+            }
+            long lostAfterRecovery = s.LostSamples;
+            Assert.AreEqual(1, s.WarnCount);
+
+            t = Feed(s, mic, t, 16 * 6, 3000);                             // falls behind again: a NEW episode warns again
+            Assert.Greater(s.LostSamples, lostAfterRecovery);
+            Assert.AreEqual(2, s.WarnCount);
+        }
+
         [Test]
         public void Session_FlagReload_RestartsOnlyWhenTheAudioSettingsChanged()
         {
