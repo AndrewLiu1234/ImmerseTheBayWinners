@@ -54,6 +54,32 @@ namespace UntitledGuitarApp.Runtime.Flags
         public bool invertRoll = false;
     }
 
+    [Serializable] public sealed class CameraAnchorFlags
+    {
+        public bool enabled = false;           // SL12: ArUco marker -> neck anchor. Safe default off.
+        public string cameraName = "UVC";      // substring of the WebCamTexture device name (the Ultra's UVC camera)
+        public float markerMm = 120f;          // printed marker side length
+        public int markerId = 7;
+        public int udpInPort = 47801;          // JPEG chunks -> tools/camera-vision bridge
+        public int udpOutPort = 47802;         // pose JSON back
+        public int jpegQuality = 60;
+        public int sendIntervalMs = 33;        // ~30 Hz; the camera gives 60 but the bridge and the filter need less
+        public float posAlpha = 0.35f;         // PoseFilter smoothing
+        public float rotAlpha = 0.35f;
+        public float maxJumpMm = 50f;          // outlier rejection
+        public float maxJumpDeg = 20f;
+        public float lostTimeoutS = 0.6f;      // marker unseen this long -> freeze the last alignment
+        public float camToHeadX = 0f;          // glasses camera position in the HEAD frame, mm (tuned on device)
+        public float camToHeadY = 0f;
+        public float camToHeadZ = 0f;
+        public float markerToNutX = 300f;      // marker position in the NECK frame (nut origin), mm (+x toward the bridge)
+        public float markerToNutY = -10f;
+        public float markerToNutZ = 0f;
+        public float markerToNeckDegX = 90f;   // printed marker frame -> neck frame, euler degrees (tuned on device)
+        public float markerToNeckDegY = 0f;
+        public float markerToNeckDegZ = 0f;
+    }
+
     [Serializable] public sealed class FlagSet
     {
         public string profile = "dev";
@@ -64,6 +90,7 @@ namespace UntitledGuitarApp.Runtime.Flags
         public GhostFlags ghost = new GhostFlags();
         public RenderFlags render = new RenderFlags();
         public ImuFlags imu = new ImuFlags();
+        public CameraAnchorFlags cameraAnchor = new CameraAnchorFlags();
         public bool waitModeDefault = true;
         public float[] tempoPresets = { 0.5f, 0.6f, 0.75f, 0.9f, 1.0f };
         public bool leftHanded = false;

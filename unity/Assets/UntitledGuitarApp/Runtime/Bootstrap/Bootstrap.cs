@@ -1,6 +1,7 @@
 using System;
 using UnityEngine;
 using UntitledGuitarApp.Runtime.Audio;
+using UntitledGuitarApp.Runtime.CameraAnchor;
 using UntitledGuitarApp.Runtime.Flags;
 using UntitledGuitarApp.Runtime.Gaze;
 using UntitledGuitarApp.Runtime.GhostHand;
@@ -85,6 +86,8 @@ namespace UntitledGuitarApp.Runtime
         public NeckAnchor Anchor { get; private set; }
         /// <summary>The 4-glance alignment and the one-glance re-anchor (operator keys A and Z, through DemoDirector).</summary>
         public NeckAligner Aligner { get; private set; }
+        /// <summary>The SL12 camera anchor (WebCamTexture -> vision bridge -> ArUco pose); null when the flag is off.</summary>
+        public CameraAnchorSource CameraAnchor { get; private set; }
 
         readonly FingertipDot[] _dots = new FingertipDot[FloatingNeck.MaxDots];
         readonly StringMark[] _marks = new StringMark[6];
@@ -211,6 +214,7 @@ namespace UntitledGuitarApp.Runtime
             Anchor = NeckAnchor.Create(transform, Neck, Rig.Head, HeadPose);
             Aligner = NeckAligner.Create(transform, Rig.Head, Neck, HeadPose, Anchor);
             Aligner.Reticle = Reticle;
+            if (flags.cameraAnchor.enabled) CameraAnchor = CameraAnchorSource.Create(transform, Rig.Head, Anchor);
 
             // Left hand for a right-handed player; for a left-handed player the neck's mirrored socket mirrors the hand too.
             FrettingHand = CapsuleHand.Create(Neck.Socket, true);
