@@ -392,6 +392,93 @@ def solve_fretting(model, neck, name, targets):
 
 
 # ----------------------------------------------------------------------------------------------------------------------
+# the strumming hand (the player's right hand)
+# ----------------------------------------------------------------------------------------------------------------------
+# name: (where the pick point is: across the strings, toward the nut, above the strings in mm; how far the fingers lean
+# toward the neck in degrees; grip: 1 = thumb and index pinched as on a pick, 0 = loose)
+STRUM_POSES = {
+    "down-start": dict(across=("above", 6, 12.0), along=0.0, above=1.0, lean=38.0, grip=1.0),
+    "down-end": dict(across=("below", 1, 12.0), along=4.0, above=1.0, lean=18.0, grip=1.0),
+    "up-start": dict(across=("below", 1, 10.0), along=2.0, above=1.0, lean=14.0, grip=1.0),
+    "up-end": dict(across=("above", 4, 5.0), along=-2.0, above=2.0, lean=34.0, grip=1.0),
+    "pick-ready": dict(across=("above", 3, 3.5), along=0.0, above=5.0, lean=27.0, grip=1.0),
+    "rest": dict(across=("below", 1, 16.0), along=6.0, above=20.0, lean=24.0, grip=0.0),
+}
+PICK_REACH_MM = 9.0     # the pick point is this far beyond the pinch of thumb and index, toward the strings
+STRUM_CLEAR_MM = 6.0    # the other fingertips stay at least this far above the strings
+
+
+def strum_line_x(neck):
+    """Where the pick crosses the strings: between the end of the fretboard and the middle of the soundhole."""
+    if neck.soundhole_x is None:
+        raise PoseError("the mock-up has no 'Soundhole' marker: rebuild it with --nut-to-soundhole MM (the strumming hand needs it)")
+    return neck.soundhole_x - 0.5 * neck.soundhole_radius
+
+
+def solve_strumming(model, neck, name):
+    spec = STRUM_POSES[name]
+    unit = MM * model.scale
+    xs = strum_line_x(neck)
+    side, string_no, gap = spec["across"]
+    y = neck.string_y(string_no, xs) + (gap if side == "below" else -gap) * MM
+    pick = Vector((xs + spec["along"] * MM, y, neck.string_height + spec["above"] * MM))
+
+    lean, tip_in, roll = spec["lean"] * DEG, 14.0 * DEG, -8.0 * DEG
+    f = math.cos(tip_in) * Vector((-math.sin(lean), math.cos(lean), 0.0)) + math.sin(tip_in) * Vector((0.0, 0.0, -1.0))
+    p = Vector((0.0, 0.0, -1.0))
+    p = (p - p.dot(f) * f).normalized()
+    p = rotate_about(p, f, roll)
+    rot = Matrix((f.cross(p), f, p)).transposed()
+    wrist = rot.to_4x4()
+
+    grip = spec["grip"]
+    if grip > 0.5:
+        curls = {"index": (56.0, 76.0, 40.0), "middle": (50.0, 72.0, 40.0), "ring": (50.0, 70.0, 38.0), "pinky": (48.0, 66.0, 36.0)}
+    else:       # at rest the hand hangs open
+        curls = {"index": (26.0, 40.0, 24.0), "middle": (30.0, 46.0, 26.0), "ring": (33.0, 50.0, 28.0), "pinky": (36.0, 52.0, 30.0)}
+    mats = {"wrist": wrist}
+    tips = {}
+    for fg in rig.FINGERS:
+        m, tip = curl_digit(model, fg, wrist, curls[fg], spread_deg=0.0)
+        mats.update(m)
+        tips[fg] = tip
+    radial = rot.col[0].normalized()          # the right hand's wrist bone +X points to the thumb side
+    index_dip = mats["index_distal"].translation
+    report = dict(fingers={})
+    if grip > 0.5:   # the thumb's pad on the side of the index finger's last joint, as on a pick
+        goal = tips["index"] + 0.45 * (index_dip - tips["index"]) + (10.5 * unit) * radial
+        thumb = solve_digit(model, "thumb", wrist, goal, THUMB_STYLE, pad_dir=-radial)
+        mats.update(thumb["mats"])
+        report["fingers"]["thumb"] = thumb
+        thumb_tip = thumb["joints"][3]
+    else:
+        m, thumb_tip = curl_digit(model, "thumb", wrist, (4.0, 10.0, 12.0))
+        mats.update(m)
+    model.complete(mats)
+    toward_strings = rot.col[2].normalized()    # the palm side of the hand
+    point = (0.5 * (tips["index"] + thumb_tip) if grip > 0.5 else tips["index"]) + (PICK_REACH_MM * unit) * toward_strings
+    shift = pick - point
+    for key in mats:
+        m = mats[key].copy()
+        m.translation = m.translation + shift
+        mats[key] = m
+    # no other fingertip may dip into the strings: curl it further until it clears them
+    floor = neck.string_height + STRUM_CLEAR_MM * MM
+    for fg in ("middle", "ring", "pinky") + (("index",) if grip < 0.5 else ()):
+        curl = list(curls[fg])
+        for _try in range(8):
+            if model.tip(mats, fg).z >= floor:
+                break
+            curl[1] += 6.0
+            curl[2] += 3.0
+            m, _tip = curl_digit(model, fg, mats["wrist"], curl)
+            mats.update(m)
+    report.update(pick=pick, wrist=mats["wrist"], cost=0.0,
+                  lowest_other_tip=min(model.tip(mats, fg).z for fg in ("middle", "ring", "pinky")) - neck.string_height)
+    return mats, report
+
+
+# ----------------------------------------------------------------------------------------------------------------------
 # writing a pose into Blender: IK from the computed pose, bake, key
 # ----------------------------------------------------------------------------------------------------------------------
 def ensure_empty(name, collection, parent, size=0.004, kind="SPHERE"):
@@ -455,6 +542,9 @@ def read_mats(arm):
     return {name: ev.pose.bones[name].matrix.copy() for name in rig.BONE_NAMES}
 
 
+_LAST_KEY = {}
+
+
 def pose_and_key(arm, model, controls, mats, frame, exact, use_ik=True):
     """mats -> pose bones; IK pulls the digits listed in 'exact' ({digit: target}) onto their targets; bake; key.
 
@@ -489,12 +579,12 @@ def pose_and_key(arm, model, controls, mats, frame, exact, use_ik=True):
         stats[digit] = (tip, (tip - model.tip(mats, digit)).length / MM)
     for name in rig.BONE_NAMES:
         pb = arm.pose.bones[name]
-        last = pb.get("_last_quat")
+        last = _LAST_KEY.get((arm.name, name))    # keep neighbouring keys on the same side, so in-betweens take the short way
         q = pb.rotation_quaternion.copy()
-        if last is not None and Quaternion(last).dot(q) < 0.0:
+        if last is not None and last.dot(q) < 0.0:
             q.negate()
             pb.rotation_quaternion = q
-        pb["_last_quat"] = tuple(q)
+        _LAST_KEY[(arm.name, name)] = q
         pb.keyframe_insert("rotation_quaternion", frame=frame)
         if name == "wrist":
             pb.keyframe_insert("location", frame=frame)
@@ -510,15 +600,17 @@ def pose_and_key(arm, model, controls, mats, frame, exact, use_ik=True):
 def dress_neck(neck):
     """Dim emissive materials for the mock-up (there are no lights: an unlit object would be black = invisible)."""
     looks = {"Fretboard": ((0.020, 0.015, 0.012), 1.0), "Nut": ((0.30, 0.29, 0.26), 1.0), "Fret_": ((0.16, 0.17, 0.19), 1.0),
-             "String_": ((0.75, 0.62, 0.30), 1.0), "Guide_": ((0.010, 0.011, 0.013), 1.0), "Soundhole": ((0.30, 0.29, 0.26), 1.0)}
+             "String_": ((0.75, 0.62, 0.30), 1.0), "Guide_SoundholeRing": ((0.20, 0.18, 0.14), 1.0),
+             "Guide_Top": ((0.0045, 0.0040, 0.0036), 1.0), "Guide_": ((0.010, 0.011, 0.013), 1.0)}
     mats = {key: ghost_look.make_flat_material("Mock_" + key.rstrip("_"), rgb, strength) for key, (rgb, strength) in looks.items()}
     for ob in bpy.data.objects:
         if ob.type != "MESH" or ob.parent is not neck.obj:
             continue
-        for key, mat in mats.items():
+        for key, mat in mats.items():       # an exact name first, then the first prefix that fits
             if ob.name == key or (key.endswith("_") and ob.name.startswith(key)):
                 ob.data.materials.clear()
                 ob.data.materials.append(mat)
+                break
 
 
 def add_guides(neck, collection):
@@ -558,9 +650,8 @@ def add_guides(neck, collection):
     for k in range(seg):
         a, b = 2 * k, 2 * ((k + 1) % seg)
         faces.append((a, a + 1, b + 1, b))
-    mesh_object("Soundhole_Ring", verts, faces)
-    ghost_look_ring = bpy.data.objects["Soundhole_Ring"]
-    ghost_look_ring["note"] = "the soundhole edge at the ASSUMED/measured nut-to-soundhole distance, for the eye only"
+    ring = mesh_object("Guide_SoundholeRing", verts, faces)
+    ring["note"] = "the soundhole edge at the ASSUMED/measured nut-to-soundhole distance, for the eye only"
     w = 0.19   # a patch of the guitar's top around the soundhole, with the hole cut out
     verts, faces = [], []
     for k in range(seg):
@@ -639,8 +730,16 @@ def main():
         print("%s: %s hand, %d triangles" % (obj_name, info["side"], info["triangles"]))
 
     wanted = p.only or list(FRAMES)
-    fret = hands["fretting"]
-    failures = []
+    unknown = [w for w in wanted if w not in FRAMES]
+    if unknown:
+        raise PoseError("unknown pose name(s) %s; the poses are: %s" % (", ".join(unknown), ", ".join(FRAMES)))
+    fret, strum = hands["fretting"], hands["strumming"]
+    solved = {}                                   # label -> (matrices, report, fingertip targets)
+    for pose in STRUMMING_POSES:
+        label = "strumming-" + pose
+        if label in wanted or pose == "rest":
+            mats, report = solve_strumming(strum["model"], neck, pose)
+            solved[label] = (mats, report, {})
     for pose in FRETTING_POSES:
         label = "fretting-" + pose
         if label not in wanted:
@@ -652,26 +751,46 @@ def main():
         if pose != "rest" and not targets:
             raise PoseError("the mock-up has no targets tip_%s_f*: rebuild it with --chords including %s" % (pose, pose))
         mats, report = solve_fretting(fret["model"], neck, pose, targets)
-        stats = pose_and_key(fret["arm"], fret["model"], fret["controls"], mats, FRAMES[label], targets, use_ik=not p.no_ik)
-        scene.timeline_markers.new(label, frame=FRAMES[label])
-        print("%s (frame %d): palm cost %.2f" % (label, FRAMES[label], report["cost"]))
-        for digit in rig.DIGITS:
-            res = report["fingers"].get(digit)
-            line = "    %-6s" % digit
-            if res is not None:
-                line += " knuckle %5.1f  middle %5.1f  last %5.1f  spread %5.1f deg" % (res["fl"][0], res["fl"][1], res["fl"][2], res["phi"])
-            if digit in targets:
-                err = (stats[digit][0] - targets[digit]).length / MM
-                line += "   tip %.3f mm from its dot" % err
-                if err > 1.0:
-                    failures.append("%s %s %.2f mm" % (label, digit, err))
-            print(line)
+        solved[label] = (mats, report, targets)
+
+    # key in frame order. Each hand also holds a pose at the other hand's markers (the fretting hand holds G, the
+    # strumming hand rests), so stepping through the markers never shows a half-way hand.
+    hold = (solved.get("fretting-G") or solved.get("fretting-rest") or (None,))[0]
+    idle = solved["strumming-rest"][0]
+    failures = []
+    for label in sorted((name for name in FRAMES if name in wanted), key=lambda name: FRAMES[name]):
+        frame = FRAMES[label]
+        mats, report, targets = solved[label]
+        fretting = label.startswith("fretting-")
+        hand, other, other_mats = (fret, strum, idle) if fretting else (strum, fret, hold)
+        stats = pose_and_key(hand["arm"], hand["model"], hand["controls"], mats, frame, targets, use_ik=not p.no_ik)
+        if other_mats is not None:
+            pose_and_key(other["arm"], other["model"], other["controls"], other_mats, frame, {}, use_ik=False)
+        scene.timeline_markers.new(label, frame=frame)
+        if fretting:
+            print("%s (frame %d): palm cost %.2f" % (label, frame, report["cost"]))
+            for digit in rig.DIGITS:
+                res = report["fingers"].get(digit)
+                line = "    %-6s" % digit
+                if res is not None:
+                    line += " knuckle %5.1f  middle %5.1f  last %5.1f  spread %5.1f deg" % (res["fl"][0], res["fl"][1], res["fl"][2], res["phi"])
+                if digit in targets:
+                    err = (stats[digit][0] - targets[digit]).length / MM
+                    line += "   tip %.3f mm from its dot" % err
+                    if err > 1.0:
+                        failures.append("%s %s %.2f mm" % (label, digit, err))
+                print(line)
+        else:
+            pk, wr = report["pick"], report["wrist"].translation
+            print("%s (frame %d): pick point x %.1f  y %.1f  z %.1f mm; wrist x %.1f  y %.1f  z %.1f mm; other fingertips %.1f mm or more above the strings; IK moved the tips by up to %.3f mm" % (
+                label, frame, pk.x / MM, pk.y / MM, pk.z / MM, wr.x / MM, wr.y / MM, wr.z / MM, report["lowest_other_tip"] / MM,
+                max(v[1] for v in stats.values())))
         if p.debug_renders:
-            scene.frame_set(FRAMES[label])
-            hands["strumming"]["mesh"].hide_render = True
-            focus = Vector((0.06, 0.0, 0.0))
+            scene.frame_set(frame)
+            other["mesh"].hide_render = True
+            focus = Vector((0.06, 0.0, 0.0)) if fretting else Vector((strum_line_x(neck), 0.0, 0.0))
             debug_views(scene, os.path.abspath(p.debug_renders), label, focus)
-            hands["strumming"]["mesh"].hide_render = False
+            other["mesh"].hide_render = False
 
     scene.frame_start, scene.frame_end = 1, 120
     scene.frame_set(FRAMES["fretting-G"] if "fretting-G" in wanted else 1)

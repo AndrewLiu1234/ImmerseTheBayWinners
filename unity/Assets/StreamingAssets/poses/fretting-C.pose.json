@@ -4,7 +4,7 @@
   "name": "C",
   "units": "mm",
   "space": "neck-local-unity",
-  "source": { "blend": "ghost_hands.blend", "date": "2026-11-14T18:10:24Z", "exporter": "export_poses.py 1.1.0", "blender": "5.2.2 LTS" },
+  "source": { "blend": "ghost_hands.blend", "date": "2026-11-14T18:15:13Z", "exporter": "export_poses.py 1.1.0", "blender": "5.2.2 LTS" },
   "rootPositionMm": { "x": 65.595, "y": -62.371, "z": 112.192 },
   "bones": [
     { "name": "wrist", "rotation": { "x": -0.113346, "y": 0.899398, "z": 0.421672, "w": 0.020701 } },

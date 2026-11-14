@@ -34,8 +34,8 @@ def camera_for(hand, soundhole_x):
     if hand == "fretting":
         target = Vector((0.068, 0.012, 0.004))
         return target + Vector((0.20, -0.35, 0.235)), target, (0.0, 0.0, 1.0), 62.0
-    target = Vector((soundhole_x - 0.030, 0.018, 0.025))
-    return target + Vector((0.17, -0.37, 0.27)), target, (0.0, 0.0, 1.0), 62.0
+    target = Vector((soundhole_x + 0.010, -0.005, 0.050))
+    return target + Vector((0.17, -0.37, 0.27)), target, (0.0, 0.0, 1.0), 58.0
 
 
 def contact_sheet(paths, out_path, columns=4, pad=6):
