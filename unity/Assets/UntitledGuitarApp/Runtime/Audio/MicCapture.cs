@@ -47,14 +47,20 @@ namespace UntitledGuitarApp.Runtime.Audio
         /// <summary>True while audio is flowing. False when permission was denied, no device is available, or the watchdog is restarting.</summary>
         public bool IsCapturing { get { CaptureSession s = _session; return s != null && s.IsCapturing; } }
 
-        /// <summary>True when the input is the WAV replay (flag audioSource = "wav").</summary>
+        /// <summary>True when the input is the WAV replay (flag audioSource = "wav" AND the file loaded). This, not the flag, is what the SIMULATED INPUT badge must show.</summary>
         public bool IsReplay { get { CaptureSession s = _session; return s != null && s.IsReplay; } }
+
+        /// <summary>True when audioSource = "wav" but the replay file could not be used, so the microphone is the input instead (IsReplay is false).</summary>
+        public bool ReplayFallback { get { CaptureSession s = _session; return s != null && s.ReplayFallback; } }
 
         /// <summary>Counts every start, restart and failure of the stream. When it changes the samples have a gap (and maybe a new rate): reset DSP state. Any thread.</summary>
         public int Epoch { get { CaptureSession s = _session; return s != null ? s.Epoch : 0; } }
 
-        /// <summary>Samples lost to a full ring buffer or a long main-thread stall since start (0 is healthy).</summary>
+        /// <summary>Samples lost to a full ring buffer or a long main-thread stall since the first <see cref="Read"/> (0 is healthy). Before anything reads, a full ring is not counted.</summary>
         public long LostSamples { get { CaptureSession s = _session; return s != null ? s.LostSamples : 0; } }
+
+        /// <summary>True once anything has called <see cref="Read"/>. A reader that starts late first gets up to ~2.7 s of OLD audio (the ring keeps the oldest): drain with Read until it returns 0. Any thread.</summary>
+        public bool HasReader { get { CaptureSession s = _session; return s != null && s.HasReader; } }
 
         /// <summary>Spike M-S3 aid: set above 0 to log <c>mic.level</c> (RMS and peak in dB) that often. 0 = off.</summary>
         public float LevelLogIntervalSec

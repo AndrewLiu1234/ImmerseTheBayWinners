@@ -1423,6 +1423,59 @@ namespace UntitledGuitarApp.Tests.EditMode
             Assert.AreEqual(0, s.RestartCount);
         }
 
+        // Hardening (Sat 2026-11-14): nothing read the mic yet, so the 2.7 s ring filled up and "mic.overflow" warned every 5 s
+        // for the whole session. A full ring with no reader is not lost audio.
+        [Test]
+        public void Session_NoReaderYet_AFullRingIsNeitherCountedNorWarned()
+        {
+            FakeMic mic = new FakeMic();
+            CaptureSession s = NewSession(mic, MicFlags("MacBook"));
+            s.Start(0.0);
+            double t = Feed(s, mic, 0, 16 * 30, 3000);                    // 30 s at 48 kHz, nobody reads
+            Assert.IsTrue(s.IsCapturing);
+            Assert.IsFalse(s.HasReader);
+            Assert.AreEqual(0, s.WarnCount, "no mic.overflow without a reader");
+            Assert.AreEqual(0, s.LostSamples);
+
+            float[] drain = new float[1 << 18];
+            Assert.Greater(s.Read(drain, 0, drain.Length), 0, "the ring held audio");
+            Assert.IsTrue(s.HasReader);
+            for (int i = 0; i < 32; i++)                                   // 2 s with a reader that keeps up
+            {
+                t = Feed(s, mic, t, 1, 3000);
+                s.Read(drain, 0, drain.Length);
+            }
+            Assert.AreEqual(0, s.WarnCount, "the backlog from before the first Read is not counted later either");
+            Assert.AreEqual(0, s.LostSamples);
+        }
+
+        [Test]
+        public void Session_AReaderThatFallsBehind_WarnsOncePerOverflowEpisode()
+        {
+            FakeMic mic = new FakeMic();
+            CaptureSession s = NewSession(mic, MicFlags("MacBook"));
+            s.Start(0.0);
+            float[] drain = new float[1 << 18];
+            double t = Feed(s, mic, 0, 1, 3000);
+            s.Read(drain, 0, drain.Length);                                // a reader exists
+
+            t = Feed(s, mic, t, 16 * 20, 3000);                            // it stops reading for 20 s: one long episode
+            Assert.Greater(s.LostSamples, 0);
+            Assert.AreEqual(1, s.WarnCount, "one warning for the whole episode, not one every 5 s");
+
+            for (int i = 0; i < 16 * 3; i++)                               // it catches up and keeps up for 3 s: the episode ends
+            {
+                t = Feed(s, mic, t, 1, 3000);
+                s.Read(drain, 0, drain.Length);
+            }
+            long lostAfterRecovery = s.LostSamples;
+            Assert.AreEqual(1, s.WarnCount);
+
+            t = Feed(s, mic, t, 16 * 6, 3000);                             // falls behind again: a NEW episode warns again
+            Assert.Greater(s.LostSamples, lostAfterRecovery);
+            Assert.AreEqual(2, s.WarnCount);
+        }
+
         [Test]
         public void Session_FlagReload_RestartsOnlyWhenTheAudioSettingsChanged()
         {
@@ -1507,22 +1560,80 @@ namespace UntitledGuitarApp.Tests.EditMode
             Assert.AreEqual(0, mic.DevicesCalls);
         }
 
+        // Changed Sat 2026-11-14 (hardening): a missing replay file used to leave the "safe" demo profile with NO audio while the
+        // SIMULATED badge showed. Now the session falls back to the microphone, warns once, and IsReplay stays false (the badge
+        // must read IsReplay, so it never sits on top of a real microphone).
         [Test]
-        public void Session_WavMode_MissingFile_FailsLoudly_WithoutFallingBackToTheMicrophone()
+        public void Session_WavMode_MissingFile_FallsBackToTheMicrophone_AndWarnsOnce()
         {
             FakeMic mic = new FakeMic();
             FlagSet flags = new FlagSet { audioSource = "wav", wavReplayFile = "nope.wav" };
+            flags.audio.device = "MacBook";
             List<string> paths = new List<string>();
             CaptureSession s = NewSession(mic, flags, FakeLoader(null, 0, paths, false));
             s.Start(0.0);
-            Assert.IsFalse(s.IsCapturing);
-            Assert.IsFalse(s.IsReplay);
+            Assert.IsFalse(s.IsReplay, "no SIMULATED INPUT on top of a real microphone");
+            Assert.IsTrue(s.ReplayFallback);
+            Assert.AreEqual(1, mic.StartCalls, "the microphone took over");
+            Assert.AreEqual("MacBook Pro Microphone", s.DeviceName);
+            Assert.AreEqual(1, s.WarnCount, "one mic.wav_fallback warning");
+            double t = Feed(s, mic, 0, 4, 800);
+            Assert.IsTrue(s.IsCapturing, "audio flows");
+            float[] dst = new float[4000];
+            Assert.AreEqual(3200, s.Read(dst, 0, dst.Length));
+
+            t = Quiet(s, t, 40);                                           // 2.5 s without frames: the watchdog restarts
+            Assert.AreEqual(1, s.RestartCount);
+            Assert.AreEqual(2, paths.Count, "the restart tried the file again");
+            Assert.AreEqual(2, mic.StartCalls, "and fell back again");
+            Assert.AreEqual(1, s.WarnCount, "without a second warning for the same file");
+            Assert.IsTrue(s.ReplayFallback);
+
+            flags.audio.device = "XREAL";                                  // in fallback a device change still switches the mic
+            s.OnFlagsChanged(t);
+            Assert.AreEqual("XREAL Air 2 Ultra", mic.LastStartDevice);
             Assert.AreEqual(1, s.WarnCount);
-            Assert.AreEqual(0, mic.StartCalls, "the SIMULATED INPUT badge must never sit on top of a real microphone");
-            s.Tick(1.0, 1f);
-            s.OnFocus(true, 2.0);                                          // retries the load on focus
-            Assert.AreEqual(2, paths.Count);
-            Assert.AreEqual(1, s.WarnCount);
+
+            flags.wavReplayFile = "other.wav";                             // a NEW missing name gets its own single warning
+            s.OnFlagsChanged(t);
+            Assert.AreEqual(2, s.WarnCount);
+            Assert.IsTrue(s.ReplayFallback);
+        }
+
+        [Test]
+        public void Session_WavMode_EmptyNameOrEmptyAudio_AlsoFallsBackToTheMicrophone()
+        {
+            FakeMic mic = new FakeMic();
+            FlagSet flags = new FlagSet { audioSource = "wav", wavReplayFile = "" };
+            List<string> paths = new List<string>();
+            CaptureSession s = NewSession(mic, flags, FakeLoader(new float[0], 48000, paths));
+            Assert.DoesNotThrow(() => s.Start(0.0));
+            Assert.AreEqual(0, paths.Count, "an empty name is not even looked up");
+            Assert.IsTrue(s.ReplayFallback);
+            Assert.AreEqual(1, mic.StartCalls);
+
+            FakeMic mic2 = new FakeMic();
+            FlagSet flags2 = new FlagSet { audioSource = "wav", wavReplayFile = "empty.wav" };
+            CaptureSession s2 = NewSession(mic2, flags2, FakeLoader(new float[0], 48000, paths));
+            Assert.DoesNotThrow(() => s2.Start(0.0), "a WAV with no samples must not throw out of Start");
+            Assert.IsFalse(s2.IsReplay);
+            Assert.IsTrue(s2.ReplayFallback);
+            Assert.AreEqual(1, mic2.StartCalls);
+            Assert.AreEqual(1, s2.WarnCount);
+        }
+
+        [Test]
+        public void Session_WavMode_FileThatLoads_IsNoFallback()
+        {
+            FakeMic mic = new FakeMic();
+            FlagSet flags = new FlagSet { audioSource = "wav", wavReplayFile = "fixtures-demo/learn-g.wav" };
+            List<string> paths = new List<string>();
+            CaptureSession s = NewSession(mic, flags, FakeLoader(new float[] { 0.1f, 0.2f }, 8, paths));
+            s.Start(0.0);
+            Assert.IsTrue(s.IsReplay);
+            Assert.IsFalse(s.ReplayFallback);
+            Assert.AreEqual(0, mic.StartCalls);
+            Assert.AreEqual(0, s.WarnCount);
         }
 
         [Test]

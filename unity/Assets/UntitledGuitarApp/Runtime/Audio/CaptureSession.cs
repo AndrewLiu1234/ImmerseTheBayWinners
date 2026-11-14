@@ -40,6 +40,9 @@ namespace UntitledGuitarApp.Runtime.Audio
     ///
     /// Source: <c>FlagStore.Current.audioSource == "wav"</c> replays <c>wavReplayFile</c> (relative to StreamingAssets) through
     /// the same ring buffer, so downstream code reads one source whatever the flag says; anything else uses the microphone.
+    /// When the replay file is empty, missing or unreadable, the session falls back to the MICROPHONE (one warning
+    /// "mic.wav_fallback" per file name) so audio still flows: then <see cref="IsReplay"/> is false and
+    /// <see cref="ReplayFallback"/> is true. The SIMULATED INPUT badge must therefore read <see cref="IsReplay"/>, not the flag.
     /// Microphone: the first device whose name contains <c>audio.device</c> (case-insensitive), else the default device;
     /// a 10 s looping clip at 48 kHz (clamped to what the device reports); <see cref="SampleRate"/> is what the clip really got.
     ///
@@ -63,6 +66,10 @@ namespace UntitledGuitarApp.Runtime.Audio
         public const double RingSeconds = 2.0;
         /// <summary>One warning when the input has been exactly 0.0 for this long.</summary>
         public const double SilenceWarnSec = 3.0;
+        /// <summary>An overflow episode ends after this long without new losses (the next loss may warn again).</summary>
+        public const double OverflowQuietSec = 1.0;
+        /// <summary>At most one "mic.overflow" warning this often, whatever the episodes do.</summary>
+        public const double OverflowWarnMinIntervalSec = 5.0;
         /// <summary>Shown as <see cref="DeviceName"/> when the default device is used (its real name is not exposed).</summary>
         public const string DefaultDeviceLabel = "(default input)";
 
@@ -86,6 +93,8 @@ namespace UntitledGuitarApp.Runtime.Audio
         string _micDevice;              // name handed to Microphone.* (null = default device)
         bool _micRunning;               // Microphone.Start succeeded and End has not been called
         WavReplaySource _replay;
+        bool _replayFallback;           // the flags ask for the WAV, it could not be used, the microphone runs instead
+        string _replayFallbackWarnedFor; // file name the fallback warning was given for (once per name)
         bool _cfgWav;
         string _cfgDevice = "";
         string _cfgWavFile = "";
@@ -100,6 +109,11 @@ namespace UntitledGuitarApp.Runtime.Audio
         long _droppedCarry;
         long _lastReportedLoss;
         double _lastLossWarnSec = -1e9;
+        volatile bool _readerSeen;      // set by the first Read: before it, a full ring is not a loss (nobody is listening)
+        long _lossBaseline;             // raw losses before the first Read (excluded from LostSamples)
+        bool _overflowEpisode;          // warned, and losses have not stopped for OverflowQuietSec yet
+        double _lastLossSec;
+        long _episodeStartLoss;
         double _nextLevelLogSec;
         string[] _loggedDevices;
 
@@ -124,14 +138,20 @@ namespace UntitledGuitarApp.Runtime.Audio
         /// <summary>Copies up to <paramref name="count"/> unread samples (mono floats) into <paramref name="dst"/>; 0 when none. Consumer thread; never blocks.</summary>
         public int Read(float[] dst, int offset, int count)
         {
+            _readerSeen = true;
             FloatRingBuffer r = _ring;
             return r == null ? 0 : r.Read(dst, offset, count);
         }
+
+        /// <summary>True once anything has called <see cref="Read"/>. Until then ring overflow is neither counted nor warned about. Any thread.</summary>
+        public bool HasReader { get { return _readerSeen; } }
 
         /// <summary>True while samples are flowing (microphone delivering frames, or the WAV replay running).</summary>
         public bool IsCapturing { get { return _state == State.Running; } }
         /// <summary>True when the input is the WAV replay: the HUD must show SIMULATED INPUT.</summary>
         public bool IsReplay { get { return _replay != null; } }
+        /// <summary>True when the flags ask for the WAV replay but it could not be used, so the microphone is the input (no SIMULATED INPUT).</summary>
+        public bool ReplayFallback { get { return _replayFallback; } }
         /// <summary>Name of the device in use, <see cref="DefaultDeviceLabel"/>, "wav:&lt;file&gt;" in replay mode, or "" when nothing is capturing.</summary>
         public string DeviceName { get { return _deviceName; } }
         /// <summary>Smoothed RMS, linear 0..1.</summary>
@@ -143,14 +163,23 @@ namespace UntitledGuitarApp.Runtime.Audio
 
         // ---- diagnostics ---------------------------------------------------------------------------------------
 
-        /// <summary>Audio lost so far: ring buffer overflow (reader too slow) plus frames skipped after a long main-thread stall.</summary>
+        /// <summary>
+        /// Audio lost since the first <see cref="Read"/>: ring buffer overflow (reader too slow) plus frames skipped after a long
+        /// main-thread stall. Before anything reads, a full ring drops samples nobody was going to hear; those are not counted.
+        /// </summary>
         public long LostSamples
         {
             get
             {
-                FloatRingBuffer r = _ring;
-                return _droppedCarry + (r == null ? 0 : r.DroppedSamples) + _pump.SkippedFrames;
+                long lost = RawLostSamples() - _lossBaseline;
+                return lost > 0 ? lost : 0;
             }
+        }
+
+        long RawLostSamples()
+        {
+            FloatRingBuffer r = _ring;
+            return _droppedCarry + (r == null ? 0 : r.DroppedSamples) + _pump.SkippedFrames;
         }
         public int WarnCount { get; private set; }
         public int RestartCount { get; private set; }
@@ -174,6 +203,7 @@ namespace UntitledGuitarApp.Runtime.Audio
             _zeroRunFrames = 0;
             _warnedSilent = false;
             _warnedPumpError = false;
+            _replayFallback = false;
             if (_cfgWav) StartReplay(nowSec); else StartMic(nowSec);
             _epoch = _epoch + 1;    // after the ring and rate are published, so a reader that sees the new epoch also sees the new rate
         }
@@ -227,8 +257,9 @@ namespace UntitledGuitarApp.Runtime.Audio
             bool wav = f != null && string.Equals(f.audioSource, "wav", StringComparison.OrdinalIgnoreCase);
             string device = (f != null && f.audio != null && f.audio.device != null) ? f.audio.device : "";
             string file = (f != null && f.wavReplayFile != null) ? f.wavReplayFile : "";
+            bool micInUse = !wav || _replayFallback;
             bool changed = wav != _cfgWav
-                || (!wav && !string.Equals(device, _cfgDevice, StringComparison.Ordinal))
+                || (micInUse && !string.Equals(device, _cfgDevice, StringComparison.Ordinal))
                 || (wav && !string.Equals(file, _cfgWavFile, StringComparison.Ordinal));
             if (!changed) return;
             UGALog.Event("mic.reconfigure", "source", wav ? "wav" : "mic", "device", device, "file", file);
@@ -297,22 +328,41 @@ namespace UntitledGuitarApp.Runtime.Audio
 
         void StartReplay(double nowSec)
         {
+            WavData data = null;
+            string error = null;
             if (_cfgWavFile.Length == 0)
             {
-                Fail("mic.wav", "audioSource is \"wav\" but wavReplayFile is empty. Capture is off; it retries when the app regains focus");
-                return;
+                error = "wavReplayFile is empty";
             }
-            string path = Path.Combine(_streamingAssetsPath, _cfgWavFile);
-            WavData data;
-            string error;
-            bool ok;
-            try { ok = _wavLoader(path, out data, out error); }
-            catch (Exception e) { data = null; error = e.GetType().Name + ": " + e.Message; ok = false; }
-            if (!ok || data == null)
+            else
             {
-                Fail("mic.wav", "audioSource is \"wav\" but the replay file could not be used: " + error + ". Capture is off; it retries when the app regains focus");
+                string path = Path.Combine(_streamingAssetsPath, _cfgWavFile);
+                bool ok;
+                try { ok = _wavLoader(path, out data, out error); }
+                catch (Exception e) { data = null; error = e.GetType().Name + ": " + e.Message; ok = false; }
+                if (!ok) data = null;
+                else if (data != null && (data.Samples.Length == 0 || data.SampleRate <= 0))
+                {
+                    error = "the file holds no playable audio (" + data.Samples.Length + " samples at " + data.SampleRate + " Hz): " + path;
+                    data = null;
+                }
+                if (data == null && string.IsNullOrEmpty(error)) error = "the loader returned no audio for " + path;
+            }
+            if (data == null)
+            {
+                // The replay is the "safe" demo profile: never leave the demo silent. Use the microphone and say so once per
+                // file name (the watchdog and focus retries come back here and try the file again, quietly).
+                _replayFallback = true;
+                if (!string.Equals(_replayFallbackWarnedFor, _cfgWavFile, StringComparison.Ordinal))
+                {
+                    _replayFallbackWarnedFor = _cfgWavFile;
+                    Warn("mic.wav_fallback", "audioSource is \"wav\" but the replay file could not be used: " + error
+                        + ". Using the MICROPHONE instead (IsReplay = false, so no SIMULATED INPUT badge should show)");
+                }
+                StartMic(nowSec);
                 return;
             }
+            _replayFallbackWarnedFor = null;
             _replay = new WavReplaySource(data);
             EnsureRing(data.SampleRate);
             _replay.Advance(nowSec);                              // anchors the replay clock
@@ -407,14 +457,37 @@ namespace UntitledGuitarApp.Runtime.Audio
             }
         }
 
+        // One "mic.overflow" warning per overflow EPISODE (losses that keep coming count as one; the episode ends after
+        // OverflowQuietSec without a new loss), at most one per OverflowWarnMinIntervalSec, and none before the first Read: until a
+        // reader exists (nothing reads the mic yet in some modes) the ring simply fills up in ~2.7 s, which is not lost audio.
         void CheckLoss(double nowSec)
         {
+            if (!_readerSeen)
+            {
+                _lossBaseline = RawLostSamples();
+                _lastReportedLoss = 0;
+                return;
+            }
             long lost = LostSamples;
-            if (lost == _lastReportedLoss) return;
-            if (nowSec - _lastLossWarnSec < 5.0) return;
-            Warn("mic.overflow", "audio lost: " + lost + " samples in total (the ring buffer was full because the reader is too slow, or the main thread stalled for more than 1 s)");
+            if (lost == _lastReportedLoss)
+            {
+                if (_overflowEpisode && nowSec - _lastLossSec >= OverflowQuietSec)
+                {
+                    _overflowEpisode = false;
+                    UGALog.Event("mic.overflow_end", "lostTotal", lost, "lostInEpisode", lost - _episodeStartLoss);
+                }
+                return;
+            }
+            _lastLossSec = nowSec;
+            if (!_overflowEpisode && nowSec - _lastLossWarnSec >= OverflowWarnMinIntervalSec)
+            {
+                _overflowEpisode = true;
+                _episodeStartLoss = _lastReportedLoss;
+                _lastLossWarnSec = nowSec;
+                Warn("mic.overflow", "audio lost: " + lost + " samples in total (the reader fell behind and the ring buffer was full, or the main thread stalled for more than 1 s). One warning per episode; mic.overflow_end follows once it keeps up for "
+                    + OverflowQuietSec.ToString("0.#", CultureInfo.InvariantCulture) + " s");
+            }
             _lastReportedLoss = lost;
-            _lastLossWarnSec = nowSec;
         }
 
         void MaybeLogLevel(double nowSec)
