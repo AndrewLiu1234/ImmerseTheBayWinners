@@ -224,7 +224,7 @@ namespace UntitledGuitarApp.Editor
                 new StateSpec { Name = "lyrics-chords-only", Description = "chords-only line Am 2 G 2 C 4 at beat 2.75 (G), next line underneath", Setup = p => Riptide(p, 2.75f, false) },
                 new StateSpec { Name = "lyrics-words", Description = "Happy Birthday (public domain), 3/4: chords above the words, next line underneath", Setup = WordsState },
                 new StateSpec { Name = "results", Description = "results card: 7 of 8 clean, 85 ms late", Setup = ResultsState },
-                new StateSpec { Name = "planted-overlap", Description = "CHECKER SELF-TEST: mid-chord with the lyric strip moved onto the chord name and the pattern strip onto a G dot", Setup = PlantedState },
+                new StateSpec { Name = "planted-overlap", Description = "CHECKER SELF-TEST (not counted): mid-chord with the lyric strip moved onto the chord name and the pattern strip onto a fingertip dot", Setup = PlantedState },
             };
 
             var json = new StringBuilder(64 * 1024);
