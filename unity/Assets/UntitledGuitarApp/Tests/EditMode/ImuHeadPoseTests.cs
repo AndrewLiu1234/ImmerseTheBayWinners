@@ -376,7 +376,7 @@ namespace UntitledGuitarApp.Tests.EditMode
         [Test]
         public void Parser_MalformedNumbers_AreRejected()
         {
-            string[] bad = { "01", "00", "-01", "1.", "-1.", ".5", "-.5", "+1", "--1", "-", "1e", "1e+", "1e-", "1E", "0x10", "1.2.3", "1,5", "1_000", "١٢" };   // the last one is Arabic-Indic digits
+            string[] bad = { "01", "00", "-01", "1.", "-1.", ".5", "-.5", "+1", "--1", "-", "1e", "1e+", "1e-", "1E", "0x10", "1.2.3", "1,5", "1_000", "\u0661\u0662" };   // the last one is Arabic-Indic digits
             foreach (string form in bad)
             {
                 Assert.IsFalse(Accepts("{\"t\":" + form + ",\"q\":[0,0,0,1]}"), "t = " + form);
