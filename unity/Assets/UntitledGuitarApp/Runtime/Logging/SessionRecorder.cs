@@ -48,6 +48,7 @@ namespace UntitledGuitarApp.Runtime.Logging
         /// <summary>Starts a session in &lt;persistentDataPath&gt;/sessions. Main thread. Returns true when recording (also if it already was).</summary>
         public static bool Start()
         {
+            UGALog.Configure();                                  // events stay one line each in the log file
             return Start(Path.Combine(Application.persistentDataPath, "sessions"));
         }
 
@@ -94,7 +95,6 @@ namespace UntitledGuitarApp.Runtime.Logging
                     s_quitHooked = true;                        // raised when the player quits and when Play mode ends
                 }
             }
-            UGALog.Configure();
             Write(UGALog.FormatJson(UGALog.Now, "session_start",
                 "path", path, "unity", Application.unityVersion, "platform", Application.platform.ToString()));
             return true;

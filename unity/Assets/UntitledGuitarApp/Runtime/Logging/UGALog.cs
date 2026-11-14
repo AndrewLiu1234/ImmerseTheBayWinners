@@ -50,7 +50,6 @@ namespace UntitledGuitarApp.Runtime.Logging
 
         static long s_startTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
         static volatile Action<LogType, string> s_output;
-        static volatile bool s_configured;
         [ThreadStatic] static StringBuilder t_builder;
 
         // ---- the contract (SeamStubs.cs) -------------------------------------------------------------------------------
@@ -116,19 +115,17 @@ namespace UntitledGuitarApp.Runtime.Logging
         /// value is StackTraceLogType.ScriptOnly."
         /// https://docs.unity3d.com/2021.3/Documentation/ScriptReference/Application.SetStackTraceLogType.html
         /// The managed binding is not marked thread safe (checked in UnityEngine.CoreModule.dll), so a call from another
-        /// thread throws; Configure() swallows that and simply tries again on the next call.
+        /// thread throws; Configure() swallows that and does nothing. Cheap, so calling it again is harmless.
         /// </summary>
         public static void Configure()
         {
-            if (s_configured) return;
             try
             {
                 Application.SetStackTraceLogType(LogType.Log, StackTraceLogType.None);
-                s_configured = true;
             }
             catch (Exception)
             {
-                // wrong thread or engine not ready: stay unconfigured, the next main-thread call will do it
+                // wrong thread or engine not ready: nothing to do, the next main-thread call will do it
             }
         }
 
