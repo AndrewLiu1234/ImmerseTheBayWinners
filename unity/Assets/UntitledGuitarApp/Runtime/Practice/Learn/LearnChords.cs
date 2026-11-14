@@ -47,6 +47,18 @@ namespace UntitledGuitarApp.Runtime.Practice.Learn
         }
 
         /// <summary>
+        /// The chord for an operator's chord index (DemoState.ChordIndex): the flags' chords list when it has entries, else
+        /// <see cref="Names"/>; the index wraps. Names this library does not know fall back to G. Pure.
+        /// </summary>
+        public static string NameAt(FlagSet flags, int index)
+        {
+            string[] list = flags != null && flags.chords != null && flags.chords.Length > 0 ? flags.chords : s_Names;
+            int i = ((index % list.Length) + list.Length) % list.Length;
+            int known = IndexOf(list[i] != null ? list[i].Trim() : null);
+            return known >= 0 ? s_Names[known] : DefaultChord;
+        }
+
+        /// <summary>
         /// The chord's fingertip dots and X / O marks on the default neck (CoreNeckLayout.DefaultGeometry, the neck Bootstrap
         /// builds). Returns the dot count, or -1 for an unknown chord (arrays untouched).
         /// </summary>

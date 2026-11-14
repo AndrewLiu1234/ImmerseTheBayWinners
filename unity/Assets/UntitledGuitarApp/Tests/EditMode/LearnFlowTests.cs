@@ -96,6 +96,14 @@ namespace UntitledGuitarApp.Tests.EditMode
             flags.chords = new[] { "F#m" };
             Assert.AreEqual("G", LearnChords.NameFromFlags(flags));
             Assert.AreEqual("Em", LearnChords.FromFlags(new FlagSet { chords = new[] { "Em" } }).Name);
+
+            // DemoState.ChordIndex -> chord: the flags' list when it has entries, else G C D Em Am; the index wraps.
+            Assert.AreEqual("G", LearnChords.NameAt(null, 0));
+            Assert.AreEqual("Em", LearnChords.NameAt(new FlagSet(), 3));
+            Assert.AreEqual("G", LearnChords.NameAt(new FlagSet(), 5));
+            Assert.AreEqual("Am", LearnChords.NameAt(new FlagSet(), -1));
+            Assert.AreEqual("Em", LearnChords.NameAt(new FlagSet { chords = new[] { "Em" } }, 7));
+            Assert.AreEqual("G", LearnChords.NameAt(new FlagSet { chords = new[] { "Bb7" } }, 0));
         }
 
         // ------------------------------------------------------------------ the state machine

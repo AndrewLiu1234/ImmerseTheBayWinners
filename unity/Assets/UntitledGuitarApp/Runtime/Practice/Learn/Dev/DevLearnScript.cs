@@ -4,9 +4,10 @@
 //
 // With a live microphone (LiveTuner.IsLive) the tuning is REAL: the run waits while Core's tuner and the needle's in-tune rule
 // take the player through strings 6 .. 1, then carries on with the (still simulated) finger steps and checks.
-// The chord comes from the flags (FlagSet.chords[0]; the judge profile sets Em), else G. Keys while it runs (old Input
-// Manager, the same as Bootstrap's R key): L starts (or restarts) the run, N skips to the next stage, K stops learn mode.
-// Set HandleKeys = false to drive it from code only (Play, Skip, Stop). Main thread only; no allocation per frame.
+// The chord comes from the flags (FlagSet.chords[0]; the judge profile sets Em), else G, or from Play(chord). Drive it from
+// code: Play / Skip / Stop (Bootstrap maps DemoState's Learn / Skip / Idle commands onto them). HandleKeys (default OFF,
+// because DemoKeys owns the keyboard) reads the same keys DemoKeys uses for the same things: L learn, S skip step, I idle.
+// Main thread only; no allocation per frame.
 using UnityEngine;
 using UntitledGuitarApp.Runtime.Flags;
 using UntitledGuitarApp.Runtime.Logging;
@@ -18,8 +19,8 @@ namespace UntitledGuitarApp.Runtime.Practice.Learn.Dev
     public sealed class DevLearnScript : MonoBehaviour
     {
         public const KeyCode StartKey = KeyCode.L;
-        public const KeyCode SkipKey = KeyCode.N;
-        public const KeyCode StopKey = KeyCode.K;
+        public const KeyCode SkipKey = KeyCode.S;
+        public const KeyCode StopKey = KeyCode.I;
 
         LearnPresenter _presenter;
         DevLearnTimeline _timeline;
@@ -29,8 +30,8 @@ namespace UntitledGuitarApp.Runtime.Practice.Learn.Dev
         int _next;
         bool _playing;
 
-        /// <summary>Read L / N / K from the keyboard. Default true.</summary>
-        public bool HandleKeys = true;
+        /// <summary>Read L / S / I from the keyboard (only when DemoKeys is not wired: it uses the same keys). Default false.</summary>
+        public bool HandleKeys;
 
         /// <summary>The real tuner; while it is live the scripted tuning is not played (see the file summary). May be null.</summary>
         public LearnMicTuner LiveTuner;
