@@ -162,6 +162,7 @@ namespace UntitledGuitarApp.Runtime
             else if (State.Mode == DemoMode.Idle && Hands != null) Hands.Idle(_idleChord, dt);
             // Learn: LearnPresenter, DevLearnScript and LearnMicTuner tick themselves; the presenter owns the fretting hand.
             UpdateChecksLabel();
+            UpdateMeter();
             UpdateReticle();
             RefreshStatus();
         }
@@ -173,6 +174,17 @@ namespace UntitledGuitarApp.Runtime
             if (_boot.Reticle == null) return;
             bool show = _boot.Aligner != null && _boot.Aligner.IsRunning;
             if (_boot.Reticle.gameObject.activeSelf != show) _boot.Reticle.gameObject.SetActive(show);
+        }
+
+        // The head-locked mic meter sits top right, exactly where the learn card and the play card go (12:35 player frame:
+        // "MIC 48 kHz" on "next", its bars on the chord row). Learn has its own tuner needle and the spectator shows the
+        // mic state, so the meter shows only while idle — AND not while aligning: the align prompts (NeckAligner lines B/C)
+        // sit on the meter's bar and label, and on an additive display both would be unreadable (adversarial review P1-2).
+        void UpdateMeter()
+        {
+            if (_boot.Meter == null) return;
+            bool show = State.Mode == DemoMode.Idle && !(_boot.Aligner != null && _boot.Aligner.IsRunning);
+            if (_boot.Meter.gameObject.activeSelf != show) _boot.Meter.gameObject.SetActive(show);
         }
 
         void UpdateChecksLabel()
@@ -257,11 +269,10 @@ namespace UntitledGuitarApp.Runtime
                 Play.Present(PracticeFrame.Idle, 0f);   // an inactive frame hides the neck HUD card and the rings
             }
             _practice = PracticeFrame.Idle;
-            // The head-locked mic meter sits top right, exactly where the learn card and the play card go (12:35 player frame:
-            // "MIC 48 kHz" on "next", its bars on the chord row). Learn has its own tuner needle and the spectator shows the
-            // mic state, so the meter shows only while idle.
-            if (_boot.Meter != null && _boot.Meter.gameObject.activeSelf != (State.Mode == DemoMode.Idle))
-                _boot.Meter.gameObject.SetActive(State.Mode == DemoMode.Idle);
+            // P1-1 (adversarial review): starting Learn or Play must end the 4-glance alignment, or the aligner keeps the
+            // neck hidden and keeps capturing, then pops the neck back mid-song. Idle (I/Esc) cancels in Handle.
+            NeckAligner aligner = _boot.Aligner;
+            if (aligner != null && aligner.IsRunning && State.Mode != DemoMode.Idle) aligner.Cancel();
             if (_resultsDimmed) DimForResults(false);
             // Honesty: UpdateChecksLabel recomputes _scriptedChecks every frame (learn falls back to the scripted run only
             // without a usable mic; play simulates only without audio). It is a separate label: SimulatedBadge stays a
