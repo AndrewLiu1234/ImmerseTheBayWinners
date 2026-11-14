@@ -156,6 +156,33 @@ namespace UntitledGuitarApp.Runtime.GhostHand
         /// </summary>
         public bool Fit(GhostPose reference)
         {
+            if (reference == null || !reference.HasBind)
+            {
+                _fitted = false;
+                FitErrorMm = float.PositiveInfinity;
+                FitProblem = "the reference pose has no bind block (re-export it with art/blender/export_poses.py 1.1.0 or newer)";
+                return false;
+            }
+            for (int b = 0; b < BoneCount; b++) _fitFrom[b] = reference.GetBindPositionMm(b);
+            return FitCore();
+        }
+
+        /// <summary>As Fit(GhostPose), from the 16 bind joints (bind.joints, mm, canonical bone order) directly.</summary>
+        public bool Fit(Vector3[] bindJointsMm)
+        {
+            if (bindJointsMm == null || bindJointsMm.Length < BoneCount)
+            {
+                _fitted = false;
+                FitErrorMm = float.PositiveInfinity;
+                FitProblem = "16 bind joints are needed";
+                return false;
+            }
+            for (int b = 0; b < BoneCount; b++) _fitFrom[b] = bindJointsMm[b];
+            return FitCore();
+        }
+
+        bool FitCore()
+        {
             _fitted = false;
             FitProblem = null;
             FitErrorMm = float.PositiveInfinity;
@@ -164,16 +191,7 @@ namespace UntitledGuitarApp.Runtime.GhostHand
                 FitProblem = "the rig's bind data is incomplete";
                 return false;
             }
-            if (reference == null || !reference.HasBind)
-            {
-                FitProblem = "the reference pose has no bind block (re-export it with art/blender/export_poses.py 1.1.0 or newer)";
-                return false;
-            }
-            for (int b = 0; b < BoneCount; b++)
-            {
-                _fitFrom[b] = reference.GetBindPositionMm(b);
-                _fitTo[b] = _positionInRoot[b];
-            }
+            for (int b = 0; b < BoneCount; b++) _fitTo[b] = _positionInRoot[b];
             Quaternion f;
             float s, worst;
             Vector3 t;
