@@ -258,8 +258,13 @@ namespace UntitledGuitarApp.Core.Geometry
                     var T2 = T + new V3(delta[0], delta[1], delta[2]);
                     var R2 = M3.Rodrigues(new V3(delta[3], delta[4], delta[5])) * R;
                     double c2 = Cost(o, d, R2, T2);
-                    if (c2 < cost) { R = R2.Orthonormalized(); T = T2; improved = c2 < cost; lambda = Math.Max(lambda * 0.1, 1e-12);
-                        double gain = cost - c2; cost = c2; if (gain < 1e-12 * (1 + cost)) return; }
+                    if (c2 < cost)
+                    {
+                        double gain = cost - c2;
+                        R = R2.Orthonormalized(); T = T2; cost = c2; improved = true;
+                        lambda = Math.Max(lambda * 0.1, 1e-12);
+                        if (gain < 1e-12 * (1 + cost)) return; // converged
+                    }
                     else lambda *= 10;
                 }
                 if (!improved) return;
