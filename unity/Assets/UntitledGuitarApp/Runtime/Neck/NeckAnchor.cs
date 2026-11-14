@@ -76,8 +76,10 @@ namespace UntitledGuitarApp.Runtime.Neck
     [DefaultExecutionOrder(900)]   // LateUpdate after ordinary scripts; ImuHeadPose (-100) has applied this frame's rotation in Update
     public sealed class NeckAnchor : MonoBehaviour
     {
-        /// <summary>Type name of the editor's mouse-look rig (Editor/EditorSimRig.cs), looked up by name from Runtime code.</summary>
-        public const string EditorSimRigTypeName = "EditorSimRig";
+        /// <summary>Type name of the editor's mouse-look head (Runtime/Head/EditorSimHead.cs since Sat 12:45; it was the
+        /// Editor/EditorSimRig component, which Unity could never attach). The lookup itself is typed (see LateUpdate), so a
+        /// rename breaks the build instead of silently making the editor head "untracked".</summary>
+        public const string EditorSimRigTypeName = "EditorSimHead";
 
         const float SimCheckIntervalSeconds = 0.5f;
 
@@ -268,7 +270,11 @@ namespace UntitledGuitarApp.Runtime.Neck
             if (!_simulatedHeadSet && Application.isEditor && Time.unscaledTime >= _nextSimCheck)
             {
                 _nextSimCheck = Time.unscaledTime + SimCheckIntervalSeconds;
-                _simDetected = _head != null && _head.GetComponent(EditorSimRigTypeName) != null;
+#if UNITY_EDITOR
+                _simDetected = _head != null && _head.GetComponent<UntitledGuitarApp.Runtime.Head.EditorSimHead>() != null;
+#else
+                _simDetected = false;
+#endif
             }
             Refresh();
         }
