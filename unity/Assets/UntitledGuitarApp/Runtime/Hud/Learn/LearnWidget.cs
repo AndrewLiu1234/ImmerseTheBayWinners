@@ -83,10 +83,13 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
         /// <summary>1 normally, 1.35 with the largeText flag: every size of the element is multiplied by it.</summary>
         protected float SizeScale { get { return HudText.TextScale(_large); } }
 
-        /// <summary>Metres that span <paramref name="degrees"/> of view at the viewing distance, including the largeText multiplier.</summary>
+        /// <summary>
+        /// Metres that span <paramref name="degrees"/> of view at the viewing distance, including the largeText multiplier.
+        /// Keeps the sign, so it is right for offsets below or left of the origin as well as for sizes.
+        /// </summary>
         protected float Meters(float degrees)
         {
-            return HudText.SizeForAngularHeight(degrees * SizeScale, _distanceM);
+            return LearnHudLayout.SignedMeters(degrees * SizeScale, _distanceM);
         }
 
         /// <summary>Sizes a text to <paramref name="capDegrees"/> of cap height (times the largeText multiplier) and returns that cap height in metres.</summary>
