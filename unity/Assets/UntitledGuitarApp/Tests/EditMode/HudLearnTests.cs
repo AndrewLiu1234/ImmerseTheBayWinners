@@ -559,6 +559,22 @@ namespace UntitledGuitarApp.Tests.EditMode
             Assert.Greater(3f * LearnTiming.MinChangeSeconds, 1f, "three gaps are longer than a second, so a fourth change cannot fit in it");
         }
 
+        [Test]
+        public void Gate_MarkChanged_HoldsTheNextChange_AsIfOneHadJustPassed()
+        {
+            // The tuner's words change through two paths (a new string; a new reading). A new string marks the words gate,
+            // so the first reading's words cannot follow within a third of a second.
+            var g = new ChangeGate();
+            g.Request();
+            g.MarkChanged();
+            Assert.IsFalse(g.Pending, "a waiting request is dropped: the other path already applied the latest words");
+            Assert.AreEqual(LearnTiming.MinChangeSeconds, g.Cooldown, 1e-6);
+            g.Request();
+            Assert.IsFalse(g.Tick(0f));
+            Assert.IsFalse(g.Tick(0.2f), "0.2 s after the other path changed the element");
+            Assert.IsTrue(g.Tick(0.15f), "0.35 s after it");
+        }
+
         // ---------------------------------------------------------------- text: length limits
 
         [TestCase("Arch finger 3, B string muted", 6)]

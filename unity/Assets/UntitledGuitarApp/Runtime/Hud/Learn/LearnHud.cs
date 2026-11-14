@@ -69,7 +69,10 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
         /// <summary>The object on the neck card spot that holds the message (for placing other things relative to it).</summary>
         public Transform Card { get { EnsureBuilt(); return _card; } }
 
-        /// <summary>The wearer's head (StereoRig's Head). Everything faces it and is sized for its distance.</summary>
+        /// <summary>
+        /// The wearer's head (StereoRig's Head). Everything faces it and is sized for its distance. The tuner is parented
+        /// under it; setting null (do it before destroying a head) brings the tuner back under this object.
+        /// </summary>
         public Transform Head
         {
             get { return _head; }
@@ -78,13 +81,11 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
                 EnsureBuilt();
                 _head = value;
                 Marks.Head = value;
-                if (value != null)
-                {
-                    Tuner.transform.SetParent(value, false);
-                    Tuner.transform.localPosition = LearnHudLayout.TunerHeadLocal();
-                    Tuner.transform.localRotation = Quaternion.identity;
-                    Tuner.SetViewingDistance(LearnHudLayout.TunerDistanceM);
-                }
+                if (Tuner == null) return;
+                Tuner.transform.SetParent(value != null ? value : transform, false);
+                Tuner.transform.localPosition = value != null ? LearnHudLayout.TunerHeadLocal() : Vector3.zero;
+                Tuner.transform.localRotation = Quaternion.identity;
+                if (value != null) Tuner.SetViewingDistance(LearnHudLayout.TunerDistanceM);
             }
         }
 
@@ -219,7 +220,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
         {
             ClearMessage();
             Marks.ClearAll();
-            Tuner.Clear();
+            if (Tuner != null) Tuner.Clear();   // the tuner lives under the head and goes if the head is destroyed first
         }
 
         void Request()

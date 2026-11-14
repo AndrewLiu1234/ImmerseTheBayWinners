@@ -212,7 +212,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
                     _string.SetText(LearnText.StringLabel(_wantString));
                     _shownString = _wantString;
                     _pendingState = _model.State;
-                    _statusGate.Cancel();
+                    _statusGate.MarkChanged();   // the words just changed: the first reading's words follow 0.34 s later at the earliest
                     ApplyState(_pendingState);
                     if (_fader.Target) _fader.Pulse();
                     else _fader.Show();

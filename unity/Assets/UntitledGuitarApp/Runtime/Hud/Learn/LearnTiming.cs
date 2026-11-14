@@ -135,6 +135,16 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
         }
 
         /// <summary>
+        /// Records that the element just changed through another path: drops a waiting request and keeps the gate closed
+        /// for <see cref="LearnTiming.MinChangeSeconds"/>, so a change through this gate cannot follow straight after it.
+        /// </summary>
+        public void MarkChanged()
+        {
+            _pending = false;
+            _cooldown = LearnTiming.MinChangeSeconds;
+        }
+
+        /// <summary>
         /// Advances time by <paramref name="dt"/> seconds. Returns true exactly when a pending change passes now; the
         /// gate then closes for <see cref="LearnTiming.MinChangeSeconds"/>.
         /// </summary>
