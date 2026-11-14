@@ -720,6 +720,36 @@ namespace UntitledGuitarApp.Tests.EditMode
             Assert.AreEqual(0f, PlayHudLayout.Offset(3f, 0f));
         }
 
+        // The signed-offset trap (Hud/Learn had it too): HudText.SizeForAngularHeight returns 0 for a negative angle, so a
+        // layout helper built on it puts everything that belongs below or left of its origin ON the origin. This test fails
+        // on the old PlayHudLayout.Size (it returned 0 for -2 degrees).
+        [Test]
+        public void Size_IsSigned_SoAPartBelowOrLeftOfItsOriginNeverCollapsesOntoIt()
+        {
+            // 2 * 0.5 m * tan(1 degree) = 0.0174551 m (python3: 2*0.5*math.tan(math.radians(1)))
+            Assert.AreEqual(0.0174551, PlayHudLayout.Size(2f, 0.5f), Tight);
+            Assert.AreEqual(-0.0174551, PlayHudLayout.Size(-2f, 0.5f), Tight);
+            Assert.AreEqual(-PlayHudLayout.Size(1.55f, 0.5f), PlayHudLayout.Size(-1.55f, 0.5f), 1e-7);   // the cursor lane drop
+            Assert.AreEqual(0f, PlayHudLayout.Size(0f, 0.5f));
+            Assert.AreEqual(0f, PlayHudLayout.Size(-2f, 0f));
+            Assert.AreEqual(0f, PlayHudLayout.Size(float.NaN, 0.5f));
+            Assert.AreEqual(0f, PlayHudLayout.Size(float.NegativeInfinity, 0.5f));
+        }
+
+        [Test]
+        public void SignedMeters_MirrorsTheUnsignedSizeAndKeepsTheSign()
+        {
+            for (float deg = 0.25f; deg < 20f; deg += 1.5f)
+            {
+                float unsigned = HudText.SizeForAngularHeight(deg, 0.7f);
+                Assert.AreEqual(unsigned, PlayHudLayout.SignedMeters(deg, 0.7f), 1e-7);
+                Assert.AreEqual(-unsigned, PlayHudLayout.SignedMeters(-deg, 0.7f), 1e-7);
+                Assert.AreEqual(PlayHudLayout.SignedMeters(-deg, 0.7f), PlayHudLayout.Size(-deg, 0.7f), 1e-7);
+            }
+            Assert.AreEqual(0f, PlayHudLayout.SignedMeters(-3f, -1f));
+            Assert.AreEqual(0f, PlayHudLayout.SignedMeters(float.PositiveInfinity, 0.5f));
+        }
+
         [Test]
         public void Layout_TextSizesRespectTheProjectMinimums()
         {

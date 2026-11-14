@@ -132,10 +132,28 @@ namespace UntitledGuitarApp.Runtime.Hud.Play
             return Mathf.Max(capDegrees * HudText.TextScale(largeText), HudText.MinTextDegrees);
         }
 
-        /// <summary>World size in metres of something spanning <paramref name="degrees"/> at <paramref name="distanceM"/> (same formula as HudText).</summary>
+        /// <summary>
+        /// World size in metres of something spanning <paramref name="degrees"/> at <paramref name="distanceM"/> (same formula
+        /// as HudText: 2 d tan(degrees / 2)). SIGNED: a negative angle gives a negative length, so a part placed below or
+        /// left of its origin stays there. (It used to return HudText.SizeForAngularHeight, which is 0 for a negative
+        /// angle; Hud/Learn had the same trap, see LearnHudLayout.SignedMeters.) 0 for a non-finite angle or an unusable distance.
+        /// </summary>
         public static float Size(float degrees, float distanceM)
         {
-            return HudText.SizeForAngularHeight(degrees, distanceM);
+            return SignedMeters(degrees, distanceM);
+        }
+
+        /// <summary>
+        /// The signed version of HudText.SizeForAngularHeight: the length in metres that <paramref name="degrees"/> of view
+        /// spans at <paramref name="distanceM"/>, with the sign of the angle. Use it (or <see cref="Offset"/>) for anything
+        /// that is a displacement; HudText.SizeForAngularHeight returns 0 for a negative angle. 0 for a non-finite angle or an
+        /// unusable distance.
+        /// </summary>
+        public static float SignedMeters(float degrees, float distanceM)
+        {
+            if (float.IsNaN(degrees) || float.IsInfinity(degrees)) return 0f;
+            float meters = HudText.SizeForAngularHeight(Mathf.Abs(degrees), distanceM);
+            return degrees < 0f ? -meters : meters;
         }
 
         /// <summary>Distance in metres from the card's centre of a point <paramref name="degrees"/> off-centre on a flat card (d * tan). Signed.</summary>
