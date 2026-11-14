@@ -17,8 +17,10 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
     /// The marks follow the neck socket in world space every frame and turn to face the head. They are deliberately NOT
     /// parented under the socket, so a mirrored (left-handed) or scaled socket cannot mirror or resize them. Keep this
     /// object under an unscaled parent. Marks ease in; a passed string fades by itself after 1.6 s, a problem stays until
-    /// it is replaced or cleared; no mark changes more than 3 times a second. Main thread only.
+    /// it is replaced or cleared; no mark changes more than 3 times a second. Runs late in the frame so it uses this
+    /// frame's head and neck poses. Main thread only.
     /// </summary>
+    [DefaultExecutionOrder(20000)]
     [DisallowMultipleComponent]
     public sealed class StringMarks : LearnWidget
     {
@@ -161,6 +163,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
             _wantedHold[i] = hold;
             _gates[i].Request();
             _active = true;
+            OnTick(0f);   // if the gate is open the mark is on screen for this frame's render, whatever the script order
         }
 
         /// <summary>Hides the mark of one string.</summary>
@@ -179,6 +182,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
                 _wanted[i] = StringMark.None;
                 _gates[i].Request();
             }
+            OnTick(0f);
         }
 
         /// <summary>The mark last asked for on a string (None if hidden or out of range).</summary>

@@ -160,6 +160,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
             _wantNote = note;
             _model.SetTarget();
             _targetGate.Request();
+            OnTick(0f);
         }
 
         /// <summary>
@@ -181,6 +182,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
             _wantVisible = false;
             _model.Clear();
             _targetGate.Request();
+            OnTick(0f);
         }
 
         // ------------------------------------------------------------------ animation

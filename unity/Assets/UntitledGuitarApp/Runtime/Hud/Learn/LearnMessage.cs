@@ -47,6 +47,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
             _contentDirty = true;
             _pendingHold = holdSeconds > 0f ? holdSeconds : float.PositiveInfinity;
             _gate.Request();
+            OnTick(0f);   // if the gate is open the message is on screen for this frame's render, whatever the script order
         }
 
         /// <summary>Fades the message out (after the 3 Hz gate, so a message can never just blink).</summary>
@@ -58,6 +59,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
             _contentDirty = false;
             _gate.Request();
             OnHidden();
+            OnTick(0f);
         }
 
         /// <summary>Removes the message at once, with no fade. For when another message takes its place.</summary>
