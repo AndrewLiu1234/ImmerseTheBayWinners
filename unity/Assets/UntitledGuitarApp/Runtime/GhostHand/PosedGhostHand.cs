@@ -72,7 +72,7 @@ namespace UntitledGuitarApp.Runtime.GhostHand
         bool _available;
         string _reason;
         string _currentPose;
-        string _lastMissingPose;
+        readonly System.Collections.Generic.HashSet<string> _missingPoses = new System.Collections.Generic.HashSet<string>(StringComparer.Ordinal);
         float _fadeFrom = 1f, _fadeTo = 1f, _fadeNow = 1f;
         float _emphasisFrom = 1f, _emphasisTo = 1f, _emphasisNow = 1f;
         float _lookT = 1f;
@@ -293,18 +293,73 @@ namespace UntitledGuitarApp.Runtime.GhostHand
         {
             if (!_available || _driver == null || poseName == null) return false;
             GhostPose pose;
-            if (!_library.TryGet(_hand, poseName, out pose))
-            {
-                if (!string.Equals(poseName, _lastMissingPose, StringComparison.Ordinal))
-                {
-                    _lastMissingPose = poseName;
-                    UGALog.Warn("ghost_hand_pose_missing", GhostPose.FileNameFor(_hand, poseName) + " is not loaded; the " + _hand + " hand keeps its pose");
-                }
-                return false;
-            }
+            if (!TryGetLogged(poseName, out pose)) return false;
             bool ok = immediate ? _driver.Apply(pose) : _driver.MorphTo(pose, morphSeconds);
             if (ok) _currentPose = poseName;
             return ok;
+        }
+
+        /// <summary>The pose library this hand reads (never null once created).</summary>
+        public GhostPoseLibrary Library { get { return _library; } }
+
+        /// <summary>A loaded pose of this hand by name. False (pose null) when unavailable or not loaded; never logs.</summary>
+        public bool TryGetPose(string poseName, out GhostPose pose)
+        {
+            pose = null;
+            return _available && _library != null && poseName != null && _library.TryGet(_hand, poseName, out pose);
+        }
+
+        /// <summary>
+        /// Shows the blend of two poses of this hand at u (0 = fromPose, 1 = toPose, used as it is: ease it yourself).
+        /// Safe and allocation-free every frame: the beat-locked strokes and chord morphs of GhostHandsDirector use it.
+        /// A pose that is not loaded is logged once per name and the other one is shown alone; false when neither is.
+        /// </summary>
+        public bool ShowBlend(string fromPose, string toPose, float u)
+        {
+            return ShowBlend(fromPose, toPose, u, 1f);
+        }
+
+        /// <summary>
+        /// As ShowBlend, cross-faded from the pose remembered by HoldSnapshot: <paramref name="weight"/> 0 shows the snapshot,
+        /// 1 (or more) the blend exactly (GhostPoseDriver.BlendLinearFromHeld).
+        /// </summary>
+        public bool ShowBlend(string fromPose, string toPose, float u, float weight)
+        {
+            if (!_available || _driver == null) return false;
+            GhostPose a, b;
+            bool hasA = TryGetLogged(fromPose, out a), hasB = TryGetLogged(toPose, out b);
+            if (!hasA && !hasB) return false;
+            if (!hasA) a = b;
+            if (!hasB) b = a;
+            if (!_driver.BlendLinearFromHeld(a, b, u, weight)) return false;
+            _currentPose = u >= 0.5f ? b.Name : a.Name;
+            return true;
+        }
+
+        /// <summary>Remembers the pose on screen now: the start of a ShowBlend cross-fade.</summary>
+        public void HoldSnapshot()
+        {
+            if (_available && _driver != null) _driver.HoldSnapshot();
+        }
+
+        /// <summary>How far (mm) the wrist on screen is from the blend of two poses at u; infinity when a pose is missing.</summary>
+        public float DistanceToBlendMm(string fromPose, string toPose, float u)
+        {
+            if (!_available || _driver == null) return float.PositiveInfinity;
+            GhostPose a, b;
+            bool hasA = TryGetPose(fromPose, out a), hasB = TryGetPose(toPose, out b);
+            if (!hasA && !hasB) return float.PositiveInfinity;
+            return _driver.WristDistanceToBlendMm(hasA ? a : b, hasB ? b : a, u);
+        }
+
+        bool TryGetLogged(string poseName, out GhostPose pose)
+        {
+            if (TryGetPose(poseName, out pose)) return true;
+            if (poseName != null && _missingPoses.Add(poseName))   // once per name: a song may alternate two missing chords
+            {
+                UGALog.Warn("ghost_hand_pose_missing", GhostPose.FileNameFor(_hand, poseName) + " is not loaded; the " + _hand + " hand keeps its pose");
+            }
+            return false;
         }
 
         /// <summary>1 = normal, 0.4 = "fade to 40% after success" (flag ghost.fadeAfterSuccess). Eases over morphSeconds.</summary>
