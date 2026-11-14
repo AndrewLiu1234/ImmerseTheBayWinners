@@ -1,5 +1,7 @@
 # DECISIONS — newest first (append-only; union-merged in git)
 <!-- D-<QID> · answer · who (Person 1 | Person 2) · HH:MM PT · reversible: yes|no · affects: docs/slices -->
+- D-Q-ANCHOR-SPLIT · SL12 (camera anchor) built entirely by Person 1 including the pose filter (in Runtime/CameraAnchor, not Core) — user decision, no Person 2 handoff · Person 1 · Sat 14:15 PT · reversible: yes · affects: `docs/TODO.md` SL12
+- D-Q-ANCHOR · Camera anchor v1 = ArUco marker on the guitar; capture in Unity (WebCamTexture is the only proven continuous path), marker math in a Python cv2 bridge over UDP, gaze anchor as fallback; no Unity package changes, no SLAM · Person 1 · Sat 14:10 PT · reversible: yes · affects: `docs/TODO.md` SL12, `docs/HOW_IT_WORKS.md` (later)
 - D-TEAM-labels · The two people are **Person 1** (XR: Unity + glasses) and **Person 2** (Core) in every doc, hook and agent prompt (older entries relabelled). Each clone sets its person with `./scripts/set-person.sh`; a hook blocks edits in the other person's lane · Person 1 · Sat 01:00 PT · reversible: yes · affects: `docs/WORKSPLIT.md`, CLAUDE.md, `.claude/**`
 - D-Q-EMU-01 · Keep the Mac route: no Android emulator, no Android build for the demo · Person 1 · Sat 00:23 PT · reversible: no (this weekend) · affects: docs/HOW_IT_WORKS.md §6
 - D-Q-PLAN-REPO · All planning delivered as GitHub-ready .md files + the Appendix A harness, unpacked · Person 1 · Sat 00:00 PT · reversible: — · affects: README

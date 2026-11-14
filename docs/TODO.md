@@ -103,3 +103,18 @@ ticks only the boxes their half proves; Person 1 sets `done` after the device ch
 **User-visible outcome:** a coach card after a run (≤3 s, or a rule-based fallback). **Max time:** 2h.
 - [x] Core: CoachInput, RuleBasedCoach, CoachPrompt, CoachResponseParser — core-tests/Coach/CoachTests.cs, L1
 - [ ] Runtime (Person 1): HTTP call only when flag `coach` ≠ "off", model `CoachPrompt.ModelId`, 3 s timeout, key from env var, fallback to RuleBasedCoach; card on the HUD
+
+## SL12 — Camera anchor (ArUco marker → real 6DoF neck lock)   [track: XR] [owner: Person 1] [status: doing] [depends: SL8]
+**User-visible outcome:** a printed ArUco marker taped on the guitar makes the virtual neck lock onto the real guitar and hold it while you play; when the marker leaves the camera view, the gaze anchor takes over seamlessly.
+**Why this slice exists:** spike 2026-11-14 proved (a) the Ultra exposes a UVC camera to macOS (VID 0x3318 PID 0x0426), (b) ffmpeg/AVFoundation cannot hold a continuous session (5/5 video opens fail) but (c) Unity's WebCamTexture CAN (probe: isPlaying 15 s, 640×241, frames arriving). Capture must therefore happen inside Unity; marker math runs in Python OpenCV (battle-tested, no Unity package risk), shuttled over UDP — the same pattern as tools/imu-bridge.
+**Owned paths:** Person 1: `Runtime/CameraAnchor/**`, `tools/camera-vision/**` (new bridge), `art/markers/**` · Person 2: `Core/Geometry/PoseFilter.cs` + `core-tests/Geometry/PoseFilterTests.cs`
+**Contracts used:** `NeckPose` / neck frame conventions (read-only; Person 2's frame math is the spec, the marker→neck adapter is `Runtime/CameraAnchor/MarkerToNeck.cs`)
+**Acceptance (automated):**
+- [ ] PoseFilter — input marker pose stream (position mm + quaternion, ~30 Hz, dropouts), output smoothed pose + lost flag; outlier rejection (jump > 50 mm or > 20° ⇒ discard, keep last); latency ≤ 100 ms; zero allocs — `Tests/EditMode/CameraAnchor/PoseFilterTests.cs`, L1
+- [ ] camera-vision bridge — receives JPEG chunks over UDP, cv2 ArUco detect + solvePnP, sends pose JSON back; synthetic-frame unit tests — L1/L2
+- [ ] Runtime CameraAnchor — WebCamTexture (retry-on-open, the UVC is flaky) → JPEG → bridge → pose → PoseFilter → anchor; EditMode green — L3
+**Acceptance (device, human-checked):**
+- [ ] Marker on the guitar: neck snaps to the real guitar and holds within ~2 cm while playing; fallback engages when the marker is covered — L5
+**Out of scope:** marker-free tracking, SLAM, head-position VIO, multi-marker refinement
+**Fallback if blocked:** the gaze anchor (current) stays the only anchor
+**Max time:** 6h total, by 22:00 PT — escalate at 4h.

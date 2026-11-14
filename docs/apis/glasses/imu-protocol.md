@@ -1415,7 +1415,16 @@ FA 80 83 7F 00 80 00 00 00 00 00 00 00 00 00 00
 
 An Air 2 Ultra report is the same 64 bytes followed by 448 more (zeros in the test).
 
-**M-S2 must confirm on the Ultra** (all UNVERIFIED today): (1) `--list` shows pid `0x0426` with an
-interface 2; (2) after the start command, reports begin `01 02`; (3) the printed rate (expected ≈ 1000 Hz)
-and that the device clock agrees with the host clock (ns timestamps); (4) the §8 human test signs;
-(5) yaw drift < 2 °/min while still. Paste the first `--dump 3` lines into this section as a real capture.
+**M-S2 confirmed on the physical Ultra, 2026-11-14** (start command form `'64'`; real capture of the first
+two data reports below — report 0 was the 0x19 command echo `aa 53 …`, reports 1–2 both begin `01 02`
+and are 512 bytes):
+
+```
+01 02 f4 02 aa c8 61 4f 68 02 00 00 a0 0f 00 00 00 01 a0 1e 01 60 96 fc 40 89 00 20 00 00 00 00 01 80 16 00 00 37 ff c0 41 07 00 80 00 04 00 00 3e 81 64 80 21 7f 20 af 46 03 00 00 00 00 01 4f
+01 02 e4 02 cd fa 70 4f 68 02 00 00 a0 0f 00 00 00 01 80 22 01 e0 9b fc 00 82 00 20 00 00 00 00 01 c0 14 00 c0 35 ff c0 44 07 00 80 00 04 00 00 3e 81 64 80 21 7f 88 97 55 03 00 00 00 00 00 50
+```
+
+Checklist — (1) ✅ `--list` shows pid `0x0426` iface 2 marked `<- IMU`; (2) ✅ reports begin `01 02`;
+(3) ✅ imu 983.8→1000.0 Hz, device clock 1000 Hz agreeing with the host (no WARNING), udp 171→250 Hz;
+(4) ✅ §8 human signs (nod: pitch +15→+28.2; turn left: yaw → −82.3; left ear down: roll → +59.1);
+(5) ✅ 60 s still: yaw drift +0.03…+0.31 °/min at still 100% (limit 2 °/min).
