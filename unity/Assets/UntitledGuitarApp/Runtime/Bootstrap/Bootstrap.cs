@@ -8,7 +8,6 @@ using UntitledGuitarApp.Runtime.Head;
 using UntitledGuitarApp.Runtime.Hud;
 using UntitledGuitarApp.Runtime.Logging;
 using UntitledGuitarApp.Runtime.Neck;
-using UntitledGuitarApp.Runtime.Neck.Dev;
 using UntitledGuitarApp.Runtime.Render;
 using UntitledGuitarApp.Runtime.Spectator;
 
@@ -24,9 +23,9 @@ namespace UntitledGuitarApp.Runtime
     /// capsule fretting ghost hand forming G on it. Keys: R recenters the IMU heading and re-places the neck (Space is gaze
     /// confirm). In the editor, menu UGA > Editor Sim Rig on the Head gives mouse-look; it writes the head's world rotation
     /// after the IMU (execution order 10000 vs -100), so it simply wins while attached.
-    /// TEMPORARY: the neck layout and the G dots come from Neck/Dev/DevNeckLayout until Core's FretboardGeometry and
-    /// ChordLibrary land (Person 2); then this file maps Core's data instead and DevNeckLayout is deleted.
-    /// Not wired yet: neck alignment (needs Core's NeckSolver), the Blender-posed hands, the strumming hand, Core events.
+    /// The neck layout and the G dots come from Person 2's Core (FretboardGeometry + ChordLibrary) through
+    /// Neck/CoreNeckLayout; Neck/Dev/DevNeckLayout remains only for previews and tests written before Core landed.
+    /// Not wired yet: neck alignment (Core's NeckSolver is in; the aligner is next), the strumming hand, Core's practice events.
     /// Smoke run of a built player (no window, quits by itself, writes Player.log):
     ///   build/UntitledGuitarApp.app/Contents/MacOS/"Untitled Guitar App" -batchmode -nographics -ugaSmokeSeconds 5 -logFile build/smoke.log
     /// </summary>
@@ -166,8 +165,10 @@ namespace UntitledGuitarApp.Runtime
         void ComposeNeckAndHand(FlagSet flags)
         {
             Neck = FloatingNeck.Create(transform);
-            NeckLayout layout = DevNeckLayout.Create();   // TEMPORARY dev data (see the class summary)
-            _dotCount = DevNeckLayout.GChord(layout, _dots, _marks);
+            // Person 2's Core: FretboardGeometry (default guitar until the demo guitar is measured) + ChordLibrary's G,
+            // mapped to the neck frame by CoreNeckLayout (Core's across axis is + toward string 6; ours is + toward string 1).
+            NeckLayout layout = CoreNeckLayout.Create(CoreNeckLayout.DefaultGeometry);
+            _dotCount = Mathf.Max(0, CoreNeckLayout.ChordMarks(CoreNeckLayout.DefaultGeometry, "G", _dots, _marks));
             if (!Neck.Build(layout))
             {
                 UGALog.Warn("neck_layout_invalid", "the dev neck layout failed NeckLayout.Validate; see the warnings above");
