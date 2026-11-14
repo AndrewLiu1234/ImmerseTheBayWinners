@@ -14,13 +14,13 @@ ticks only the boxes their half proves; Person 1 sets `done` after the device ch
 - [ ] Person 2, Sat 07:00: verify green · `./scripts/get-datasets.sh` · Stage 2 with `architect` (prompt P1) · review at 08:30
 - [ ] Person 1: Blender neck mock-up + hand rig (`GHOST_HANDS.md` §7) · measure the guitar (scale length, nut width, nut→soundhole)
 
-## SL0 — Walking skeleton + plumbing   [track: XR+CORE] [owner: Person 1 · Person 2] [status: todo] [depends: —]
+## SL0 — Walking skeleton + plumbing   [track: XR+CORE] [owner: Person 1 · Person 2] [status: doing] [depends: —]
 **User-visible outcome:** the glasses show a stereo floating neck with the G fingertip dots and chord name; a mic meter moves; the Mac screen shows the spectator view.
 **Owned paths:** Person 1: `Runtime/{Bootstrap,Render,Neck/FloatingNeck,Hud,Audio/MicCapture,Spectator,Flags,Logging}`, `Editor/{GlassesGameView,EditorSimRig,BuildScript}`, `Scenes/Main.unity` · Person 2: `Core/Theory/**`, `core-tests/Theory/**`
 **Contracts used:** `IAudioSource`, `ChordShape`, `FretboardGeometry`
 **Acceptance (automated):**
-- [ ] ChordLibrary has G, C, D, Em, Am exactly as Appendix B2 (frets, fingers, MIDI)
-- [ ] FretboardGeometry matches Appendix B4 within 0.1 mm; flags parsing EditMode test; Unity console clean
+- [x] ChordLibrary has G, C, D, Em, Am exactly as Appendix B2 (frets, fingers, MIDI) — Person 2: core-tests/Theory/ChordLibraryTests.cs, L1
+- [ ] FretboardGeometry matches Appendix B4 within 0.1 mm; flags parsing EditMode test; Unity console clean — Person 2 half done: FretboardGeometryTests.cs (L1); flags + console = Person 1
 **Acceptance (device, human-checked):**
 - [ ] SBS on display 2 at ≥60 fps; both eyes fuse; mic meter moves when you strum
 **Out of scope:** alignment, audio verdicts, ghost hands
