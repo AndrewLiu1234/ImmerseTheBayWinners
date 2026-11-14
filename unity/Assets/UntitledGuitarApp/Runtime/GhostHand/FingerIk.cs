@@ -39,13 +39,14 @@ namespace UntitledGuitarApp.Runtime.GhostHand
         public float dipCoupling;   // joint 3 flexion = dipCoupling * joint 2 flexion
         public float swingMax;      // |sideways swing| limit of joint 1
 
-        /// <summary>Human finger (index to little): about -20..90 deg at the knuckle, 100 deg at the middle joint, 20 deg swing.</summary>
+        /// <summary>Human finger (index to little): about -20..90 deg at the knuckle, 100 deg at the middle joint, and a
+        /// sideways swing of 28 deg (a little more than a real hand, so that wide chord shapes stay reachable).</summary>
         public static FingerIkLimits Finger
         {
             get
             {
                 FingerIkLimits l;
-                l.mcpMin = -0.35f; l.mcpMax = 1.5708f; l.pipMax = 1.75f; l.dipCoupling = 0.667f; l.swingMax = 0.35f;
+                l.mcpMin = -0.35f; l.mcpMax = 1.5708f; l.pipMax = 1.75f; l.dipCoupling = 0.667f; l.swingMax = 0.50f;
                 return l;
             }
         }
