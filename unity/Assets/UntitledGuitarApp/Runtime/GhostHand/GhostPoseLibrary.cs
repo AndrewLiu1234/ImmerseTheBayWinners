@@ -5,6 +5,7 @@
 // Errors / Warnings.
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using UnityEngine;
 using UntitledGuitarApp.Runtime.Logging;
@@ -204,7 +205,7 @@ namespace UntitledGuitarApp.Runtime.GhostHand
                     {
                         float apart = pose.MaxBindDistanceMm(rig);
                         if (apart > SameRigToleranceMm)
-                            warnings.Add(file + ": its bind joints differ from " + GhostPose.FileNameFor(rig.Hand, rig.Name) + " by " + apart.ToString("0.###")
+                            warnings.Add(file + ": its bind joints differ from " + GhostPose.FileNameFor(rig.Hand, rig.Name) + " by " + apart.ToString("0.###", CultureInfo.InvariantCulture)
                                 + " mm, so the two were exported from different rigs: re-export every " + pose.Hand + " pose from one .blend");
                     }
                 }

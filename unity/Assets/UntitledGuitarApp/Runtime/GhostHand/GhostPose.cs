@@ -5,6 +5,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Globalization;
 using UnityEngine;
 
 namespace UntitledGuitarApp.Runtime.GhostHand
@@ -345,7 +346,7 @@ namespace UntitledGuitarApp.Runtime.GhostHand
                 float length = Mathf.Sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
                 if (float.IsNaN(length) || float.IsInfinity(length) || Mathf.Abs(length - 1f) > UnitTolerance)
                 {
-                    problems.Add("bone " + entry.name + ": rotation is not a unit quaternion (length " + length.ToString("0.######") + ")");
+                    problems.Add("bone " + entry.name + ": rotation is not a unit quaternion (length " + length.ToString("0.######", CultureInfo.InvariantCulture) + ")");
                     continue;
                 }
                 pose._rotations[bone] = Normalized(q.x, q.y, q.z, q.w, Quaternion.identity);
@@ -393,8 +394,8 @@ namespace UntitledGuitarApp.Runtime.GhostHand
                 {
                     float off = (positions[BoneCount + digit] - pose._fingertipsMm[digit]).magnitude;
                     if (!(off <= FkToleranceMm))
-                        problems.Add("the rotations put " + s_boneNames[DistalBone(digit)] + "'s tip " + off.ToString("0.###") + " mm from the stored fingertip (limit "
-                            + FkToleranceMm.ToString("0.#") + " mm): re-export with art/blender/export_poses.py");
+                        problems.Add("the rotations put " + s_boneNames[DistalBone(digit)] + "'s tip " + off.ToString("0.###", CultureInfo.InvariantCulture) + " mm from the stored fingertip (limit "
+                            + FkToleranceMm.ToString("0.#", CultureInfo.InvariantCulture) + " mm): re-export with art/blender/export_poses.py");
                 }
             }
             return pose;
