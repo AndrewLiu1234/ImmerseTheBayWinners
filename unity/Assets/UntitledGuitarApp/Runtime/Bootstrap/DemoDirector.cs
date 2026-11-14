@@ -51,6 +51,19 @@ namespace UntitledGuitarApp.Runtime
         string _statusText = "";
         int _statusKey = int.MinValue;
         bool _pendingAlign;
+        bool _resultsDimmed;
+        bool _scriptedChecks;
+        Hud.HudText _checksLabel;
+
+        /// <summary>The disclosure shown while learn/play verdicts are scripted and the replay badge is not showing.</summary>
+        public const string ScriptedChecksText = "SIMULATED CHECKS";
+
+        /// <summary>Whether the "SIMULATED CHECKS" label shows: scripted verdicts, and only when the replay badge is hidden
+        /// ("SIMULATED INPUT" is the stronger disclosure and takes the same spot). Pure.</summary>
+        public static bool ShowScriptedChecks(bool scriptedChecks, bool replayBadgeShowing)
+        {
+            return scriptedChecks && !replayBadgeShowing;
+        }
 
         public DemoState State { get; private set; }
         /// <summary>The Blender-posed strumming hand on the neck's strum zone, or null when its FBX/poses are missing.</summary>
@@ -141,7 +154,30 @@ namespace UntitledGuitarApp.Runtime
             if (State.Mode == DemoMode.Play) TickPlay(dt);
             else if (State.Mode == DemoMode.Idle && Hands != null) Hands.Idle(_idleChord, dt);
             // Learn: LearnPresenter, DevLearnScript and LearnMicTuner tick themselves; the presenter owns the fretting hand.
+            UpdateChecksLabel();
             RefreshStatus();
+        }
+
+        void UpdateChecksLabel()
+        {
+            Hud.SimulatedBadge badge = _boot.Badge;
+            if (badge == null) return;
+            bool show = ShowScriptedChecks(_scriptedChecks, badge.IsShowing);
+            if (_checksLabel == null)
+            {
+                if (!show) return;
+                // Same spot, size and colour as the badge (a sibling under the head at the badge's local pose).
+                _checksLabel = Hud.HudText.Create(badge.transform.parent, "SimulatedChecksLabel");
+                _checksLabel.transform.localPosition = badge.transform.localPosition;
+                _checksLabel.transform.localRotation = badge.transform.localRotation;
+                _checksLabel.Color = new Color(1f, 0.757f, 0.027f, 1f);   // SimulatedBadge's amber (#FFC107)
+                _checksLabel.SetText(ScriptedChecksText);
+                float distance = badge.transform.localPosition.magnitude;
+                FlagSet flags = FlagStore.Current;
+                _checksLabel.SetAngularHeight(Hud.SimulatedBadge.Degrees * Hud.HudText.TextScale(flags != null && flags.largeText),
+                                              distance > 0.01f ? distance : 1f);
+            }
+            if (_checksLabel.Visible != show) _checksLabel.Visible = show;
         }
 
         void Handle(DemoCommand command)
@@ -188,6 +224,12 @@ namespace UntitledGuitarApp.Runtime
             // mic state, so the meter shows only while idle.
             if (_boot.Meter != null && _boot.Meter.gameObject.activeSelf != (State.Mode == DemoMode.Idle))
                 _boot.Meter.gameObject.SetActive(State.Mode == DemoMode.Idle);
+            if (_resultsDimmed) DimForResults(false);
+            // Honesty: learn's pluck/strum verdicts and play's strums are scripted until Core's checks land (SL2/SL3), so a
+            // "SIMULATED CHECKS" label shows even on a live mic. It is a separate label: SimulatedBadge stays a function of the
+            // audioSource flag alone (its HudTests guard forbids any public way to change it), and its "SIMULATED INPUT" wins.
+            _scriptedChecks = State.Mode == DemoMode.Learn ||
+                              (State.Mode == DemoMode.Play && PlayAlong != null && PlayAlong.SimulateStrums);
 
             if (State.Mode == DemoMode.Learn) EnterLearn(flags);
             else if (State.Mode == DemoMode.Play) EnterPlay(flags);
@@ -248,9 +290,25 @@ namespace UntitledGuitarApp.Runtime
             PlayAlong.FillFrame(ref _practice);
             Play.PresentPlayAlong(PlayAlong, dt);
             if (_practice.Chord != null) _lastPlayChord = _practice.Chord;
+            if (PlayAlong.Phase == PlayAlongPhase.Ended)
+            {
+                // The results card sits above the neck where the hands are: fade both hands out and clear the dots until the
+                // next mode change (hud-play-preview round 2: the card overlaps them otherwise).
+                if (!_resultsDimmed) DimForResults(true);
+                return;
+            }
             if (Hands == null) return;
             if (_practice.Active) Hands.Apply(_practice, dt);
-            else Hands.Idle(_lastPlayChord, dt);   // the song ended: hold the last chord while the results card shows
+            else Hands.Idle(_lastPlayChord, dt);
+        }
+
+        void DimForResults(bool on)
+        {
+            _resultsDimmed = on;
+            float fade = on ? 0f : 1f;
+            if (_boot.PosedFrettingHand != null) _boot.PosedFrettingHand.SetFade(fade);
+            if (StrummingHand != null) StrummingHand.SetFade(fade);   // Hands.Idle restores only the fretting hand's fade
+            if (on && _boot.Neck != null) _boot.Neck.SetDots(_dots, 0);
         }
 
         void ShowChordOnNeck(string chord)
