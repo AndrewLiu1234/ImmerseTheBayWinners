@@ -1095,6 +1095,59 @@ namespace UntitledGuitarApp.Tests.EditMode
         }
 
         [Test]
+        public void Recorder_StopWhileOtherThreadsAreLogging_StillEndsTheFileWithSessionEnd()
+        {
+            Action<LogType, string> before = UGALog.Output;
+            UGALog.Output = delegate { };                       // thousands of lines: nothing may pile up in a capture list
+            try
+            {
+                for (int round = 0; round < 20; round++)
+                {
+                    Assert.IsTrue(SessionRecorder.Start(_dir));
+                    int stop = 0;
+                    long logged = 0;
+                    Thread[] threads = new Thread[4];
+                    for (int k = 0; k < threads.Length; k++)
+                    {
+                        int id = k;
+                        threads[k] = new Thread(delegate()
+                        {
+                            int i = 0;
+                            while (Volatile.Read(ref stop) == 0)
+                            {
+                                UGALog.Event("race", "thread", id, "i", i++);
+                                Interlocked.Increment(ref logged);
+                            }
+                        });
+                        threads[k].Start();
+                    }
+                    // let them log for real (bounded spin, no sleeping), then stop in the middle of the stream
+                    DateTime limit = DateTime.UtcNow.AddSeconds(30);
+                    while (Interlocked.Read(ref logged) < 200 && DateTime.UtcNow < limit) Thread.Yield();
+                    SessionRecorder.Stop();
+                    Interlocked.Exchange(ref stop, 1);
+                    foreach (Thread t in threads) Assert.IsTrue(t.Join(30000));
+
+                    string[] lines = File.ReadAllLines(SessionRecorder.CurrentPath);
+                    Assert.Greater(lines.Length, 2, "round " + round);
+                    int ends = 0;
+                    foreach (string line in lines)
+                    {
+                        Assert.IsNull(StrictJson.Check(line), line);
+                        if (line.Contains(J("'evt':'session_end'"))) ends++;
+                    }
+                    StringAssert.Contains(J("'evt':'session_start'"), lines[0]);
+                    Assert.AreEqual(1, ends, "round " + round);
+                    StringAssert.Contains(J("'evt':'session_end'"), lines[lines.Length - 1], "nothing may be written after session_end (round " + round + ")");
+                }
+            }
+            finally
+            {
+                UGALog.Output = before;
+            }
+        }
+
+        [Test]
         public void Recorder_AnUnusableFolder_ReturnsFalse_WithAWarning_AndDoesNotThrow()
         {
             string blocker = Path.Combine(_dir, "blocker");

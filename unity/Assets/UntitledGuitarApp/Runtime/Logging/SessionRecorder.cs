@@ -65,7 +65,7 @@ namespace UntitledGuitarApp.Runtime.Logging
                     string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
                     FileStream stream = null;
                     path = null;
-                    for (int attempt = 1; attempt <= 100 && stream == null; attempt++)
+                    for (int attempt = 1; attempt <= 1000 && stream == null; attempt++)
                     {
                         string suffix = attempt == 1 ? string.Empty : "-" + attempt.ToString(CultureInfo.InvariantCulture);
                         path = Path.Combine(directory, "session-" + stamp + suffix + ".jsonl");
@@ -108,15 +108,16 @@ namespace UntitledGuitarApp.Runtime.Logging
             {
                 w = s_writer;
                 if (w == null) return;
+                s_writer = null;                                 // first: from here on Write() is refused, so session_end is the last line
                 if (s_quitHooked)
                 {
                     Application.quitting -= OnQuitting;
                     s_quitHooked = false;
                 }
             }
+            w.BeginClose();                                      // no producer can add a line after this returns...
             w.TryWriteReserved(UGALog.FormatJson(UGALog.Now, "session_end",
-                "accepted", w.Accepted, "dropped", w.Dropped));
-            lock (s_gate) { s_writer = null; }                   // from here on Write() is refused
+                "accepted", w.Accepted, "dropped", w.Dropped));  // ...so this really is the last line of the file
             bool drained = w.Close(StopTimeoutMs);
             s_lastDropped = w.Dropped;
             s_lastWritten = w.Written;

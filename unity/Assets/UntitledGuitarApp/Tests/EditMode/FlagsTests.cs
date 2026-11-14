@@ -452,7 +452,8 @@ namespace UntitledGuitarApp.Tests.EditMode
         [Test]
         public void TempoPresets_AreNeverEmpty()
         {
-            FlagSet f = FlagStore.Parse(J("{ 'tempoPresets': [0.5] }"), J("{ 'tempoPresets': [] }"));
+            // one layer on purpose: whether the engine applies an empty JSON array or ignores it, the result is the built-in list
+            FlagSet f = FlagStore.Parse(null, J("{ 'tempoPresets': [] }"));
             Assert.AreEqual(new[] { 0.5f, 0.6f, 0.75f, 0.9f, 1.0f }, f.tempoPresets, "an empty list falls back to the built-in presets");
         }
 

@@ -27,10 +27,12 @@ namespace UntitledGuitarApp.Runtime.Logging
         readonly Thread _thread;
 
         int _pending;                          // accepted and not yet fully written
+        int _inFlight;                         // TryWrite calls currently between "gate check" and "queued"
         long _accepted;
         long _dropped;
         long _written;
-        volatile bool _closing;
+        volatile bool _closing;                // no new lines are accepted
+        volatile bool _stopWriter;             // the writer thread may exit once the queue is empty (set after the last line is queued)
         volatile string _error;
         int _closeCalled;
 
@@ -63,27 +65,50 @@ namespace UntitledGuitarApp.Runtime.Logging
         /// </summary>
         public bool TryWrite(string line)
         {
-            if (line == null || _closing) return false;
-            if (_error != null)
+            if (line == null) return false;
+            Interlocked.Increment(ref _inFlight);              // a full fence: BeginClose() either sees us or we see _closing
+            try
             {
-                Interlocked.Increment(ref _dropped);
-                return false;
+                if (_closing) return false;
+                if (_error != null)
+                {
+                    Interlocked.Increment(ref _dropped);
+                    return false;
+                }
+                if (Interlocked.Increment(ref _pending) > _capacity)
+                {
+                    Interlocked.Decrement(ref _pending);
+                    Interlocked.Increment(ref _dropped);
+                    return false;
+                }
+                Enqueue(line);
+                return true;
             }
-            if (Interlocked.Increment(ref _pending) > _capacity)
+            finally
             {
-                Interlocked.Decrement(ref _pending);
-                Interlocked.Increment(ref _dropped);
-                return false;
+                Interlocked.Decrement(ref _inFlight);
             }
-            Enqueue(line);
-            return true;
         }
 
-        // Same, but ignores the capacity limit. Used for the one closing line of a session, which must not be lost to a
-        // full queue.
+        /// <summary>
+        /// First half of a close, for a caller that wants to put one last line behind everything else: from here on TryWrite
+        /// refuses every line, and the call returns once the TryWrite calls that were already past the gate have queued theirs.
+        /// Waits at most one second (a producer thread that is descheduled inside TryWrite). Idempotent.
+        /// </summary>
+        internal void BeginClose()
+        {
+            _closing = true;
+            Interlocked.MemoryBarrier();                       // publish _closing before reading _inFlight
+            SpinWait spin = new SpinWait();
+            long deadline = System.Diagnostics.Stopwatch.GetTimestamp() + System.Diagnostics.Stopwatch.Frequency;
+            while (Volatile.Read(ref _inFlight) != 0 && System.Diagnostics.Stopwatch.GetTimestamp() < deadline) spin.SpinOnce();
+        }
+
+        // Queues one line even though the writer is closing and whatever the capacity: the closing "session_end" line, which
+        // must be the last one in the file and must not be lost to a full queue. Only after BeginClose().
         internal bool TryWriteReserved(string line)
         {
-            if (line == null || _closing || _error != null) return false;
+            if (line == null || _error != null) return false;
             Interlocked.Increment(ref _pending);
             Enqueue(line);
             return true;
@@ -103,7 +128,8 @@ namespace UntitledGuitarApp.Runtime.Logging
         /// </summary>
         public bool Close(int timeoutMs)
         {
-            _closing = true;
+            BeginClose();
+            _stopWriter = true;                                // only now may the writer thread leave: a reserved last line is queued by here
             _wake.Set();
             bool first = Interlocked.Exchange(ref _closeCalled, 1) == 0;
             bool finished = _thread.Join(timeoutMs < 0 ? 0 : timeoutMs);
@@ -154,7 +180,7 @@ namespace UntitledGuitarApp.Runtime.Logging
                         try { _out.Flush(); }
                         catch (Exception e) { _error = e.GetType().Name + ": " + e.Message; }
                     }
-                    if (_closing && _queue.IsEmpty) break;
+                    if (_stopWriter && _queue.IsEmpty) break;
                     _wake.Wait(50);                            // the timeout is only a safety net
                 }
             }
