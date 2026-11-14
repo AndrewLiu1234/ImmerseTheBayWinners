@@ -63,7 +63,22 @@ namespace UntitledGuitarApp.Editor
 
             changed += EnsureMacArchitecture();
             changed += EnsureLogStackTraces();
+            changed += EnsureRunInBackground();
             return changed;
+        }
+
+        /// <summary>
+        /// UnityEditor.PlayerSettings.runInBackground (static bool, "Run In Background"): keep running without focus. The app
+        /// draws to the glasses (display 2) and listens to the mic while the Mac screen or another window has focus, so it must
+        /// never pause; MicCapture warns once when it is off. StereoRig also sets Application.runInBackground in players.
+        /// </summary>
+        public static int EnsureRunInBackground()
+        {
+            if (PlayerSettings.runInBackground)
+                return 0;
+            Debug.Log("[ProjectSetup] runInBackground: False -> True");
+            PlayerSettings.runInBackground = true;
+            return 1;
         }
 
         /// <summary>
@@ -103,6 +118,7 @@ namespace UntitledGuitarApp.Editor
                    "' bundleId=" + PlayerSettings.GetApplicationIdentifier(NamedBuildTarget.Standalone) +
                    " macArchitecture=" + UnityEditor.OSXStandalone.UserBuildSettings.architecture +
                    " logStackTrace(Log)=" + PlayerSettings.GetStackTraceLogType(LogType.Log) +
+                   " runInBackground=" + PlayerSettings.runInBackground +
                    " | read only: apiCompatibility=" + PlayerSettings.GetApiCompatibilityLevel(NamedBuildTarget.Standalone) +
                    " scriptingBackend=" + PlayerSettings.GetScriptingBackend(NamedBuildTarget.Standalone) +
                    " activeBuildTarget=" + EditorUserBuildSettings.activeBuildTarget;
