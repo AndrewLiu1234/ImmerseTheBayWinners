@@ -310,12 +310,20 @@ namespace UntitledGuitarApp.Runtime.GhostHand
         }
 
         /// <summary>
-        /// Shows the blend of two poses of this hand at u (0 = fromPose, 1 = toPose, used as it is: ease it yourself), moving
-        /// the fraction <paramref name="follow"/> of the way there (1 = exactly; see GhostPoseDriver.BlendLinearToward).
+        /// Shows the blend of two poses of this hand at u (0 = fromPose, 1 = toPose, used as it is: ease it yourself).
         /// Safe and allocation-free every frame: the beat-locked strokes and chord morphs of GhostHandsDirector use it.
         /// A pose that is not loaded is logged once per name and the other one is shown alone; false when neither is.
         /// </summary>
-        public bool ShowBlend(string fromPose, string toPose, float u, float follow)
+        public bool ShowBlend(string fromPose, string toPose, float u)
+        {
+            return ShowBlend(fromPose, toPose, u, 1f);
+        }
+
+        /// <summary>
+        /// As ShowBlend, cross-faded from the pose remembered by HoldSnapshot: <paramref name="weight"/> 0 shows the snapshot,
+        /// 1 (or more) the blend exactly (GhostPoseDriver.BlendLinearFromHeld).
+        /// </summary>
+        public bool ShowBlend(string fromPose, string toPose, float u, float weight)
         {
             if (!_available || _driver == null) return false;
             GhostPose a, b;
@@ -323,9 +331,25 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             if (!hasA && !hasB) return false;
             if (!hasA) a = b;
             if (!hasB) b = a;
-            if (!_driver.BlendLinearToward(a, b, u, follow)) return false;
+            if (!_driver.BlendLinearFromHeld(a, b, u, weight)) return false;
             _currentPose = u >= 0.5f ? b.Name : a.Name;
             return true;
+        }
+
+        /// <summary>Remembers the pose on screen now: the start of a ShowBlend cross-fade.</summary>
+        public void HoldSnapshot()
+        {
+            if (_available && _driver != null) _driver.HoldSnapshot();
+        }
+
+        /// <summary>How far (mm) the wrist on screen is from the blend of two poses at u; infinity when a pose is missing.</summary>
+        public float DistanceToBlendMm(string fromPose, string toPose, float u)
+        {
+            if (!_available || _driver == null) return float.PositiveInfinity;
+            GhostPose a, b;
+            bool hasA = TryGetPose(fromPose, out a), hasB = TryGetPose(toPose, out b);
+            if (!hasA && !hasB) return float.PositiveInfinity;
+            return _driver.WristDistanceToBlendMm(hasA ? a : b, hasB ? b : a, u);
         }
 
         bool TryGetLogged(string poseName, out GhostPose pose)

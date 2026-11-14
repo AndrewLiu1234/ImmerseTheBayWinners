@@ -437,7 +437,10 @@ namespace UntitledGuitarApp.Runtime.GhostHand
         readonly Quaternion[] _current = new Quaternion[GhostPose.BoneCount];     // the pose on screen (parent-relative, H axes)
         readonly Quaternion[] _from = new Quaternion[GhostPose.BoneCount];        // where the running morph started
         readonly Quaternion[] _local = new Quaternion[GhostPose.BoneCount];       // Solve output
-        readonly Quaternion[] _scratch = new Quaternion[GhostPose.BoneCount];     // BlendLinearToward's target
+        readonly Quaternion[] _scratch = new Quaternion[GhostPose.BoneCount];     // BlendLinearFromHeld's target
+        readonly Quaternion[] _held = new Quaternion[GhostPose.BoneCount];        // HoldSnapshot
+        Vector3 _heldRootMm;
+        bool _hasHeld;
         readonly List<string> _missing = new List<string>();
         readonly GhostRigSolver _solver = new GhostRigSolver();
         Transform _root;
@@ -626,27 +629,45 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             return true;
         }
 
-        /// <summary>
-        /// Moves what is on screen the fraction <paramref name="follow"/> (0..1) of the way toward the blend of a and b at u
-        /// (u used as it is, like BlendLinear): per bone a slerp, the wrist on a straight line. follow = 1 is exactly
-        /// BlendLinear; less, called every frame with follow = 1 - exp(-dt / tau), it is a short low-pass that catches up
-        /// with a moving target instead of jumping to it (GhostHandsDirector uses it after a held pose hands over to a
-        /// beat-locked one). Stops a running morph. Allocation-free.
-        /// </summary>
-        public bool BlendLinearToward(GhostPose a, GhostPose b, float u, float follow)
+        /// <summary>Remembers the pose on screen now, for BlendLinearFromHeld (a cross-fade out of a held pose).</summary>
+        public void HoldSnapshot()
         {
-            if (!(follow < 1f) || !_hasPose) return BlendLinear(a, b, u);
+            for (int i = 0; i < GhostPose.BoneCount; i++) _held[i] = _current[i];
+            _heldRootMm = _currentRootMm;
+            _hasHeld = _hasPose;
+        }
+
+        /// <summary>
+        /// Shows the cross-fade from the HoldSnapshot pose to the blend of a and b at u (u used as it is, like BlendLinear):
+        /// weight w of the blend, per bone a slerp, the wrist on a straight line. w &gt;= 1 (or no snapshot) is exactly
+        /// BlendLinear. GhostHandsDirector ramps w from 0 to 1 when a beat-locked pose takes over from a held one far from
+        /// it, so the hand moves there instead of jumping, and is exact afterwards. Stops a running morph. Allocation-free.
+        /// </summary>
+        public bool BlendLinearFromHeld(GhostPose a, GhostPose b, float u, float w)
+        {
+            if (!(w < 1f) || !_hasHeld) return BlendLinear(a, b, u);
             if (!Ready(a) || !Ready(b)) return false;
             Vector3 root;
             if (!GhostPose.BlendLinear(a, b, u, _scratch, out root)) return false;
-            float w = follow > 0f ? follow : 0f;
-            for (int i = 0; i < GhostPose.BoneCount; i++) _current[i] = GhostPose.Slerp(_current[i], _scratch[i], w);
-            Vector3 c = _currentRootMm;
-            _currentRootMm = new Vector3(c.x + (root.x - c.x) * w, c.y + (root.y - c.y) * w, c.z + (root.z - c.z) * w);
+            float k = w > 0f ? w : 0f;
+            for (int i = 0; i < GhostPose.BoneCount; i++) _current[i] = GhostPose.Slerp(_held[i], _scratch[i], k);
+            Vector3 h = _heldRootMm;
+            _currentRootMm = new Vector3(h.x + (root.x - h.x) * k, h.y + (root.y - h.y) * k, h.z + (root.z - h.z) * k);
             _target = null;
             _morphing = false;
+            _hasPose = true;
             Write();
             return true;
+        }
+
+        /// <summary>How far (pose mm) the wrist on screen is from where the blend of a and b at u would put it.</summary>
+        public float WristDistanceToBlendMm(GhostPose a, GhostPose b, float u)
+        {
+            if (a == null || b == null) return float.PositiveInfinity;
+            float k = u > 0f ? (u < 1f ? u : 1f) : 0f;
+            Vector3 ra = a.RootPositionMm, rb = b.RootPositionMm;
+            Vector3 d = new Vector3(ra.x + (rb.x - ra.x) * k, ra.y + (rb.y - ra.y) * k, ra.z + (rb.z - ra.z) * k) - _currentRootMm;
+            return d.magnitude;
         }
 
         /// <summary>

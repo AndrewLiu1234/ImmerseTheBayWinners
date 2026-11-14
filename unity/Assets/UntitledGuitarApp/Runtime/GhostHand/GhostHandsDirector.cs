@@ -13,8 +13,9 @@
 // up-end, "-" = hover at pick-ready, each slot ending on the next one's start pose). Count-in and wait mode: pick-ready,
 // no strokes. No song or no pattern: rest.
 // SMOOTHNESS: held poses (rest, pick-ready, a chord between morphs) are reached with PosedGhostHand.SetPose's 0.28 s ease;
-// beat-locked poses are set every frame. When a beat-locked pose takes over from a held one (count-in -> song, leaving
-// wait mode), the hand catches up over SettleSeconds through a short low-pass instead of jumping.
+// beat-locked poses are set every frame. When a beat-locked pose takes over from a held one more than SettleJumpMm away
+// (leaving wait mode mid-pattern, a song starting without a count-in), the hand cross-fades to it over SettleSeconds
+// instead of jumping; the count-in's lead-in makes the normal start seamless, so it needs none.
 //
 // THE STRUMMING ANCHOR (why CreateStrummingHand puts the hand where it does):
 //   * The strumming poses are authored in the NECK frame, millimetres from the nut, around a soundhole centred at
@@ -43,10 +44,10 @@ namespace UntitledGuitarApp.Runtime.GhostHand
     {
         /// <summary>The soundhole centre the strumming poses were authored around, neck-frame mm from the nut.</summary>
         public const float AuthoredSoundholeXMm = 440f;
-        /// <summary>How long a beat-locked pose takes to catch up after a held pose (seconds).</summary>
-        public const float SettleSeconds = 0.3f;
-        /// <summary>Time constant of that catch-up (seconds): 99% there after 0.28 s.</summary>
-        public const float SettleTau = 0.06f;
+        /// <summary>A beat-locked pose that takes over from a held pose farther than this (wrist, mm) is cross-faded in.</summary>
+        public const float SettleJumpMm = 3f;
+        /// <summary>How long that cross-fade takes (seconds); the hand is exactly on the beat-locked pose afterwards.</summary>
+        public const float SettleSeconds = 0.25f;
         /// <summary>The fade after success when the flag is unreadable.</summary>
         public const float DefaultFadeAfterSuccess = 0.4f;
 
@@ -211,8 +212,8 @@ namespace UntitledGuitarApp.Runtime.GhostHand
         sealed class Motion
         {
             public readonly PosedGhostHand Hand;
-            bool _blending;
-            float _settleLeft;
+            bool _blending, _settling;
+            float _settleElapsed;
 
             public Motion(PosedGhostHand hand)
             {
@@ -234,16 +235,18 @@ namespace UntitledGuitarApp.Runtime.GhostHand
                 if (!_blending)
                 {
                     _blending = true;
-                    _settleLeft = SettleSeconds;
+                    _settling = Hand.DistanceToBlendMm(from, to, u) > SettleJumpMm;
+                    _settleElapsed = 0f;
+                    if (_settling) Hand.HoldSnapshot();
                 }
-                float follow = 1f;
-                if (_settleLeft > 0f)
+                float weight = 1f;
+                if (_settling)
                 {
-                    float step = dt > 0f && !float.IsInfinity(dt) ? dt : 0f;
-                    _settleLeft -= step;
-                    follow = _settleLeft > 0f ? 1f - Mathf.Exp(-step / SettleTau) : 1f;
+                    if (dt > 0f && !float.IsInfinity(dt)) _settleElapsed += dt;
+                    weight = StrumMath.Ease(_settleElapsed / SettleSeconds);
+                    if (weight >= 1f) _settling = false;
                 }
-                Hand.ShowBlend(from, to, u, follow);
+                Hand.ShowBlend(from, to, u, weight);
             }
         }
     }
