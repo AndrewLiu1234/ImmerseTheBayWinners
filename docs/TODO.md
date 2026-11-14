@@ -51,9 +51,9 @@ ticks only the boxes their half proves; Person 1 sets `done` after the device ch
 **Fallback if blocked:** procedural capsule hand posed by IK from the dots. Never dots only.
 **Max time:** 3h in Unity + Blender time.
 
-## SL1 — Tuner   [track: CORE+XR] [owner: Person 2 (YIN) · Person 1 (needle UI)] [status: todo] [depends: SL0]
+## SL1 — Tuner   [track: CORE+XR] [owner: Person 2 (YIN) · Person 1 (needle UI)] [status: doing] [depends: SL0]
 **User-visible outcome:** tune each string with a needle.
-**Acceptance (automated):** - [ ] YIN within ±3 cents on synthetic E2–E4 and within ±10 cents on recorded open strings
+**Acceptance (automated):** - [ ] YIN within ±3 cents on synthetic E2–E4 ✓ (Person 2: max 0.069 c, core-tests/Audio/YinPitchTrackerTests.cs, L1) and within ±10 cents on recorded open strings (open: no recordings yet; TunerRecordedEvalTests ready)
 **Acceptance (device):** - [ ] matches a clip-on or phone tuner within 10 cents
 **Max time:** 2.5h.
 
