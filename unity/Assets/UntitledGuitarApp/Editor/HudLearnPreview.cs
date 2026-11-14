@@ -714,11 +714,10 @@ namespace UntitledGuitarApp.Editor
         public const string ComposedSheetName = "composed-contact-sheet.png";
 
         /// <summary>
-        /// HudText draws its text about 18% smaller than asked until branch person1/sl0-hud-text lands; the composed overlap
-        /// check grows every text box by this factor about the text's own origin (its anchor), so it judges the layout at the
-        /// TRUE asked size. Set it to 1 once HudText is fixed (over-estimating can only flag more, never less).
+        /// Factor the composed overlap check applies to every drawn text box (about the text's anchor) to judge the layout at
+        /// the TRUE asked size. 1: since person1/sl0-hud-text, HudText draws at the asked size (from a measured constant).
         /// </summary>
-        public const float TextTrueSizeInflation = 1f / 0.82f;
+        public const float TextTrueSizeInflation = 1f;
 
         /// <summary>Hand-silhouette pixels a learn part may cover before it counts as an overlap (about a 5 x 5 px corner).</summary>
         public const int HandPixelTolerance = 24;
@@ -755,11 +754,12 @@ namespace UntitledGuitarApp.Editor
         {
             var result = new ComposedResult();
             report.AppendLine("=== COMPOSED PASS: floating neck + fretting ghost hand + Learn HUD, LearnPresenter + SIMULATED DevLearnScript, left eye");
-            report.AppendLine("text boxes judged at " + F(TextTrueSizeInflation) + "x their drawn size (HudText draws ~18% small until person1/sl0-hud-text)");
+            report.AppendLine("text boxes judged at " + F(TextTrueSizeInflation) + "x their drawn size (HudText draws at the asked size)");
             report.AppendLine();
             const int Planned = 16;   // the most frames this pass renders (main run + judge + planted), for the contact sheet
             result.SheetRows = (Planned + SheetColumns - 1) / SheetColumns;
             result.Sheet = new Color32[SheetColumns * (EyeWidth / ThumbScale) * result.SheetRows * (EyeHeight / ThumbScale)];
+            for (int i = 0; i < result.Sheet.Length; i++) result.Sheet[i] = new Color32(0, 0, 0, 255);   // opaque: unused cells stay black
             try
             {
                 // 1. The run the app would show with the current flags (G unless FlagSet.chords says otherwise), every moment.
@@ -833,7 +833,8 @@ namespace UntitledGuitarApp.Editor
             }
         }
 
-        // The card spot moved to the middle of the hand (socket-local), so the message must land on the hand's silhouette.
+        // The message moved onto the middle of the hand (zone card: its left edge 2 deg left of the hand's centre as the head
+        // sees it; neck card: the card spot at the hand's centre), so it must land on the hand's silhouette.
         static void PutCardOnHand(ComposedRig rig)
         {
             GameObject hand = rig.Presenter.HandObject;
@@ -843,6 +844,10 @@ namespace UntitledGuitarApp.Editor
             Bounds b = renderers[0].bounds;
             for (int i = 1; i < renderers.Length; i++) b.Encapsulate(renderers[i].bounds);
             rig.Hud.CardLocal = rig.Neck.Socket.InverseTransformPoint(b.center);
+            Vector3 local = rig.Head.InverseTransformPoint(b.center);
+            float az = Mathf.Atan2(local.x, local.z) * Mathf.Rad2Deg;
+            float el = Mathf.Atan2(local.y, new Vector2(local.x, local.z).magnitude) * Mathf.Rad2Deg;
+            if (rig.Hud.UsesZoneCard) rig.Hud.UseZoneCard(az - 2f, 90f, -90f, el, LearnHudLayout.ZoneCardDistanceM);
         }
 
         // One learn run in a fresh preview scene, captured at its moments (all of them, or the first whose name starts with each

@@ -43,6 +43,13 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
         Vector3 _cardLocal = LearnHudLayout.NeckCardLocal(LearnHudLayout.DefaultScaleLengthM);
         float _cardDistance;
 
+        bool _zoneCard;
+        float _zoneLeftDeg = LearnHudLayout.ZoneCardLeftDegrees;
+        float _zoneRightDeg = LearnHudLayout.ZoneCardRightLimitDegrees;
+        float _zoneMinLeftDeg = LearnHudLayout.ZoneCardMinLeftDegrees;
+        float _zoneElevationDeg = LearnHudLayout.ZoneCardElevationDegrees;
+        float _zoneDistanceM = LearnHudLayout.ZoneCardDistanceM;
+
         ChangeGate _slotGate;
         Slot _pending;
         string _pTip = string.Empty;
@@ -95,6 +102,39 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
             get { return _cardLocal; }
             set { _cardLocal = value; }
         }
+
+        /// <summary>
+        /// Puts the message in a zone of the wearer's view instead of on the neck card spot: left-aligned, its left edge
+        /// <paramref name="leftDeg"/> right of straight ahead (further left, down to <paramref name="minLeftDeg"/>, when a
+        /// wide message would cross <paramref name="rightLimitDeg"/>), its middle <paramref name="elevationDeg"/> up,
+        /// <paramref name="distanceM"/> away, facing the eyes. For the floating neck: the zone right of the fretting hand
+        /// (LearnHudLayout.ZoneCard*), so the message never covers the hand, the strings or the finger numbers.
+        /// </summary>
+        public void UseZoneCard(float leftDeg, float rightLimitDeg, float minLeftDeg, float elevationDeg, float distanceM)
+        {
+            _zoneCard = true;
+            _zoneLeftDeg = leftDeg;
+            _zoneRightDeg = rightLimitDeg;
+            _zoneMinLeftDeg = minLeftDeg;
+            _zoneElevationDeg = elevationDeg;
+            _zoneDistanceM = distanceM > 0.1f ? distanceM : LearnHudLayout.ZoneCardDistanceM;
+        }
+
+        /// <summary>The floating-neck zone with its default numbers (LearnHudLayout.ZoneCard*).</summary>
+        public void UseZoneCard()
+        {
+            UseZoneCard(LearnHudLayout.ZoneCardLeftDegrees, LearnHudLayout.ZoneCardRightLimitDegrees, LearnHudLayout.ZoneCardMinLeftDegrees,
+                LearnHudLayout.ZoneCardElevationDegrees, LearnHudLayout.ZoneCardDistanceM);
+        }
+
+        /// <summary>Back to the neck card spot (above fret 5, for a neck aligned to the real guitar).</summary>
+        public void UseNeckCard()
+        {
+            _zoneCard = false;
+        }
+
+        /// <summary>True while the message sits in a view zone (<see cref="UseZoneCard()"/>).</summary>
+        public bool UsesZoneCard { get { return _zoneCard; } }
 
         /// <summary>
         /// Creates the Learn HUD under <paramref name="parent"/> (may be null; must be unscaled). <paramref name="head"/> is
@@ -277,6 +317,18 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
             if (_built) PlaceCard();
         }
 
+        // The estimated width of the message being shown (the zone card keeps a wide one inside the zone).
+        float ShownBlockWidthM()
+        {
+            switch (_pending)
+            {
+                case Slot.Tip: return Tip.BlockWidthMeters;
+                case Slot.FingerStep: return FingerStep.BlockWidthMeters;
+                case Slot.Strum: return Strum.BlockWidthMeters;
+                default: return 0f;
+            }
+        }
+
         void SetAlign(float alignX)
         {
             Tip.AlignX = alignX;
@@ -290,7 +342,20 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
             EnsureBuilt();
             Transform head = _head;
             float distance;
-            if (_socket != null)
+            if (_zoneCard && head != null)
+            {
+                distance = _zoneDistanceM;
+                float widthDeg = HudText.AngularHeightForSize(ShownBlockWidthM(), distance);
+                float left = LearnHudLayout.ZoneLeftDegrees(_zoneLeftDeg, _zoneRightDeg, _zoneMinLeftDeg, widthDeg);
+                Vector3 p = head.TransformPoint(HudLayout.PointAtAngles(left, _zoneElevationDeg, distance));
+                Vector3 forward, up;
+                if (LearnHudLayout.TryFacing(head.position, p, head.up, out forward, out up))
+                    _card.SetPositionAndRotation(p, Quaternion.LookRotation(forward, up));
+                else
+                    _card.position = p;
+                SetAlign(1f);
+            }
+            else if (_socket != null)
             {
                 Vector3 p = _socket.TransformPoint(_cardLocal);
                 Vector3 eye = head != null ? head.position : _socket.TransformPoint(LearnHudLayout.TypicalEyeInNeckFrame);

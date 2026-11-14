@@ -227,6 +227,39 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
             return HudLayout.PointAtAngles(TunerAzimuthDegrees, TunerElevationDegrees, TunerDistanceM);
         }
 
+        // ------------------------------------------------------------------ the message zone beside the floating neck
+
+        // Measured on the floating-neck view (left eye, view centre = 0, 0; player frame of 14 Nov 11:38): the fretting ghost
+        // hand owns azimuth -10..-2 deg from the strings up to +5.3 deg; the strings run at -2.6..-5.5 deg along the whole
+        // neck; the finger numbers reach -7.5 deg; the X / O column is at -15..-13 deg. Comfortable view: every ink edge at
+        // least 2 deg inside the 46.1 x 26.9 deg eye (|az| <= 21, |el| <= 11.4). The free zone RIGHT of the hand is az 0..+20,
+        // el -1.5..+11: the message goes there, left-aligned, so it never covers the hand, the strings or the finger numbers.
+
+        /// <summary>The message's left edge, degrees right of straight ahead (3 deg clear of the hand's right edge at -2 deg).</summary>
+        public const float ZoneCardLeftDegrees = 1f;
+
+        /// <summary>No message ink goes right of this azimuth: a wide message starts further left instead (never past ZoneCardMinLeftDegrees).</summary>
+        public const float ZoneCardRightLimitDegrees = 20.5f;
+
+        /// <summary>The furthest left a wide message may start: 1 deg clear of the hand's right edge.</summary>
+        public const float ZoneCardMinLeftDegrees = -1f;
+
+        /// <summary>The message's vertical middle, degrees above straight ahead: the tallest block (the finger prompt with largeText, about 8.4 deg) stays inside -1.5..+11.</summary>
+        public const float ZoneCardElevationDegrees = 4f;
+
+        /// <summary>The zone's distance, metres (the floating neck hangs at 0.8-1.0 m).</summary>
+        public const float ZoneCardDistanceM = 1f;
+
+        /// <summary>
+        /// Where a left-aligned message <paramref name="widthDeg"/> wide starts: at <paramref name="leftDeg"/>, or further left
+        /// so that its right edge stays at <paramref name="rightLimitDeg"/>, but never left of <paramref name="minLeftDeg"/>.
+        /// </summary>
+        public static float ZoneLeftDegrees(float leftDeg, float rightLimitDeg, float minLeftDeg, float widthDeg)
+        {
+            float w = widthDeg > 0f && !float.IsInfinity(widthDeg) ? widthDeg : 0f;
+            return Mathf.Max(minLeftDeg, Mathf.Min(leftDeg, rightLimitDeg - w));
+        }
+
         /// <summary>When there is no neck to attach to, the message goes here under the head: just below the centre of view.</summary>
         public const float FloatingMessageElevationDegrees = -6f;
 
