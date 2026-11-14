@@ -73,6 +73,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
         HudFader _fader;
         ChangeGate _targetGate;
         ChangeGate _statusGate;
+        ChangeGate _debugGate;
 
         bool _wantVisible;
         int _wantString;
@@ -90,7 +91,7 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
         float _zoneLevel = ZoneRestOpacity;
         bool _debugOn;
         float _lastCents;
-        string _debugTextShown;
+        string _debugTextWanted;
 
         /// <summary>Readings with less confidence than this are ignored. Default 0.8 (the plan's figure); set it to Core's scale if that differs.</summary>
         public float MinConfidence { get; set; } = TunerMath.DefaultMinConfidence;
@@ -222,7 +223,8 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
                 }
             }
 
-            if (!_wantVisible && !_fader.IsVisible) return;   // hidden: nothing to animate
+            bool statusPasses = _statusGate.Tick(dt);          // ticked even while hidden, so the gate is open again on return
+            if (!_wantVisible && !_fader.IsVisible) return;    // hidden: nothing to animate
 
             _model.Tick(dt);
 
@@ -230,9 +232,13 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
             if (_wantVisible && state != _pendingState)
             {
                 _pendingState = state;
-                _statusGate.Request();
+                if (!statusPasses)
+                {
+                    _statusGate.Request();
+                    statusPasses = _statusGate.Tick(0f);   // passes at once unless the words changed less than 0.34 s ago
+                }
             }
-            if (_statusGate.Tick(dt) && _wantVisible && _shownString == _wantString) ApplyState(_pendingState);
+            if (statusPasses && _wantVisible && _shownString == _wantString) ApplyState(_pendingState);
 
             float degrees = _model.NeedleDegrees;
             if (float.IsNaN(_needleDegreesShown) || Mathf.Abs(degrees - _needleDegreesShown) > 0.02f)
@@ -255,12 +261,15 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
 
             if (_debugOn)
             {
-                string text = _model.HasReading ? LearnText.CentsText(_lastCents) : string.Empty;
-                if (!ReferenceEquals(text, _debugTextShown))
+                // The eased value (what the needle shows), or the raw one when it is beyond the dial. Updated at most 3 times a second.
+                float cents = Mathf.Abs(_lastCents) > TunerMath.RangeCents ? _lastCents : _model.ShownCents;
+                string text = _model.HasReading ? LearnText.CentsText(cents) : string.Empty;
+                if (!ReferenceEquals(text, _debugTextWanted))
                 {
-                    _debugTextShown = text;
-                    _debug.SetText(text);
+                    _debugTextWanted = text;
+                    _debugGate.Request();
                 }
+                if (_debugGate.Tick(dt)) _debug.SetText(_debugTextWanted);
             }
         }
 
