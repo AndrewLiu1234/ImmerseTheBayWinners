@@ -258,8 +258,18 @@ namespace UntitledGuitarApp.Runtime.Hud.Learn
 
         void Update()
         {
+            Tick(Time.unscaledDeltaTime);
+        }
+
+        /// <summary>
+        /// Advances the one-message rule's 3 Hz gate by <paramref name="dt"/> seconds (a message asked for less than 0.34 s
+        /// after the last change appears when the gate opens). Update calls it; previews and tests in Edit Mode call it
+        /// themselves, as they do LearnWidget.Tick for the widgets.
+        /// </summary>
+        public void Tick(float dt)
+        {
             if (!_built) return;
-            if (_slotGate.Tick(Time.unscaledDeltaTime)) Apply();
+            if (_slotGate.Tick(dt > 0f ? dt : 0f)) Apply();
         }
 
         void LateUpdate()
