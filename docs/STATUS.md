@@ -43,8 +43,19 @@
 - Person 2 → Person 1: strum check wiring = feed `StrumFeed` from the audio worker, route its events with `StrumRouting`, show `Tips.ForStrum`; map flag `audio.strumMinMargin` → `AudioConfig.StrumMinMargin`.
 - Open (Person 2 → music-teacher/human): WrongString tip changed from B6 "Finger {f} goes on string {s}" to "Pluck string {s}, not string {n}" (a neighbour string's note comes from the picking hand) — rec: approve.
 - Open: Core/Contracts/*.cs stubs (Stage 2, architect) don't exist yet; `ChordShape`/`FretboardGeometry` live in Core/Theory per ARCHITECTURE.md — rec: architect writes the Contracts stubs referencing them before SL1. Also Q-TEAM-07, Q-SKILL-01.
+- Sat 15:10 · Person 2 · handoff · All Person 2 Core code is on main (82f42bc), 408 tests, verify --eval green: SL0 Theory, SL8 NeckSolver, SL1 Tuner, SL2 PluckVerifier + Tips + LearnChordSession, SL3 StrumVerifier + StrumFeed + StrumRouting, SL5 Songs + PlayAlongSession, SL6 PatternClock + PatternJudge + SpectralFluxOnset, SL7 ChangeDrillSession, SL10 Coach (rule-based + LLM prompt/parser). All numbers synthetic · verified to L1 (+L2 harness with no clips) · pending L2 recordings, L3–L5 (Person 1)
+- Sat 15:10 · Person 2 · key numbers (synthetic) · tuner max 0.069 c; pluck verdicts 100% clean/20/10 dB (96.5% at 5 dB); strum 99.6% acc, 0.3% false-clean; onset F1 ≥ 0.979; NeckSolver 0 mm clean but nut error ~5× the RMS residual under gaze noise · L1
+- Sat 15:05 · Person 2 · contracts · Contracts v1 merged (PR #1, PR #2 doc fix); Core duplicates renamed: PatternClockSlot, PlayAlongTarget, TunerState · L1
+- Sat 01:00 · Person 1 · harness · people relabelled Person 1 / Person 2; lane guard added (`./scripts/set-person.sh`, protect-files, session hook). Person 2: run `./scripts/set-person.sh 2` after cloning · verified to L0 (hook tests)
+- Sat 00:20 · plan · repo scaffold + docs written (planning only; nothing built) · verified to L0 (scripts syntax, JSON, hook tests)
+## Blockers
+- Person 2 → Person 1: L3 compile of Core (Theory, Geometry, Audio, Songs, Practice, Coach, Contracts) in Unity + commit the generated .meta files. Send measured scale length / nut string span to replace FretboardConfig.Default (Q-REG-06).
+- Person 2 → Person 1: wiring — Tuner.Process(…, targetString) → TunerState (capture 44.1/48 kHz; pass target string); StrumFeed from the audio worker → StrumRouting → PlayAlong/ChangeDrill/LearnChord, show Tips.ForStrum; HUD reads PlayAlongTarget; audio.strumMinMargin → AudioConfig.StrumMinMargin; onsets read +11…14 ms late → audio.latencyOffsetMs; coach HTTP only when flag coach ≠ "off" (model CoachPrompt.ModelId, 3 s timeout, key from env var, fallback RuleBasedCoach).
+- Person 2 → Person 1 (G1 caution): NeckSolver residual understates true nut error ~5× (depth) — check the nut against a physical marker; aim for dwell jitter ≤0.5°.
+- Person 2 → recorder: /record-fixtures — open strings 6→1 ×2; pluck faults from MASTER_PLAN Appendix B2; clean + faulty strums of G C D Em Am; quiet + venue. Then ./scripts/audio-eval.sh; a human freezes the eval set and writes docs/AUDIO_BASELINE.md (SL1/SL2/SL3/SL11).
+- Open Q (Person 2): WrongString tip "Pluck string {s}, not string {n}" instead of B6 "Finger {f} goes on string {s}" → rec: approve. Riptide credit lacks the writer (likely James Keogh — verify) → rec: add after checking. Happy Birthday PD source is a news article → rec: add the court-ruling link in docs/SONGS.md. Plus Q-TEAM-07, Q-SKILL-01.
 ## Contract changes
-- (none)
+- Sat 15:05 · Person 2 · Contracts v1 (PR #1, Person 1 approved) + v1.1 doc fix (PR #2: StrumResult.Confidence = 0–1 hypothesis score). See docs/ARCHITECTURE.md Deltas.
 ## Spike results
 - M-S0 (machine half): Unity 2021.3.3f1 opens and builds `unity/` headlessly, licence OK, EditMode tests run, macOS arm64 app builds (human half pending: Hub, Newtonsoft + MCP for Unity packages) · M-S1 to M-S4: … (step-by-step procedures in `docs/DEVICE_TEST.md` § Spikes) · M-S5: … · M-S6: …
 - M-S2 (IMU, physical Ultra): PASS 2026-11-14 — real capture + verified checklist in `docs/apis/glasses/imu-protocol.md` §11

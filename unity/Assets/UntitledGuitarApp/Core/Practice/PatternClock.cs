@@ -6,17 +6,17 @@ using UntitledGuitarApp.Core.Theory;
 namespace UntitledGuitarApp.Core.Practice
 {
     /// <summary>
-    /// One slot of the strum/pick pattern, as the strumming hand and the pattern strip consume it (PatternSlot(index, D|U|string)).
+    /// One slot of the strum/pick pattern, as the strumming hand and the pattern strip consume it (PatternClockSlot(index, D|U|string)).
     /// Symbol: "D", "U", "-" (rest) for strum; "B" or "1".."6" for pick. String: for pick slots the resolved string (B = the current
     /// chord's BassString), else 0. Index counts from the first slot of bar 1 (pickup beats have no slots).
     /// </summary>
-    public readonly struct PatternSlot
+    public readonly struct PatternClockSlot
     {
         public readonly int Index, Bar, SlotInBar, ChordIndex, String;
         public readonly string Symbol;
         public readonly double TimeSeconds;
         public readonly bool IsRest;
-        public PatternSlot(int index, int bar, int slotInBar, string symbol, int stringNumber, int chordIndex, double timeSeconds)
+        public PatternClockSlot(int index, int bar, int slotInBar, string symbol, int stringNumber, int chordIndex, double timeSeconds)
         {
             Index = index; Bar = bar; SlotInBar = slotInBar; Symbol = symbol; String = stringNumber; ChordIndex = chordIndex;
             TimeSeconds = timeSeconds; IsRest = symbol == "-";
@@ -30,10 +30,10 @@ namespace UntitledGuitarApp.Core.Practice
     /// </summary>
     public sealed class PatternClock
     {
-        readonly PatternSlot[] _slots;
+        readonly PatternClockSlot[] _slots;
         readonly double _slotSec, _firstSec;
 
-        public IReadOnlyList<PatternSlot> Slots => _slots;
+        public IReadOnlyList<PatternClockSlot> Slots => _slots;
         public double SlotSeconds => _slotSec;
         public bool IsPick { get; }
 
@@ -44,11 +44,11 @@ namespace UntitledGuitarApp.Core.Practice
             IsPick = pick;
             var pat = pick ? song.Pick : song.Strum;
             if (pat == null || pat.Subdivision <= 0 || pat.Slots.Count != pat.Subdivision)
-            { _slots = new PatternSlot[0]; _slotSec = 0; _firstSec = 0; return; }
+            { _slots = new PatternClockSlot[0]; _slotSec = 0; _firstSec = 0; return; }
             double slotBeats = (double)song.BeatsPerBar / pat.Subdivision;
             _slotSec = slotBeats * timeline.SecondsPerBeat;
             _firstSec = song.PickupBeats * timeline.SecondsPerBeat;
-            var list = new List<PatternSlot>();
+            var list = new List<PatternClockSlot>();
             for (int i = 0; ; i++)
             {
                 double t = _firstSec + i * _slotSec;
@@ -56,7 +56,7 @@ namespace UntitledGuitarApp.Core.Practice
                 int sIn = i % pat.Subdivision;
                 string sym = pat.Slots[sIn] ?? "-";
                 int chord = timeline.At(t + 1e-9).CurrentIndex;
-                list.Add(new PatternSlot(i, i / pat.Subdivision + 1, sIn, sym, ResolveString(sym, timeline, chord), chord, t));
+                list.Add(new PatternClockSlot(i, i / pat.Subdivision + 1, sIn, sym, ResolveString(sym, timeline, chord), chord, t));
             }
             _slots = list.ToArray();
         }
@@ -80,7 +80,7 @@ namespace UntitledGuitarApp.Core.Practice
             return i >= 0 && i < _slots.Length ? i : -1;
         }
 
-        public bool TryActive(double tSeconds, out PatternSlot slot)
+        public bool TryActive(double tSeconds, out PatternClockSlot slot)
         {
             int i = ActiveIndex(tSeconds);
             slot = i >= 0 ? _slots[i] : default;

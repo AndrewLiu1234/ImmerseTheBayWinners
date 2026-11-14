@@ -11,7 +11,7 @@ namespace UntitledGuitarApp.Core.Practice
     /// </summary>
     public static class StrumRouting
     {
-        public static ChordTarget Feed(PlayAlongSession session, in StrumEvent e)
+        public static PlayAlongTarget Feed(PlayAlongSession session, in StrumEvent e)
         {
             if (session == null) throw new ArgumentNullException(nameof(session));
             return session.OnStrum(e.HeardChord, e.TimeSec);

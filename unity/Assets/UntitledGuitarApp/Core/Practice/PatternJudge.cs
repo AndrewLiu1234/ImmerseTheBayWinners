@@ -121,7 +121,7 @@ namespace UntitledGuitarApp.Core.Practice
             return rep;
         }
 
-        static int Nearest(List<int> expected, IReadOnlyList<PatternSlot> slots, double t)
+        static int Nearest(List<int> expected, IReadOnlyList<PatternClockSlot> slots, double t)
         {
             int lo = 0, hi = expected.Count - 1;
             if (hi < 0) return -1;

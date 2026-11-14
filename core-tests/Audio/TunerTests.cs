@@ -13,7 +13,7 @@ public class TunerTests
 
     static Tuner NewTuner(AudioConfig cfg = null) => new Tuner(cfg ?? AudioConfig.Default, Sr);
 
-    static TunerReading At(Tuner t, float[] x, double sec, int targetString = 0) =>
+    static TunerState At(Tuner t, float[] x, double sec, int targetString = 0) =>
         t.Process(x, (int)(sec * Sr), Frame, sec, targetString);
 
     [Theory]
@@ -101,7 +101,7 @@ public class TunerTests
         var first = t.Process(inTune, 4800, Frame, now);
         Assert.InRange(first.Cents, 5.0, 19.0);                 // partway: smoothed
         Assert.InRange(first.RawCents, -3.0, 3.0);              // raw follows the input immediately
-        TunerReading last = first;
+        TunerState last = first;
         for (int i = 1; i < 40; i++) { now += Hop / (double)Sr; last = t.Process(inTune, 4800 + Hop * i, Frame, now); }
         Assert.InRange(last.Cents, -3.0, 3.0);
         Assert.True(last.InTune);

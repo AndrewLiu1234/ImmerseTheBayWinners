@@ -29,13 +29,13 @@ namespace UntitledGuitarApp.Core.Practice
     }
 
     /// <summary>Output for the HUD: what to play now, what comes next and how long until the change.</summary>
-    public readonly struct ChordTarget
+    public readonly struct PlayAlongTarget
     {
         public readonly int CurrentIndex, NextIndex;
         public readonly string Current, Next;
         public readonly double BeatsToChange, PositionSeconds;
         public readonly bool Holding, Finished;
-        public ChordTarget(int ci, string cur, int ni, string next, double beats, double pos, bool holding, bool finished)
+        public PlayAlongTarget(int ci, string cur, int ni, string next, double beats, double pos, bool holding, bool finished)
         { CurrentIndex = ci; Current = cur; NextIndex = ni; Next = next; BeatsToChange = beats; PositionSeconds = pos; Holding = holding; Finished = finished; }
     }
 
@@ -74,17 +74,17 @@ namespace UntitledGuitarApp.Core.Practice
         public double MeanAbsErrorSec { get; private set; }
         double _absErrSum; int _errCount;
 
-        public ChordTarget Start(double nowSec)
+        public PlayAlongTarget Start(double nowSec)
         {
             _started = true; _lastNow = nowSec; _pos = 0;
             if (_n == 0) _finished = true;
             return Advance(nowSec);
         }
 
-        public ChordTarget Update(double nowSec) => _started ? Advance(nowSec) : Start(nowSec);
+        public PlayAlongTarget Update(double nowSec) => _started ? Advance(nowSec) : Start(nowSec);
 
         /// <summary>A detected strum of <paramref name="chord"/> at nowSec.</summary>
-        public ChordTarget OnStrum(string chord, double nowSec)
+        public PlayAlongTarget OnStrum(string chord, double nowSec)
         {
             if (!_started) Start(nowSec);
             Advance(nowSec);
@@ -119,7 +119,7 @@ namespace UntitledGuitarApp.Core.Practice
         }
 
         /// <summary>Escape hatch by hand (also used by the timeout): give up on the chord being held and move on.</summary>
-        public ChordTarget Skip(double nowSec)
+        public PlayAlongTarget Skip(double nowSec)
         {
             if (_holdSpan >= 0)
             {
@@ -134,7 +134,7 @@ namespace UntitledGuitarApp.Core.Practice
             if (double.IsNaN(_bestErr[i]) || Math.Abs(err) < Math.Abs(_bestErr[i])) _bestErr[i] = err; // best-onset wins
         }
 
-        ChordTarget Advance(double nowSec)
+        PlayAlongTarget Advance(double nowSec)
         {
             double now = Math.Max(nowSec, _lastNow);
             while (!_finished)
@@ -194,18 +194,18 @@ namespace UntitledGuitarApp.Core.Practice
             _results.Add(r);
         }
 
-        ChordTarget Target()
+        PlayAlongTarget Target()
         {
-            if (_finished) return new ChordTarget(-1, null, -1, null, 0, _pos, false, true);
+            if (_finished) return new PlayAlongTarget(-1, null, -1, null, 0, _pos, false, true);
             if (_holdSpan >= 0)
             {
                 var h = _tl.Spans[_holdSpan];
                 bool more = _holdSpan + 1 < _n;
-                return new ChordTarget(_holdSpan, h.Chord, more ? _holdSpan + 1 : -1, more ? _tl.Spans[_holdSpan + 1].Chord : null,
+                return new PlayAlongTarget(_holdSpan, h.Chord, more ? _holdSpan + 1 : -1, more ? _tl.Spans[_holdSpan + 1].Chord : null,
                     h.Beats, _pos, true, false);
             }
             var q = _tl.At(_pos);
-            return new ChordTarget(q.CurrentIndex, q.CurrentIndex >= 0 ? _tl.Spans[q.CurrentIndex].Chord : null,
+            return new PlayAlongTarget(q.CurrentIndex, q.CurrentIndex >= 0 ? _tl.Spans[q.CurrentIndex].Chord : null,
                 q.NextIndex, q.NextIndex >= 0 ? _tl.Spans[q.NextIndex].Chord : null, q.BeatsUntilChange, _pos, false, false);
         }
     }
