@@ -3,7 +3,7 @@
 // controls; threads are joined, never slept on. Lines are captured through UGALog.Output, so nothing reaches the console
 // (Unity's test runner fails a test that logs an error).
 //
-// The JSON checks use StrictJson below: a small RFC 8259 validator and decoder that shares no code with UGALog, so a line
+// The JSON checks use UgaStrictJson below: a small RFC 8259 validator and decoder that shares no code with UGALog, so a line
 // that passes is valid JSON AND decodes back to exactly the values that went in.
 using System;
 using System.Collections.Generic;
@@ -19,7 +19,7 @@ using UntitledGuitarApp.Runtime.Logging;
 namespace UntitledGuitarApp.Tests.EditMode
 {
     /// <summary>A strict JSON validator and string decoder, independent of UGALog.</summary>
-    internal static class StrictJson
+    internal static class UgaStrictJson
     {
         /// <summary>null when <paramref name="s"/> is exactly one valid JSON value, otherwise what is wrong.</summary>
         public static string Check(string s)
@@ -188,12 +188,12 @@ namespace UntitledGuitarApp.Tests.EditMode
     }
 
     /// <summary>Diverts UGALog.Output into a list for the lifetime of the object.</summary>
-    internal sealed class LogCapture : IDisposable
+    internal sealed class UgaLogCapture : IDisposable
     {
         public readonly List<KeyValuePair<LogType, string>> Lines = new List<KeyValuePair<LogType, string>>();
         readonly Action<LogType, string> _previous;
 
-        public LogCapture()
+        public UgaLogCapture()
         {
             _previous = UGALog.Output;
             UGALog.Output = delegate(LogType type, string line)
@@ -231,7 +231,7 @@ namespace UntitledGuitarApp.Tests.EditMode
             StringAssert.StartsWith(UGALog.Prefix, line);
             Assert.AreEqual(-1, line.IndexOfAny(new[] { '\n', '\r', (char)0x85, (char)0x2028, (char)0x2029 }), "the line must be a single line: " + line);
             string json = line.Substring(UGALog.Prefix.Length);
-            Assert.IsNull(StrictJson.Check(json), "not valid JSON: " + json);
+            Assert.IsNull(UgaStrictJson.Check(json), "not valid JSON: " + json);
             Assert.AreEqual('{', json[0]);
             return json;
         }
@@ -281,7 +281,7 @@ namespace UntitledGuitarApp.Tests.EditMode
         [Test]
         public void Event_OverloadsWriteTheDocumentedLines_ThroughTheOutputSink()
         {
-            using (LogCapture capture = new LogCapture())
+            using (UgaLogCapture capture = new UgaLogCapture())
             {
                 UGALog.Event("plain");
                 UGALog.Event("one", "a", 1);
@@ -304,7 +304,7 @@ namespace UntitledGuitarApp.Tests.EditMode
         [Test]
         public void WarnAndError_CarryALevelAndTheirTextInMsg()
         {
-            using (LogCapture capture = new LogCapture())
+            using (UgaLogCapture capture = new UgaLogCapture())
             {
                 UGALog.Warn("w_evt", "careful: \"quote\"");
                 UGALog.Error("e_evt", "bad\nthing");
@@ -337,7 +337,7 @@ namespace UntitledGuitarApp.Tests.EditMode
         [Test]
         public void NothingThrows_NotEvenForNullsOrASinkThatThrows()
         {
-            using (LogCapture capture = new LogCapture())
+            using (UgaLogCapture capture = new UgaLogCapture())
             {
                 Assert.DoesNotThrow(delegate { UGALog.Event(null); });
                 Assert.DoesNotThrow(delegate { UGALog.Event(null, null, null); });
@@ -390,7 +390,7 @@ namespace UntitledGuitarApp.Tests.EditMode
             {
                 string json = UGALog.FormatJson(1, "e", "s", c[0]);
                 Assert.AreEqual(J("{'t':1.000,'evt':'e','s':'") + c[1] + J("'}"), json, "input: " + Regex.Escape(c[0]));
-                Assert.IsNull(StrictJson.Check(json), json);
+                Assert.IsNull(UgaStrictJson.Check(json), json);
             }
         }
 
@@ -404,7 +404,7 @@ namespace UntitledGuitarApp.Tests.EditMode
             {
                 string json = UGALog.FormatJson(1, "e", "s", s);
                 Assert.AreEqual(J("{'t':1.000,'evt':'e','s':'") + s + J("'}"), json);
-                Assert.IsNull(StrictJson.Check(json));
+                Assert.IsNull(UgaStrictJson.Check(json));
             }
         }
 
@@ -418,7 +418,7 @@ namespace UntitledGuitarApp.Tests.EditMode
             foreach (string s in new[] { high, low, atEnd, reversed })
             {
                 string json = UGALog.FormatJson(1, "e", "s", s);
-                Assert.IsNull(StrictJson.Check(json), "lone surrogate must not produce invalid JSON: " + json);
+                Assert.IsNull(UgaStrictJson.Check(json), "lone surrogate must not produce invalid JSON: " + json);
                 StringAssert.Contains("\\ufffd", json);
             }
             Assert.AreEqual(J("{'t':1.000,'evt':'e','s':'a\\ufffdb'}"), UGALog.FormatJson(1, "e", "s", high));
@@ -453,10 +453,10 @@ namespace UntitledGuitarApp.Tests.EditMode
             foreach (string s in inputs)
             {
                 string json = UGALog.FormatJson(2.5, "round\ttrip", "key\"" + s.Length, s);
-                Assert.IsNull(StrictJson.Check(json), json);
+                Assert.IsNull(UgaStrictJson.Check(json), json);
                 // decode the "s" value with the independent decoder and compare
                 int at = json.IndexOf("\":\"", json.IndexOf("\"key", StringComparison.Ordinal), StringComparison.Ordinal) + 2;
-                string decoded = StrictJson.ReadString(json, ref at);
+                string decoded = UgaStrictJson.ReadString(json, ref at);
                 Assert.AreEqual(s, decoded);
             }
         }
@@ -469,13 +469,13 @@ namespace UntitledGuitarApp.Tests.EditMode
 
             string longer = new string('x', UGALog.MaxStringChars + 904);
             string json = UGALog.FormatJson(1, "e", "s", longer);
-            Assert.IsNull(StrictJson.Check(json));
+            Assert.IsNull(UgaStrictJson.Check(json));
             Assert.AreEqual(J("{'t':1.000,'evt':'e','s':'") + new string('x', UGALog.MaxStringChars) + J("...[+904]'}"), json);
 
             // never cut a surrogate pair in half
             string pairAtTheCut = new string('x', UGALog.MaxStringChars - 1) + char.ConvertFromUtf32(0x1F600) + "tail";
             string json2 = UGALog.FormatJson(1, "e", "s", pairAtTheCut);
-            Assert.IsNull(StrictJson.Check(json2), json2);
+            Assert.IsNull(UgaStrictJson.Check(json2), json2);
         }
 
         [Test]
@@ -523,13 +523,13 @@ namespace UntitledGuitarApp.Tests.EditMode
             foreach (float f in new[] { 0.1f, 1f / 3f, 1e-5f, 123456789f, 3.4028235e38f, 1.17549435E-38f, 16777216f, -42.125f, 0.15f })
             {
                 string token = ValueOf(f);
-                Assert.IsNull(StrictJson.Check(token), token);
+                Assert.IsNull(UgaStrictJson.Check(token), token);
                 Assert.AreEqual(f, float.Parse(token, CultureInfo.InvariantCulture), "float " + token);
             }
             foreach (double d in new[] { 0.1, 1.0 / 3.0, 1e-5, 1e21, 123456789012345678.0, double.Epsilon, double.MaxValue, -42.125 })
             {
                 string token = ValueOf(d);
-                Assert.IsNull(StrictJson.Check(token), token);
+                Assert.IsNull(UgaStrictJson.Check(token), token);
                 Assert.AreEqual(d, double.Parse(token, CultureInfo.InvariantCulture), "double " + token);
             }
         }
@@ -580,13 +580,13 @@ namespace UntitledGuitarApp.Tests.EditMode
             int[] many = new int[100];
             for (int i = 0; i < many.Length; i++) many[i] = i;
             string text = ValueOf(many);
-            Assert.IsNull(StrictJson.Check(text));
+            Assert.IsNull(UgaStrictJson.Check(text));
             StringAssert.StartsWith("[0,1,2,", text);
             StringAssert.EndsWith(J(",63,'...']"), text, "at most 64 items are written");
 
             object deep = new object[] { new object[] { new object[] { new object[] { 1 } } } };
             string deepText = ValueOf(deep);
-            Assert.IsNull(StrictJson.Check(deepText), deepText);
+            Assert.IsNull(UgaStrictJson.Check(deepText), deepText);
             StringAssert.Contains(J("'...'"), deepText, "nesting stops after 3 levels");
         }
 
@@ -624,7 +624,7 @@ namespace UntitledGuitarApp.Tests.EditMode
         [Test]
         public void AValueThatLogsFromItsOwnToString_DoesNotCorruptTheLine()
         {
-            using (LogCapture capture = new LogCapture())
+            using (UgaLogCapture capture = new UgaLogCapture())
             {
                 UGALog.Event("outer", "a", 1, "b", new LogsFromToString(), "c", 3);
                 Assert.AreEqual(2, capture.Lines.Count);
@@ -639,7 +639,7 @@ namespace UntitledGuitarApp.Tests.EditMode
         static string ValueOf(object value)
         {
             string json = UGALog.FormatJson(0, "v", "k", value);
-            Assert.IsNull(StrictJson.Check(json), json);
+            Assert.IsNull(UgaStrictJson.Check(json), json);
             string head = J("{'t':0.000,'evt':'v','k':");
             StringAssert.StartsWith(head, json);
             return json.Substring(head.Length, json.Length - head.Length - 1);
@@ -667,7 +667,7 @@ namespace UntitledGuitarApp.Tests.EditMode
                     {
                         string actual = UGALog.FormatJson(1234.5678, "culture", "v", values[i]);
                         Assert.AreEqual(expected[i], actual, "culture " + name);
-                        Assert.IsNull(StrictJson.Check(actual), name + ": " + actual);
+                        Assert.IsNull(UgaStrictJson.Check(actual), name + ": " + actual);
                     }
                     StringAssert.Contains(J("'t':1234.568"), UGALog.FormatJson(1234.5678, "x"), name);
                 }
@@ -705,7 +705,7 @@ namespace UntitledGuitarApp.Tests.EditMode
         {
             const int threadCount = 8;
             const int perThread = 250;
-            using (LogCapture capture = new LogCapture())
+            using (UgaLogCapture capture = new UgaLogCapture())
             {
                 Thread[] threads = new Thread[threadCount];
                 for (int t = 0; t < threadCount; t++)
@@ -734,7 +734,7 @@ namespace UntitledGuitarApp.Tests.EditMode
                     Assert.IsFalse(seen[thread, seq], "line logged twice: " + json);
                     seen[thread, seq] = true;
                     int at = 0;
-                    string text = StrictJson.ReadString(m.Groups[3].Value, ref at);
+                    string text = UgaStrictJson.ReadString(m.Groups[3].Value, ref at);
                     Assert.AreEqual("quote\"back\\slash\nnewline " + thread + "/" + seq, text, "another thread's text leaked into this line");
                 }
                 for (int t = 0; t < threadCount; t++)
@@ -773,7 +773,7 @@ namespace UntitledGuitarApp.Tests.EditMode
                 Application.SetStackTraceLogType(LogType.Log, before);
             }
             Assert.IsNotNull(seenText, "the event did not reach Unity's log");
-            Assert.IsNull(StrictJson.Check(seenText.Substring(UGALog.Prefix.Length)));
+            Assert.IsNull(UgaStrictJson.Check(seenText.Substring(UGALog.Prefix.Length)));
             // Informational: with stack traces off the callback should see an empty stack trace.
             Debug.Log("UGALog stack-trace probe: stackTrace length seen by logMessageReceived = " + (seenStack == null ? -1 : seenStack.Length));
         }
@@ -781,7 +781,7 @@ namespace UntitledGuitarApp.Tests.EditMode
 
     // ================================================================================================================
     /// <summary>A TextWriter whose writes wait for the test to open a gate: a disk that has stalled.</summary>
-    internal sealed class GateWriter : TextWriter
+    internal sealed class UgaGateWriter : TextWriter
     {
         public readonly ManualResetEventSlim Gate = new ManualResetEventSlim(false);
         readonly StringBuilder _text = new StringBuilder();
@@ -811,7 +811,7 @@ namespace UntitledGuitarApp.Tests.EditMode
         }
     }
 
-    internal sealed class FailingWriter : TextWriter
+    internal sealed class UgaFailingWriter : TextWriter
     {
         public override Encoding Encoding { get { return Encoding.UTF8; } }
         public override void Write(char value) { throw new IOException("disk full"); }
@@ -860,7 +860,7 @@ namespace UntitledGuitarApp.Tests.EditMode
         [Test]
         public void LineWriter_FullQueue_DropsAndCountsTheLine_AndNeverBlocks()
         {
-            GateWriter stalledDisk = new GateWriter();
+            UgaGateWriter stalledDisk = new UgaGateWriter();
             SessionLineWriter writer = new SessionLineWriter(stalledDisk, 3);
 
             int accepted = 0;
@@ -882,7 +882,7 @@ namespace UntitledGuitarApp.Tests.EditMode
         [Test]
         public void LineWriter_AcceptsAgainOnceTheBacklogIsWritten()
         {
-            GateWriter disk = new GateWriter();
+            UgaGateWriter disk = new UgaGateWriter();
             SessionLineWriter writer = new SessionLineWriter(disk, 2);
             Assert.IsTrue(writer.TryWrite("a"));
             Assert.IsTrue(writer.TryWrite("b"));
@@ -959,7 +959,7 @@ namespace UntitledGuitarApp.Tests.EditMode
         [Test]
         public void LineWriter_ADiskError_StopsTheWriting_ItDoesNotThrowIntoAnyone()
         {
-            SessionLineWriter writer = new SessionLineWriter(new FailingWriter(), 10);
+            SessionLineWriter writer = new SessionLineWriter(new UgaFailingWriter(), 10);
             Assert.IsTrue(writer.TryWrite("this one will fail"));
             Assert.IsTrue(writer.Close(30000));
             Assert.IsNotNull(writer.Error);
@@ -991,7 +991,7 @@ namespace UntitledGuitarApp.Tests.EditMode
             Assert.AreEqual(5, lines.Length, string.Join("\n", lines));   // session_start + 3 lines + session_end
             foreach (string line in lines)
             {
-                Assert.IsNull(StrictJson.Check(line), line);
+                Assert.IsNull(UgaStrictJson.Check(line), line);
                 Assert.AreEqual('{', line[0], "a session file holds bare JSON objects, no [UGA] prefix");
             }
             StringAssert.Contains(J("'evt':'session_start'"), lines[0]);
@@ -1035,7 +1035,7 @@ namespace UntitledGuitarApp.Tests.EditMode
         [Test]
         public void Recorder_TeesEveryUGALogLine_WithoutThePrefix()
         {
-            using (LogCapture capture = new LogCapture())
+            using (UgaLogCapture capture = new UgaLogCapture())
             {
                 Assert.IsTrue(SessionRecorder.Start(_dir));
                 UGALog.Event("hello", "n", 3, "s", "a\"b");
@@ -1048,7 +1048,7 @@ namespace UntitledGuitarApp.Tests.EditMode
             }
             string[] lines = File.ReadAllLines(SessionRecorder.CurrentPath);
             Assert.AreEqual(1 + 3 + 1, lines.Length, string.Join("\n", lines));
-            foreach (string line in lines) Assert.IsNull(StrictJson.Check(line), line);
+            foreach (string line in lines) Assert.IsNull(UgaStrictJson.Check(line), line);
             StringAssert.EndsWith(J(",'evt':'hello','n':3,'s':'a\\'b'}"), lines[1]);
             StringAssert.EndsWith(J(",'evt':'careful','lvl':'warn','msg':'watch out'}"), lines[2]);
             StringAssert.EndsWith(J(",'evt':'broken','lvl':'error','msg':'oops'}"), lines[3]);
@@ -1059,7 +1059,7 @@ namespace UntitledGuitarApp.Tests.EditMode
         {
             const int threadCount = 4;
             const int perThread = 500;
-            using (LogCapture capture = new LogCapture())
+            using (UgaLogCapture capture = new UgaLogCapture())
             {
                 Assert.IsTrue(SessionRecorder.Start(_dir));
                 Thread[] threads = new Thread[threadCount];
@@ -1082,7 +1082,7 @@ namespace UntitledGuitarApp.Tests.EditMode
             int burst = 0;
             foreach (string line in lines)
             {
-                Assert.IsNull(StrictJson.Check(line), line);
+                Assert.IsNull(UgaStrictJson.Check(line), line);
                 Match m = Regex.Match(line, "\"evt\":\"burst\",\"thread\":(\\d+),\"i\":(\\d+)\\}$");
                 if (!m.Success) continue;
                 int thread = int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture);
@@ -1133,7 +1133,7 @@ namespace UntitledGuitarApp.Tests.EditMode
                     int ends = 0;
                     foreach (string line in lines)
                     {
-                        Assert.IsNull(StrictJson.Check(line), line);
+                        Assert.IsNull(UgaStrictJson.Check(line), line);
                         if (line.Contains(J("'evt':'session_end'"))) ends++;
                     }
                     StringAssert.Contains(J("'evt':'session_start'"), lines[0]);
@@ -1152,7 +1152,7 @@ namespace UntitledGuitarApp.Tests.EditMode
         {
             string blocker = Path.Combine(_dir, "blocker");
             File.WriteAllText(blocker, "a file where a folder is needed");
-            using (LogCapture capture = new LogCapture())
+            using (UgaLogCapture capture = new UgaLogCapture())
             {
                 bool started = true;
                 Assert.DoesNotThrow(delegate { started = SessionRecorder.Start(Path.Combine(blocker, "sessions")); });
