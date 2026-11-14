@@ -14,8 +14,9 @@ is wrong. Then play a real song at your own speed. Built at **Immerse the Bay 20
 
 ## Setup
 
-**Andrew (the Mac with the glasses and Unity)**
+**Person 1 (the Mac with the glasses and Unity)**
 1. `claude update`. Then from this folder: `git init -b main && chmod +x scripts/*.sh .claude/hooks/*.sh`.
+   Then `./scripts/set-person.sh 1`, so this clone's agents know they work for Person 1 (`docs/WORKSPLIT.md`).
 2. Unity: `./scripts/init-unity.sh` turns `unity/` into a Unity 2021.3.3f1 project (set `UNITY_PATH` if Unity lives elsewhere).
    Then Unity Hub → Add → `unity/` → open.
 3. In Unity's Package Manager, add `com.unity.nuget.newtonsoft-json` and MCP for Unity (Add package from git URL, pinned to
@@ -28,8 +29,9 @@ is wrong. Then play a real song at your own speed. Built at **Immerse the Bay 20
 7. Skills: `npx skills add mattpocock/skills --skill grill-me --agent claude-code` and
    `npx skills add ooiyeefei/ccc --skill pitch-package --agent claude-code` (read each SKILL.md before committing it).
 
-**P2 (Core laptop, no Unity needed)**
-1. Clone, install the .NET SDK, run `./scripts/verify.sh`.
+**Person 2 (Core laptop, no Unity needed)**
+1. Clone, install the .NET SDK, run `./scripts/set-person.sh 2` (so your agents know they work for Person 2), then
+   `./scripts/verify.sh`.
 2. `./scripts/get-datasets.sh` (GuitarSet + NSynth test; Kaggle needs an API token).
 3. `claude` in your clone → `/build-slice SL11`, then your Core slices in `docs/TODO.md`.
 
@@ -37,8 +39,10 @@ is wrong. Then play a real song at your own speed. Built at **Immerse the Bay 20
 
 Don't paste the plan into Claude. `CLAUDE.md`, the session-start hook and the docs give every session its context, so
 you only name the task. One slice per session, then `/handoff` and `/clear`. Details: `docs/HARNESS.md`.
+Every session also starts by saying which person its clone works for (set once with `./scripts/set-person.sh`), and a hook
+keeps each person's agents out of the other person's files. Who owns what: `docs/WORKSPLIT.md`.
 
-**Andrew, tonight (after Setup)**
+**Person 1, tonight (after Setup)**
 1. Type `/mcp` (the Unity MCP must be listed) and `/doctor prompt-audit` (skim the report).
 2. Spike M-S1: plug in the glasses, set them to extended + 3D (`docs/HOW_IT_WORKS.md` §4), then ask:
    > Make a 3840×1080 side-by-side test image for spike M-S1 (red "L" on the left half, blue "R" on the right) and tell me how to show it fullscreen on the glasses.
@@ -46,9 +50,9 @@ you only name the task. One slice per session, then `/handoff` and `/clear`. Det
    > Spike M-S2 from docs/TODO.md: read the XREAL Air 2 Ultra's IMU on macOS. First write docs/apis/glasses/imu-protocol.md from the Monado xreal_air driver source (HID interfaces, enable command, packet layout; cite the file and commit; never guess bytes). Then fill in tools/imu-bridge/bridge.py and help me run ./scripts/imu-bridge.sh. Stop and report the rate and drift.
 4. Put the spike results in `docs/STATUS.md`, run `/handoff`, sleep.
 
-**Andrew, from 07:00:** `/build-slice SL0`, then SL8 (alignment) and SL4 (ghost hands), in the order in `docs/WORKSPLIT.md`.
+**Person 1, from 07:00:** `/build-slice SL0`, then SL8 (alignment) and SL4 (ghost hands), in the order in `docs/WORKSPLIT.md`.
 
-**P2, from 07:00 (after Setup):**
+**Person 2, from 07:00 (after Setup):**
 > Use the architect agent to run prompt P1 from docs/MASTER_PLAN.md §13: contract stubs first, then refine docs/ARCHITECTURE.md and docs/TODO.md. Stop for review.
 
 Review together at 08:30 and commit; contracts freeze at 09:00. Then `/build-slice SL0` (the Core half), and on through your
@@ -59,7 +63,7 @@ slices in `docs/WORKSPLIT.md`.
 | Doc | What |
 |---|---|
 | `docs/PRD.md` | product truth: requirements, scope, metrics |
-| `docs/GHOST_HANDS.md` | the core feature: the glowing blue fretting + strumming hands (with Andrew's sketch) |
+| `docs/GHOST_HANDS.md` | the core feature: the glowing blue fretting + strumming hands (with Person 1's sketch) |
 | `docs/HOW_IT_WORKS.md` | the one-cable Mac setup, alignment without cameras, and why an Android emulator doesn't help |
 | `docs/WORKSPLIT.md` | who owns what, git rules, sync points, the hour-by-hour plan |
 | `docs/TODO.md` | vertical slices with owners and acceptance criteria |

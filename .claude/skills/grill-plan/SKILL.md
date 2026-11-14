@@ -12,5 +12,6 @@ Already decided (one per line; empty = none yet):
    decided-by-evidence and move on.
 3. Ask ONE question at a time with your recommended answer (multiple choice when available) and ≤1 sentence on why it matters.
 4. Append to docs/DECISIONS.md (newest first): `D-<QID> · <answer> · <who> · <HH:MM PT> · reversible: yes|no · affects: <…>`.
+   `<who>` is `Person 1` or `Person 2`: the human who answered.
 5. If an answer contradicts an earlier decision or the plan, say so and ask whether to reopen it.
 6. Stop when asked or when the set is done; summarize what changes in PRD/TODO terms.

@@ -1,7 +1,7 @@
 # Untitled Guitar App — Master Plan
 *AR guitar coach for absolute beginners on XREAL Air 2 Ultra · Immerse the Bay 2026 (Stanford XR)*
 
-`v0.3 · revised Sat 2026-11-14 ~00:20 PT after grill rounds 1–3 and adversarial review r0 (Part IV) · feature freeze Sun 2026-11-15 01:00 PT · Devpost deadline Sun 2026-11-15 09:00 PT`
+`v0.3 · revised Sat 2026-11-14 ~00:20 PT after grill rounds 1–3 and adversarial review r0 (Part IV) · people relabelled Person 1 / Person 2 ~01:00 PT · feature freeze Sun 2026-11-15 01:00 PT · Devpost deadline Sun 2026-11-15 09:00 PT`
 
 **Platform (decided 23:10):** XREAL Air 2 Ultra + MacBook over one USB-C cable. No Android host, no webcam, no extra hardware. The glasses act as a side-by-side 3D display with an IMU, mics and speakers; Unity runs on the Mac and Claude drives it through the Unity MCP. See §1A for what the glasses can and can't do by themselves.
 
@@ -15,7 +15,7 @@
 
 1. **Tonight:** answer the 🔴 questions in **§29**, in chat or with `/grill-plan` once the harness exists. Every other question carries a recommended answer, and that answer becomes the decision unless you object.
 2. **Stage 1:** unzip the scaffold and follow `README.md` → Setup (every Appendix A file is already there). Then open Claude Code at the repo root and say: *"Run the Stage 1 checks from docs/MASTER_PLAN.md Appendix A: verify the files, run ./scripts/verify.sh, invoke each skill once, run /doctor prompt-audit, then stop and report."*
-3. **In parallel with Stage 1:** person B runs spikes **M-S1–M-S3** (§25) on the glasses. They decide the riskiest branch of the architecture, which is how the neck gets anchored. M-S4–M-S6 wait until Sat 07:00.
+3. **In parallel with Stage 1:** Person 1 runs spikes **M-S1–M-S3** (§25) on the glasses. They decide the riskiest branch of the architecture, which is how the neck gets anchored. M-S4–M-S6 wait until Sat 07:00.
 4. **Stage 2:** run prompt **P1** (§13) with Opus.
 
 Legend: 🔴 blocking tonight · 🟠 needed before its slice starts · 🟢 default is fine · **MUST / SHOULD / COULD / WON'T** = MoSCoW scope · **L0–L5** = verification levels (§9).
@@ -275,7 +275,7 @@ npx skills add bernieweb3/hackathon-ai-devkit --skill hackathon-demo-video --age
 
 **Essential vs optional.** Install `grill-me` (you asked for it, and `/grill-plan` wraps it) and `pitch-package` tonight. pytheory and the demo-video skill can wait until they're needed.
 
-**Already on Andrew's Mac** (seen as `~/.impeccable` and `~/.superpowers`): impeccable gives `ux-review` a critique vocabulary (our additive-display rules win over its web-UI defaults). superpowers' `systematic-debugging` and `verification-before-completion` match our rules; its brainstorm → plan → execute flow does not, so CLAUDE.md rule 16 says our slice workflow wins (Q-SKILL-01). If a project skill doesn't trigger when it should, tune its description with Anthropic's skill-creator. Full map: `docs/HARNESS.md` §6.
+**Already on Person 1's Mac** (seen as `~/.impeccable` and `~/.superpowers`): impeccable gives `ux-review` a critique vocabulary (our additive-display rules win over its web-UI defaults). superpowers' `systematic-debugging` and `verification-before-completion` match our rules; its brainstorm → plan → execute flow does not, so CLAUDE.md rule 16 says our slice workflow wins (Q-SKILL-01). If a project skill doesn't trigger when it should, tune its description with Anthropic's skill-creator. Full map: `docs/HARNESS.md` §6.
 
 **Read every SKILL.md before committing it.** Community skills are instructions that run with your permissions.
 
@@ -318,7 +318,7 @@ Use the default or `acceptEdits` mode for builders. Never use `bypassPermissions
 | Team | Humans | Claude sessions | Cuts |
 |---|---|---|---|
 | Solo | you: XR + device + guitar | A = main checkout (Unity, xr-engineer); B = `claude -w core` (audio, then logic) | SL8, SL10; ghost hand limited to 4 poses |
-| **2 ← you** | **Andrew:** XR, ghost hands, Blender, Unity MCP, glasses · **P2:** Core audio + logic, songs, data, eval, Devpost (`docs/WORKSPLIT.md`) | Andrew = Unity (main checkout, Mac); P2 = own clone + `-w audio` / `-w logic` | SL10 |
+| **2 ← you** | **Person 1:** XR, ghost hands, Blender, Unity MCP, glasses · **Person 2:** Core audio + logic, songs, data, eval, Devpost (`docs/WORKSPLIT.md`) | Person 1 = Unity (main checkout, Mac); Person 2 = own clone + `-w audio` / `-w logic` | SL10 |
 | 3 | XR lead (you) · audio lead (best guitarist) · product/content/pitch | A = Unity; B = `-w audio`; C = `-w logic` | — |
 | 4 | + integrator/QA (device tests, spectator, video) | + D = reviews and logs (read-only) | — |
 
@@ -365,7 +365,7 @@ Adapted from your attached workflow. Times are Pacific.
 | Stage | Window | Model | Deliverables | Exit criteria |
 |---|---|---|---|---|
 | **0 · Truth and grill** (new) | Fri 22:45–23:30 | Opus (chat) | 🔴 answers in `DECISIONS.md`; guitar tuned and measured; Unity + macOS build support confirmed; glasses plugged into the Mac | every 🔴 answered or defaulted |
-| **1 · Harness and repo** | Fri 23:30–Sat 01:00 | Opus | `claude update` on every laptop; repo with Appendix A files, **committed as "harness v1" before any worktree**; external skills installed; Unity project (macOS); Unity MCP connected; IMU bridge started; `docs/apis/` populated; **spikes M-S0–M-S3** (Andrew, tonight); **dev clips** recorded (about 30 min, demo mic: tonight if Andrew has time, else Sat 08:30) | `verify.sh` green on an empty Core; every skill invoked once; SBS test image on the glasses (M-S1); IMU streaming (M-S2) |
+| **1 · Harness and repo** | Fri 23:30–Sat 01:00 | Opus | `claude update` on every laptop; repo with Appendix A files, **committed as "harness v1" before any worktree**; external skills installed; Unity project (macOS); Unity MCP connected; IMU bridge started; `docs/apis/` populated; **spikes M-S0–M-S3** (Person 1, tonight); **dev clips** recorded (about 30 min, demo mic: tonight if Person 1 has time, else Sat 08:30) | `verify.sh` green on an empty Core; every skill invoked once; SBS test image on the glasses (M-S1); IMU streaming (M-S2) |
 | **2 · Spec and context** | Sat 07:00–08:30 (the teammate starts Saturday morning) | **Opus** (`architect`, plan mode) | **contract stubs first**, then refinements to the seeded `ARCHITECTURE.md` and `TODO.md`; `PRD.md` only if something is wrong | contracts compile; reviewed together at 08:30; commit "spec v1"; freeze 09:00 |
 | Sleep | Sat 02:00–07:00 | — | staggered; whoever owns an unresolved M-S1/M-S2 writes the exact blocker into STATUS first | — |
 | **3 · Slice loop** | Sat 07:00–18:00 | **Sonnet** builders, Opus for DSP | Tracks A/B/C/D in parallel (§24); checkpoints 09:00 (G0), 11:00 (G1), 13:00 first end-to-end on device, 16:00 play-along on device | MUST slices at L5 |
@@ -391,7 +391,7 @@ In priority order:
 1) Compilable stubs in unity/Assets/UntitledGuitarApp/Core/Contracts/*.cs (signatures + XML docs, no logic), covering the
    audio verifiers, practice sessions and the PracticeEvents the ghost hands consume.
 2) docs/ARCHITECTURE.md — record every change under "Deltas".
-3) docs/TODO.md — keep the owners (Andrew = XR, P2 = Core) and the ghost-hands priority; fix gaps in acceptance criteria.
+3) docs/TODO.md — keep the owners (Person 1 = XR, Person 2 = Core) and the ghost-hands priority; fix gaps in acceptance criteria.
 4) docs/PRD.md — only if something in it is wrong. Start with an "ASSUMED:" block for every decision you had to assume.
 Rules: no scope beyond Part II; every MUST maps to ≥1 slice; no design may require cameras, 6DoF, hand or image tracking
 (the glasses give us an SBS display, IMU rotation and mics/speakers only).
@@ -659,9 +659,9 @@ We always know what the player is *supposed* to play. So we test hypotheses abou
 
 ## 21. Ghost hands (the core feature; full spec in `docs/GHOST_HANDS.md`)
 
-![Andrew's sketch](img/ghost-hands-sketch.png)
+![Person 1's sketch](img/ghost-hands-sketch.png)
 
-- **Decided Sat 00:00 (Andrew):** the ghost hands are the main thing: "not only the fingering but a visualization of where to put your fingers". Two **glowing, translucent blue** hands on the real guitar, as in the sketch. Never cut and never reduced to dots only.
+- **Decided Sat 00:00 (Person 1):** the ghost hands are the main thing: "not only the fingering but a visualization of where to put your fingers". Two **glowing, translucent blue** hands on the real guitar, as in the sketch. Never cut and never reduced to dots only.
 - **Fretting hand:** G, C, D, Em, Am (MUST); E and A (SHOULD). Anchored at a neck socket on the nut. Fingertips end on the fingertip dots from `FretboardGeometry` (the dots win; the last joint bends to reach them). Morph one beat early; finger by finger; fades to 40% once the pluck check passes.
 - **Strumming hand:** over the strings between the end of the fretboard and the soundhole (measure nut → soundhole tonight). Down strokes sweep 6→1, up strokes sweep back over the top strings, in time with the pattern; for picking, the next string glows and the hand flicks it.
 - **Look:** electric blue `#4FC3F7`, brighter fresnel rim, 15–25% fill, fingertip glow, no dark outlines, white finger numbers (per-finger colors behind a flag).
@@ -699,7 +699,7 @@ We always know what the player is *supposed* to play. So we test hypotheses abou
   - **S2** Strum timing feedback and latency calibration.
   - **S3** Picking-pattern judging.
   - **S4** Change drill and One-Minute Changes.
-  - **S5** Lyric strip with chords above the words (kept, but optional: "playing, not singing", Andrew 00:00).
+  - **S5** Lyric strip with chords above the words (kept, but optional: "playing, not singing", Person 1 00:00).
   - **S6** E and A poses.
 - **COULD**
   - **C1** LLM coach with text-to-speech.
@@ -844,7 +844,7 @@ Time box: **the 🔴 set takes 30 minutes or less tonight.**
 ## 29. Tonight's 🔴 set (in dependency order; ✅ = answered in chat)
 
 1. ✅ **Q-TEAM-01** Team: 2 people. *Still needed: the roles.*
-2. ◐ **Q-TEAM-02** Who can cleanly play G, C, D and Em? *Partly answered:* open datasets first, plus ~30 min of our own recordings (`docs/DATA.md`); Andrew can hold the shapes.
+2. ◐ **Q-TEAM-02** Who can cleanly play G, C, D and Em? *Partly answered:* open datasets first, plus ~30 min of our own recordings (`docs/DATA.md`); Person 1 can hold the shapes.
 3. ✅ **Q-TEAM-03** Guitar: steel-string acoustic.
 4. ✅ **Q-HW-01** Host: MacBook over USB-C (no Android, no webcam).
 5. ✅ **Q-HW-02** Mac: Apple silicon MacBook Pro.
@@ -855,7 +855,7 @@ Time box: **the 🔴 set takes 30 minutes or less tonight.**
 10. **Q-FIT-01** Concept: ghost hand + approach rings + crisp sheet (assumed)?
 11. **Q-FIT-02** Accept "aligned once, held by the IMU" instead of precise registration?
 12. **Q-REG-06** Measure the guitar tonight.
-13. ✅ **Q-VIS-01** Ghost hands per Andrew's sketch: both hands, glowing translucent blue (`docs/GHOST_HANDS.md`).
+13. ✅ **Q-VIS-01** Ghost hands per Person 1's sketch: both hands, glowing translucent blue (`docs/GHOST_HANDS.md`).
 14. ✅ **Q-SONG-01 / 02** Happy Birthday (PD) + Riptide and Stand By Me as chord-only loops (`docs/SONGS.md`).
 15. **Q-AUD-01** Glasses mic or MacBook mic (M-S3)?
 16. **Q-AI-01 / 02** Tracks, and ManageXR eligibility (a laptop-tethered pair of glasses is still glasses)?
@@ -863,10 +863,10 @@ Time box: **the 🔴 set takes 30 minutes or less tonight.**
 18. ✅ **Q-DATA-01** Datasets first + our own short recording session with the demo mic (`docs/DATA.md`).
 19. **Q-SCOPE-01 / 02** Confirm the MUST and WON'T lists.
 20. **Q-TEAM-06** Sleep plan?
-21. ✅ **Q-ADV-03 / 04** Andrew owns the glasses and the L5 queue; P2 runs the recordings (`docs/WORKSPLIT.md`).
+21. ✅ **Q-ADV-03 / 04** Person 1 owns the glasses and the L5 queue; Person 2 runs the recordings (`docs/WORKSPLIT.md`).
 22. ✅ **Q-ADV-30** Replaced by the 3 songs; lyrics are optional.
-23. ✅ **Q-EMU-01** Keep the Mac route; no emulator, no Android build for the demo (Andrew, Sat 00:23).
-24. **Q-TEAM-07** P2's name, laptop OS and .NET SDK?
+23. ✅ **Q-EMU-01** Keep the Mac route; no emulator, no Android build for the demo (Person 1, Sat 00:23).
+24. **Q-TEAM-07** Person 2's name, laptop OS and .NET SDK?
 25. **Q-SKILL-01** In this repo, does our slice workflow win over superpowers' plan flow?
 
 ## 30. Full question bank (175 questions; each has a Rec; ✅ = decided)
@@ -890,7 +890,7 @@ Time box: **the 🔴 set takes 30 minutes or less tonight.**
 - **Q-HW-02** ✅ Which Mac (chip, macOS version), and is a USB-C/Thunderbolt port free with the charger attached? → **Decided (00:00):** Apple silicon MacBook Pro. **Rec:** Apple-silicon MacBook, charger plugged in, glasses on a direct port (no hub).
 - **Q-HW-03** 🔴 Have the glasses shown an image from this Mac yet, and does SBS 3D work (M-S1)? → **Rec:** test now; 15 minutes.
 - **Q-HW-04** 🔴 Can we read the IMU (M-S2)? → **Rec:** an agent writes the hidapi bridge tonight; decide at G0.
-- **Q-HW-05** ✅ Which Unity version is installed, with macOS build support? → **Decided (00:00):** 2021.3.3f1, the version on Andrew's Mac (2018.4.36f1 is also installed but too old). MCP for Unity supports 2021.3 LTS and newer; smoke test M-S0. **Rec:** whatever is installed. No XREAL SDK needed on this route. **No upgrades mid-hackathon.**
+- **Q-HW-05** ✅ Which Unity version is installed, with macOS build support? → **Decided (00:00):** 2021.3.3f1, the version on Person 1's Mac (2018.4.36f1 is also installed but too old). MCP for Unity supports 2021.3 LTS and newer; smoke test M-S0. **Rec:** whatever is installed. No XREAL SDK needed on this route. **No upgrades mid-hackathon.**
 - **Q-HW-06** 🟠 Is the Unity MCP connected to *the project we'll use*, and what's its server name? → **Rec:** create the project tonight and verify `read_console`.
 - **Q-HW-07** 🟠 Is the glasses cable long enough to sit comfortably next to the laptop? → **Rec:** test seated; use a USB-C extension only if it's DisplayPort-capable.
 - **Q-HW-08** 🔴 If the IMU can't be read by Sat 09:00, what then? → **Rec:** ship headLocked mode with honest framing; keep the alignment code for the roadmap.
@@ -931,7 +931,7 @@ Time box: **the 🔴 set takes 30 minutes or less tonight.**
 - **Q-REG-12** 🟠 Does a judge need to align? → **Rec:** no. Judge profile = headLocked floating neck (zero setup); the demoer shows the aligned version.
 
 ### E. Ghost hand and visuals
-- **Q-VIS-01** ✅ Ghost hand: Blender-posed per chord, procedural IK, or fingertip rings only? → **Decided (00:00):** both hands, glowing translucent blue, per Andrew's sketch; Blender poses + fingertip IK snap; capsule-hand fallback. **Rec:** Blender poses for G, C, D and Em (your skill set), with rings always on; IK is COULD.
+- **Q-VIS-01** ✅ Ghost hand: Blender-posed per chord, procedural IK, or fingertip rings only? → **Decided (00:00):** both hands, glowing translucent blue, per Person 1's sketch; Blender poses + fingertip IK snap; capsule-hand fallback. **Rec:** Blender poses for G, C, D and Em (your skill set), with rings always on; IK is COULD.
 - **Q-VIS-02** 🟠 Which rigged hand model, and what license? → **Rec:** CC0 or an XR Hands sample mesh; record it in `CREDITS.md`.
 - **Q-VIS-03** 🟠 Style: wireframe, translucent solid, or glowing rim? → **Rec:** a glowing cyan rim with about 25% fill.
 - **Q-VIS-04** 🟢 Finger numbers 1–4 (index to pinky)? → **Rec:** yes, matching chord charts.
@@ -1074,7 +1074,7 @@ Time box: **the 🔴 set takes 30 minutes or less tonight.**
 - **Q-EMU-01** ✅ Can you get a Beam Pro or a recent Samsung flagship (XREAL's SDK docs say S24 or newer) by Sat 10:00? → **Decided (Sat 00:23):** keep the Mac. **Rec was:** if no, the Mac route stands. If yes, the Mac route stays primary; an Android "hand check" stretch only after `good-1600`.
 - **Q-EMU-02** 🟢 Use the Android emulator or XREAL's XR Device Simulator at all? → **Rec:** no. Neither puts anything on the glasses.
 - **Q-SKILL-01** 🟠 superpowers in this repo? → **Rec:** keep its debugging and verification skills; our slice workflow wins; no extra plan files (CLAUDE.md rule 16).
-- **Q-TEAM-07** 🔴 P2's name, laptop OS, and is the .NET 8+ SDK installed? → **Rec:** any OS with .NET 8+; no Unity needed.
+- **Q-TEAM-07** 🔴 Person 2's name, laptop OS, and is the .NET 8+ SDK installed? → **Rec:** any OS with .NET 8+; no Unity needed.
 - **Q-VIS-07** 🟠 Ghost-hand mesh: your own Blender hand or a CC0 rig? → **Rec:** your own stylized low-poly hand if it takes under an hour; otherwise CC0.
 - **Q-VIS-08** 🟠 All-blue hands with white finger numbers, or per-finger colors? → **Rec:** all-blue per the sketch; colors behind the `fingerColors` flag.
 - **Q-VIS-09** 🟠 Fade the fretting ghost after a passing pluck check? → **Rec:** yes, to 40%; the fingertip dots stay bright.
@@ -1105,24 +1105,24 @@ Time box: **the 🔴 set takes 30 minutes or less tonight.**
 
 | ID | Answer | Who | When (PT) | Reversible | Affects |
 |---|---|---|---|---|---|
-| D-Q-TEAM-01 | 2 people (roles still to assign; see §10, row "2") | Andrew | 22:58 | yes | §10, §24 |
-| D-Q-TEAM-03 | Steel-string acoustic | Andrew | 22:58 | — | §19, fixtures |
-| D-Q-REG-01 | Ghost hand on the **real neck** is required, not floating | Andrew | 22:58 | — | §20, §23 M3 |
-| D-Q-ENG-02 | Use Unity, with the Unity MCP on this Mac | Andrew | 22:58 | — | Part I, A2 |
-| D-Q-HW-01 | Host = MacBook over USB-C. Android not realistic; iPhone has no SDK | Andrew | 23:10 | no (this weekend) | §1A, §15, §18 |
-| D-HW-minimal | Minimal hardware: glasses only, **no webcam** or extra sensors | Andrew | 23:10 | no | §20 (camera-free alignment) |
-| D-HW-tether | Standalone/wireless preferred but impossible with the Air 2 Ultra; laptop tether accepted as necessary | Andrew | 23:10 | — | §26 |
+| D-Q-TEAM-01 | 2 people (roles still to assign; see §10, row "2") | Person 1 | 22:58 | yes | §10, §24 |
+| D-Q-TEAM-03 | Steel-string acoustic | Person 1 | 22:58 | — | §19, fixtures |
+| D-Q-REG-01 | Ghost hand on the **real neck** is required, not floating | Person 1 | 22:58 | — | §20, §23 M3 |
+| D-Q-ENG-02 | Use Unity, with the Unity MCP on this Mac | Person 1 | 22:58 | — | Part I, A2 |
+| D-Q-HW-01 | Host = MacBook over USB-C. Android not realistic; iPhone has no SDK | Person 1 | 23:10 | no (this weekend) | §1A, §15, §18 |
+| D-HW-minimal | Minimal hardware: glasses only, **no webcam** or extra sensors | Person 1 | 23:10 | no | §20 (camera-free alignment) |
+| D-HW-tether | Standalone/wireless preferred but impossible with the Air 2 Ultra; laptop tether accepted as necessary | Person 1 | 23:10 | — | §26 |
 | D-Q-FIT-01 | **ASSUMED:** ghost hand + approach rings + crisp sheet (question left unanswered) | Claude | 23:12 | yes | §1B, §16, §23 |
-| D-Q-DEMO-12 | Name = **"Untitled Guitar App"**. Code: `UntitledGuitarApp` (namespaces, folders, assemblies); short prefix `UGA` (log tag, env vars) | Andrew | 23:42 | yes | everywhere |
-| D-Q-VIS-01 | **Ghost hands are the core feature:** fretting + strumming hands, glowing translucent blue, per the sketch (`docs/GHOST_HANDS.md`) | Andrew | 00:00 | no | §21, §23 M4, SL4 |
-| D-Q-SCOPE-LYRICS | Playing matters more than singing: lyrics kept but optional (S5) | Andrew | 00:00 | yes | §23 |
-| D-Q-SONG-01 | Songs: Happy Birthday (PD, lyrics) · Riptide and Stand By Me (chords only) | Andrew | 00:00 | yes | `docs/SONGS.md`, M1 |
-| D-Q-DATA-01 | Open datasets first; ~30 min of our own recordings for mistakes and the eval set | Andrew | 00:00 | yes | `docs/DATA.md`, SL11 |
-| D-Q-HW-02 | Apple silicon MacBook Pro | Andrew | 00:00 | — | §15 |
-| D-Q-HW-05 | Unity 2021.3.3f1 (installed), Built-in render pipeline | Andrew | 00:00 | yes (M-S0) | A2, README |
-| D-Q-TEAM-04 | Work split: Andrew = XR + ghost hands + glasses; P2 = Core audio/logic + songs + data + Devpost | Andrew | 00:00 | yes | `docs/WORKSPLIT.md` |
-| D-Q-PLAN-REPO | All planning delivered as GitHub-ready .md files + the Appendix A harness, unpacked | Andrew | 00:00 | — | README |
-| D-Q-EMU-01 | Keep the Mac route: no Android emulator, no Android build for the demo | Andrew | 00:23 | no (this weekend) | `docs/HOW_IT_WORKS.md` §6 |
+| D-Q-DEMO-12 | Name = **"Untitled Guitar App"**. Code: `UntitledGuitarApp` (namespaces, folders, assemblies); short prefix `UGA` (log tag, env vars) | Person 1 | 23:42 | yes | everywhere |
+| D-Q-VIS-01 | **Ghost hands are the core feature:** fretting + strumming hands, glowing translucent blue, per the sketch (`docs/GHOST_HANDS.md`) | Person 1 | 00:00 | no | §21, §23 M4, SL4 |
+| D-Q-SCOPE-LYRICS | Playing matters more than singing: lyrics kept but optional (S5) | Person 1 | 00:00 | yes | §23 |
+| D-Q-SONG-01 | Songs: Happy Birthday (PD, lyrics) · Riptide and Stand By Me (chords only) | Person 1 | 00:00 | yes | `docs/SONGS.md`, M1 |
+| D-Q-DATA-01 | Open datasets first; ~30 min of our own recordings for mistakes and the eval set | Person 1 | 00:00 | yes | `docs/DATA.md`, SL11 |
+| D-Q-HW-02 | Apple silicon MacBook Pro | Person 1 | 00:00 | — | §15 |
+| D-Q-HW-05 | Unity 2021.3.3f1 (installed), Built-in render pipeline | Person 1 | 00:00 | yes (M-S0) | A2, README |
+| D-Q-TEAM-04 | Work split: Person 1 = XR + ghost hands + glasses; Person 2 = Core audio/logic + songs + data + Devpost | Person 1 | 00:00 | yes | `docs/WORKSPLIT.md` |
+| D-Q-PLAN-REPO | All planning delivered as GitHub-ready .md files + the Appendix A harness, unpacked | Person 1 | 00:00 | — | README |
+| D-Q-EMU-01 | Keep the Mac route: no Android emulator, no Android build for the demo | Person 1 | 00:23 | no (this weekend) | `docs/HOW_IT_WORKS.md` §6 |
 
 ---
 
@@ -1137,7 +1137,7 @@ The reviewer attacked the v0.1 (Android) draft at 23:15. It checked the docs, ra
 | Friday's spikes serialize past 03:00 | Tonight runs **M-S1–M-S3 only**; Stage 2 shrinks to contracts + TODO (§12, §25) |
 | Saturday's Unity track can't absorb ≥7 device integrations | Track C follows a **demo spine** with tagged known-good builds at 13:00 and 16:00; the no-APK loop takes 2–5 min (§24) |
 | Plan B (Quest 3S) broke the XREAL requirement | Replaced: the glasses as a laptop display is now the *main* route, with headLocked as the fallback (§1A) |
-| Your fixed requirements were cuttable | Lyrics in M1, an uncuttable picking strip, and a quality (ring-out) check in M6/SL2 (§23). *Sat 00:00: Andrew made lyrics optional and the ghost hands the top fixed requirement.* |
+| Your fixed requirements were cuttable | Lyrics in M1, an uncuttable picking strip, and a quality (ring-out) check in M6/SL2 (§23). *Sat 00:00: Person 1 made lyrics optional and the ghost hands the top fixed requirement.* |
 | ≤250 ms verdict vs a 450 ms window; FFT span; ±25 cents below bin width | Window 30–250 ms at 24 kHz, Goertzel at exact harmonics 2–6, target ≤350 ms (§19) |
 | Per-string faults inside a strum are mostly not separable | Strum = chord-level (+ distinctive bass faults); per-string diagnosis = pluck check; the demo's mistake is caught by the pluck check (§16, §19, §26) |
 | ±4-semitone YIN window turns wrong-string plucks into "muted" | Full-range YIN with octave correction; tie precedence; onset-relative gating for ringing strings (§19) |
@@ -1160,7 +1160,7 @@ The reviewer attacked the v0.1 (Android) draft at 23:15. It checked the docs, ra
 - **Q-ADV-02** 🔴 What minimum demo must be on the glasses and tagged by Sat 13:00? → **Rec:** aligned (or headLocked) neck + rings + Learn Em/G with the pluck check + mic meter.
 - **Q-ADV-03** 🔴 Who is the single "glasses owner" running the L5 queue? → **Rec:** one named person; the other submits ≤8-item checklists.
 - **Q-ADV-04** 🔴 If neither of you plays G/C/D/Em cleanly, who records the ground-truth clips? → **Rec:** borrow a guitarist from the hackathon Discord for 30 minutes (beginner takes make noisy labels).
-- **Q-ADV-05** 🔴 Do M-S1/M-S2 start before the harness is written? → **Rec:** yes; Claude writes Appendix A while person B tests the glasses.
+- **Q-ADV-05** 🔴 Do M-S1/M-S2 start before the harness is written? → **Rec:** yes; Claude writes Appendix A while Person 1 tests the glasses.
 - **Q-ADV-06** 🟠 Shrink Stage 2 to contracts + TODO.md and skip PRD.md? → **Rec:** yes.
 - **Q-ADV-07** 🟠 Which agents and skills will you actually use tonight? → **Rec:** the harness-lite set in §6; the other files sit unused until needed.
 - **Q-ADV-08** 🟠 Use worktree *subagents* at all? → **Rec:** prefer one `claude -w core` session; subagents only for clearly separate Core slices.
@@ -1187,6 +1187,11 @@ The reviewer attacked the v0.1 (Android) draft at 23:15. It checked the docs, ra
 ---
 
 # APPENDIX A — Harness files (copy exactly in Stage 1)
+
+> **Already unpacked (Sat 2026-11-14). The files in the repo are the source of truth: never copy from this appendix over them.**
+> Changed in the repo since unpacking (Sat ~01:00 PT): the two people are labelled Person 1 / Person 2; `scripts/set-person.sh`
+> is new; `protect-files.sh` and `session-context.sh` carry the lane guard; `settings.json` denies agents changing the person;
+> `CLAUDE.md`, the rules, agents and skills carry lane lines. See `docs/WORKSPLIT.md`.
 
 **Stage 1 order:**
 0. `claude update` on every laptop: agent `model:` frontmatter only outranks `CLAUDE_CODE_SUBAGENT_MODEL` on v2.1.251+, and `/doctor prompt-audit` needs v2.1.283+. Check `jq --version`, `python3 --version` and `dotnet --list-sdks`.
@@ -1268,7 +1273,7 @@ music-teacher · ux-critic · adversarial-qa (read-only) · scribe (haiku) · de
 - Unity 2021.3.3f1 (Built-in render pipeline), no upgrades during the event. NO XREAL SDK (it's Android-only). Packages: com.unity.nuget.newtonsoft-json
   (+ TextMeshPro). Target: macOS standalone (Apple silicon). Player settings: Company "UntitledGuitarApp", Product "Untitled Guitar App", bundle id "com.untitledguitarapp.app".
 - One scene: Assets/UntitledGuitarApp/Scenes/Main.unity with one `Bootstrap` object; everything else spawns from code/prefabs.
-  Scene/prefab writer: Andrew's session only.
+  Scene/prefab writer: Person 1's session only.
 - Assemblies: UntitledGuitarApp.Core (noEngineReferences; precompiled ref Newtonsoft.Json.dll) · UntitledGuitarApp.Runtime → Core ·
   UntitledGuitarApp.Editor (BuildScript, GlassesGameView, sim helpers) · UntitledGuitarApp.Tests.EditMode.
 - Rendering: Render/StereoRig = two eye cameras (IPD flag; asymmetric frusta from the 52° diagonal FOV) side by side into
@@ -2161,7 +2166,7 @@ mkdir -p build
 echo "Done. Unity Hub → Add → $PWD/unity, then add com.unity.nuget.newtonsoft-json and MCP for Unity in Package Manager."
 ~~~
 
-**`get-datasets.sh`** (P2; downloads into gitignored `data/`; see `docs/DATA.md`)
+**`get-datasets.sh`** (Person 2; downloads into gitignored `data/`; see `docs/DATA.md`)
 ~~~bash
 #!/usr/bin/env bash
 # Fetch open datasets for development and evaluation. Nothing here is committed (data/ is gitignored).

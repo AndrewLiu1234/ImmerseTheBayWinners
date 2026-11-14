@@ -1,7 +1,8 @@
 # The harness: how Claude Code agents stay fast, on-task and honest here
 
 *Why this repo has `CLAUDE.md`, `.claude/{rules,agents,skills,hooks}`, `scripts/verify.sh` and living docs. Full files:
-`MASTER_PLAN.md` Appendix A (already unpacked into this repo).*
+`MASTER_PLAN.md` Appendix A (already unpacked into this repo; the repo files are the source of truth and have changed since:
+Person 1 / Person 2 lane guard, Sat ~01:00 PT).*
 
 The idea: **models are good at writing code and bad at knowing when they're wrong.** So the harness gives every agent a small,
 precise context, makes the important rules mechanical (hooks and tests, not "please don't"), and makes every claim
@@ -12,7 +13,7 @@ checkable (verification levels, eval sets, logs on disk).
 | Layer | Loads | Contents | Size |
 |---|---|---|---|
 | `CLAUDE.md` | every session, always | what the project is, session ritual, commands, boundaries, 16 hard rules, glossary | ~55 lines (limit 120) |
-| SessionStart hook | at start, after `/clear`, after compaction | countdown to freeze, branch, next slice, top of `STATUS.md`, uncommitted files | ~25 lines |
+| SessionStart hook | at start, after `/clear`, after compaction | countdown to freeze, branch, **which person this clone works for and both lanes**, that person's open slices, top of `STATUS.md`, uncommitted files | ~30 lines |
 | Path-scoped rules (`.claude/rules/*.md`) | only when the agent touches matching files | Core purity, audio/DSP, Unity + glasses, songs, docs style | 5–15 lines each |
 | Nested `CLAUDE.md` | when working in `unity/` or `core-tests/` | Unity specifics (display 2, threading, Unity MCP) or test conventions | ~20 lines each |
 | Skills (`.claude/skills/*/SKILL.md`) | only when invoked, or when Claude decides they apply | step-by-step procedures (build a slice, debug, eval, handoff…) | on demand |
@@ -31,13 +32,14 @@ Rules that keep context clean:
 
 | Hook | When | What it does |
 |---|---|---|
-| `protect-files.sh` | before every Edit/Write | blocks secrets, Unity YAML (`.unity .prefab .asset .meta .mat …`), ProjectSettings, fixtures, the audio baseline and the harness itself. **Fails closed** |
+| `protect-files.sh` | before every Edit/Write | blocks secrets, Unity YAML (`.unity .prefab .asset .meta .mat …`), ProjectSettings, fixtures, the audio baseline and the harness itself. Then the **lane guard**: Person 1's agents can't edit Person 2's lane, and the other way round (`WORKSPLIT.md`). **Fails closed** |
 | `post-edit-check.sh` | after every Edit/Write | Core must not import UnityEngine; JSON must parse |
 | `stop-gate.sh` | when an agent (or a builder subagent) tries to finish | if Core/test/content files changed and `verify.sh` hasn't passed on **this exact diff**, it sends the agent back once. **Fails open** so nobody gets trapped |
-| `session-context.sh` | session start / after compaction | injects the countdown and current state |
+| `session-context.sh` | session start / after compaction | injects the countdown, which person this clone works for (a human sets it once with `./scripts/set-person.sh`) and current state |
 
 Permissions: **allow** safe, common commands (verify, dotnet, git status/diff/commit, Unity MCP read/test/scene tools);
-**ask** for builds, pushes, merges and package changes; **deny** force-push, hard reset, `rm -rf`, reading `.env`, and the
+**ask** for builds, pushes, merges and package changes; **deny** force-push, hard reset, `rm -rf`, reading `.env`, changing
+the person setting, and the
 Unity MCP *script-editing* tools, so C# always goes through Edit/Write, where the hooks can see it.
 
 ## 3. Verification: every claim has a level
@@ -49,7 +51,7 @@ Unity MCP *script-editing* tools, so C# always goes through Edit/Write, where th
 | L2 | `./scripts/audio-eval.sh` on recorded clips vs a frozen baseline | `dsp-engineer` |
 | L3 | Unity compiles, console clean, EditMode tests (Unity MCP) | `xr-engineer` |
 | L4 | Editor simulation: mouse-look head + WAV replay | `xr-engineer` |
-| L5 | on the glasses with a real guitar (`DEVICE_TEST.md`) | Andrew |
+| L5 | on the glasses with a real guitar (`DEVICE_TEST.md`) | Person 1 (the human) |
 
 Every report ends with "Verified to L_ · pending L_". Accuracy numbers come only from the eval set recorded through the app
 and frozen before tuning (`DATA.md`).
@@ -102,8 +104,8 @@ Expensive judgment (design, DSP, attacks on our own work) gets Opus; volume work
 |---|---|---|
 | `grill-me` (mattpocock/skills) | install tonight | the one-question-with-a-recommendation interview; `/grill-plan` wraps it |
 | `pitch-package` (ooiyeefei/ccc) | install tonight | Stage 5: pitch, video plan, Q&A, day-of checklist |
-| impeccable | already on Andrew's Mac (`~/.impeccable`) | critique vocabulary for `ux-review` and the Devpost page. Its web-UI defaults lose to our additive-display rules |
-| superpowers | probably on Andrew's Mac (`~/.superpowers`) | keep `systematic-debugging` and `verification-before-completion` (they match our rules). In this repo, **our workflow wins**: slices come from `TODO.md`, so don't start its brainstorm → plan → execute flow or create extra plan files |
+| impeccable | already on Person 1's Mac (`~/.impeccable`) | critique vocabulary for `ux-review` and the Devpost page. Its web-UI defaults lose to our additive-display rules |
+| superpowers | probably on Person 1's Mac (`~/.superpowers`) | keep `systematic-debugging` and `verification-before-completion` (they match our rules). In this repo, **our workflow wins**: slices come from `TODO.md`, so don't start its brainstorm → plan → execute flow or create extra plan files |
 | skill-creator (Anthropic) | optional | if one of our skills doesn't trigger when it should, use it to test and tighten the description |
 | pytheory, hackathon-demo-video | optional | cross-check chord notes; storyboard the video |
 

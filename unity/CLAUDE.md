@@ -2,7 +2,7 @@
 - Unity 2021.3.3f1 (Built-in render pipeline), no upgrades during the event. NO XREAL SDK (it's Android-only). Packages: com.unity.nuget.newtonsoft-json
   (+ TextMeshPro). Target: macOS standalone (Apple silicon). Player settings: Company "UntitledGuitarApp", Product "Untitled Guitar App", bundle id "com.untitledguitarapp.app".
 - One scene: Assets/UntitledGuitarApp/Scenes/Main.unity with one `Bootstrap` object; everything else spawns from code/prefabs.
-  Scene/prefab writer: Andrew's session only.
+  Scene/prefab writer: Person 1's session only.
 - Assemblies: UntitledGuitarApp.Core (noEngineReferences; precompiled ref Newtonsoft.Json.dll) · UntitledGuitarApp.Runtime → Core ·
   UntitledGuitarApp.Editor (BuildScript, GlassesGameView, sim helpers) · UntitledGuitarApp.Tests.EditMode.
 - Rendering: Render/StereoRig = two eye cameras (IPD flag; asymmetric frusta from the 52° diagonal FOV) side by side into

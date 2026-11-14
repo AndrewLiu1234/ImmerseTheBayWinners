@@ -4,6 +4,7 @@ description: Human protocol for recording labelled guitar fixtures with the demo
 disable-model-invocation: true
 ---
 # Record fixtures (human-run, ~40 min)
+Person 2 runs this protocol and owns the labels; Person 1 can be the hands, because the demo mic is on Person 1's Mac.
 Setup: guitar tuned with a reference tuner; seated as in the demo; the mic that won M-S3 (glasses or MacBook) at its demo
 position; app Debug › Fixture Recorder (or any 48 kHz mono recorder on the Mac using the same device — note the source).
 2–3 s per clip, start silent, no speech. Naming: <group>/<label>__<take>.wav · group = tuner | pluck-<chord> | strum-<chord> | noise.

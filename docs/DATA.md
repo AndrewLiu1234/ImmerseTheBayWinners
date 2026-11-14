@@ -1,6 +1,6 @@
 # Chord data: open datasets first, then 20 minutes of our own recordings
 
-*Researched Sat 2026-11-14 ~00:00 PT (web search plus Kaggle through Claude in Chrome). Owner: P2 (Core/audio).*
+*Researched Sat 2026-11-14 ~00:00 PT (web search plus Kaggle through Claude in Chrome). Owner: Person 2 (Core/audio).*
 
 ## What the data is for
 
@@ -40,7 +40,7 @@ Datasets can't give us:
 
 Nobody needs to play well. The shapes just have to be held as labelled; slowly is fine.
 
-## Recording protocol (30–40 min; `/record-fixtures` walks you through it; P2 runs it, Andrew can be the hands)
+## Recording protocol (30–40 min; `/record-fixtures` walks you through it; Person 2 runs it, Person 1 can be the hands)
 
 **Setup:** tune the guitar · quiet corner · MacBook on the table with its mic 40–60 cm from the soundhole (and/or the glasses
 mic, whichever M-S3 picked) · record through the app's session recorder, or with QuickTime/Audacity as 48 kHz mono WAV.

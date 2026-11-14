@@ -6,5 +6,7 @@ disable-model-invocation: true
 # Handoff
 !`git log --oneline -10`
 !`git status --short | head -n 20`
+Label every STATUS line (after the time) and every DECISIONS line (its `who` field) with this clone's person (`Person 1` or
+`Person 2`), and touch only your own lines and slices.
 Use the scribe agent with: what changed this session (with verification levels), blockers, contract changes, open questions
 (each with a recommended answer). Then say: "Handoff written — run /clear before the next slice."

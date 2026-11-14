@@ -4,6 +4,8 @@ description: Run Untitled Guitar App on the XREAL glasses from the Mac (Play Mod
 disable-model-invocation: true
 ---
 # Glasses run (ask before building)
+**Person 1 only**: the glasses and Unity are on Person 1's Mac. If this clone works for Person 2, stop and put your ≤8-item L5
+request in docs/DEVICE_TEST.md for the next sync point.
 1. Preconditions: ./scripts/verify.sh green; Unity console clean (L3); glasses connected in extended mode with SBS 3D on
    (hold brightness-up ~3 s).
 2. Start ./scripts/imu-bridge.sh in the background; confirm ≥200 Hz in its output (otherwise the app runs headLocked — say so).

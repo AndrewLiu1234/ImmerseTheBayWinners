@@ -80,7 +80,7 @@ the fingertip dots, the chord diagram and the audio check. Spike M-S5 and gate G
 
 ## 6. Grill: could an Android emulator get us XREAL's developer kit?
 
-**Decided Sat 00:23 (Andrew): keep the Mac.** No emulator and no Android build for the demo. The reasoning stays below for the record.
+**Decided Sat 00:23 (Person 1): keep the Mac.** No emulator and no Android build for the demo. The reasoning stays below for the record.
 
 You have Android tooling on this Mac, so it's a fair question. Short answer: **the emulator can't drive the glasses**, so it
 doesn't help the demo.

@@ -16,3 +16,4 @@ paths:
   docs/GHOST_HANDS.md); fade the fretting ghost to 40% once audio confirms the chord.
 - Every risky feature has a flag with a safe default; headLocked is the universal fallback; SIMULATED badge when audioSource = wav.
 - Keep EditorSimRig + WAV replay working (L4).
+- Lane: Person 1 (XR). Person 2's agents may read these files but never edit them (hook-enforced; docs/WORKSPLIT.md).

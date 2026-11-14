@@ -1,8 +1,8 @@
 # Ghost hands — visual spec
 
-*Decided by Andrew, Sat 2026-11-14 ~00:00 PT. **This is the core of the product**: never cut, never reduced to dots only.*
+*Decided by Person 1, Sat 2026-11-14 ~00:00 PT. **This is the core of the product**: never cut, never reduced to dots only.*
 
-![Andrew's sketch: glowing translucent blue hands on the guitar](img/ghost-hands-sketch.png)
+![Person 1's sketch: glowing translucent blue hands on the guitar](img/ghost-hands-sketch.png)
 
 ## What the sketch says
 
@@ -60,7 +60,7 @@ say exactly that. Never claim millimetre registration.
 
 ## 5. Implementation (Unity 2021.3.3f1, Built-in render pipeline)
 
-- **Mesh and rig:** a CC0 rigged hand or a stylized hand modelled in Blender (Andrew). License goes in `docs/CREDITS.md`.
+- **Mesh and rig:** a CC0 rigged hand or a stylized hand modelled in Blender (Person 1). License goes in `docs/CREDITS.md`.
 - **Poses:** authored in Blender on a 1:1 neck mock-up built from the measured scale length (`MASTER_PLAN.md` Appendix B4).
   Export joint rotations as JSON (`Assets/StreamingAssets/poses/*.json`): text, testable, hot-reloadable, no Animator YAML.
   Fretting: rest + G, C, D, Em, Am. Strumming: rest, down-start, down-end, up-start, up-end, pick-ready.
@@ -78,7 +78,7 @@ say exactly that. Never claim millimetre registration.
 - [ ] L5 (glasses): the wearer can copy the fretting shape for G and Em without looking at a diagram.
 - [ ] L5: the hands read as "glowing blue, see-through" in the demo room's lighting (ux-critic reviews a through-the-lens photo).
 
-## 7. Andrew's Blender checklist (Fri night / Sat morning)
+## 7. Person 1's Blender checklist (Fri night / Sat morning)
 
 1. Neck mock-up: measured scale length, nut width, frets 0–5 (Appendix B4), strings as thin cylinders.
 2. Hand: model or import a CC0 rig; left hand for right-handed players.

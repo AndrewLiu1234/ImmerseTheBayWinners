@@ -15,4 +15,7 @@ solid enough to demo.
   acceptance criteria, and a max time of 3h.
 - Never put UnityEngine types in Core. Never design anything that needs cameras, 6DoF, hand/image tracking or FPV capture.
 - Missing decision → write "ASSUMED: <decision> (reversible: yes/no)" and continue.
+- The two people are **Person 1** (XR: Unity + glasses) and **Person 2** (Core). Contracts and docs/ARCHITECTURE.md are the seam
+  between them: a change needs both humans' OK and, after Sat 09:00, must be additive. Keep those owners in docs/TODO.md, and never
+  implement anything inside either person's lane.
 Output: ≤25 lines — what changed, ASSUMED list, open questions (each with your recommended answer).

@@ -18,7 +18,7 @@ XREAL Air 2 Ultra + an Apple silicon MacBook over **one USB-C cable**. No Androi
 are a 3D display, a head-motion sensor and mics/speakers; everything else runs on the Mac (`HOW_IT_WORKS.md`).
 Unity 2021.3.3f1 (installed), driven by Claude Code through the Unity MCP.
 
-## Fixed requirements (Andrew)
+## Fixed requirements (Person 1)
 
 1. **Ghost hands are the core:** a glowing, translucent blue **fretting hand** and **strumming hand** on the **real** neck
    (`GHOST_HANDS.md`). Never cut, never reduced to dots.
@@ -69,5 +69,5 @@ Happy Birthday (public domain, with lyrics) · Riptide (chord loop) · Stand By 
 
 ## Open questions
 
-See `DECISIONS.md` and `MASTER_PLAN.md` Part III. Blocking now: Q-TEAM-07 (P2's name, laptop, .NET SDK), Q-TEAM-02 (who records),
+See `DECISIONS.md` and `MASTER_PLAN.md` Part III. Blocking now: Q-TEAM-07 (Person 2's name, laptop, .NET SDK), Q-TEAM-02 (who records),
 Q-SKILL-01 (superpowers precedence).

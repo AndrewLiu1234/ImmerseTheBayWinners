@@ -10,3 +10,4 @@ paths:
 - New verdict class → synthetic test first (core-tests/Synth). Threshold change → ./scripts/audio-eval.sh before/after in the commit.
 - Standard tuning MIDI 40 45 50 55 59 64; f = 440·2^((m−69)/12). Chord table: docs/MASTER_PLAN.md Appendix B.
 - macOS capture can apply voice processing/AGC (Mic Mode "Voice Isolation", some USB headset paths); if eval on device recordings looks "pumped", raise it — don't tune around it.
+- Lane: Person 2 (Core). Person 1's agents may read these files but never edit them (hook-enforced; docs/WORKSPLIT.md).

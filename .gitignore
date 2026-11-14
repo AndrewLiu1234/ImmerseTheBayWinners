@@ -29,5 +29,8 @@ CLAUDE.local.md
 .env
 .env.*
 tools/flags/secrets*.json
+# python
+__pycache__/
+*.pyc
 # macOS
 .DS_Store

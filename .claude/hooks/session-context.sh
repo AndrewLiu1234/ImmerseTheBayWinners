@@ -10,7 +10,29 @@ for name, t in (("feature freeze", datetime(2026,11,15,1,0,tzinfo=pt)), ("Devpos
 PY
 fi
 echo "branch: $(git branch --show-current 2>/dev/null)"
-echo "next slice: $(grep -m1 -E '^## SL[0-9]+.*status: (doing|todo)' docs/TODO.md 2>/dev/null || echo 'see docs/TODO.md')"
+# Which person does this clone work for? A human sets it once: ./scripts/set-person.sh 1|2 (git config uga.person).
+# Keep the lanes in sync with .claude/hooks/protect-files.sh and docs/WORKSPLIT.md.
+ME=$(git config --get uga.person 2>/dev/null)
+case "$ME" in
+  1) echo "you work for: PERSON 1 = XR (Unity, the glasses, ghost hands, HUD, Blender, demo ops)"
+     echo "  your lane:  unity/** except Core/** and StreamingAssets/songs/** · tools/imu-bridge/** · art/**"
+     echo "  NEVER edit: Core/** · core-build/** · core-tests/** · StreamingAssets/songs/** · tools/flags/** · docs/DATA.md · docs/SONGS.md (Person 2's lane; the hook blocks it)"
+     echo "  need something there? add 'Person 1 → Person 2: <request>' under Blockers in docs/STATUS.md and keep working in your lane" ;;
+  2) echo "you work for: PERSON 2 = Core (audio/DSP, theory, songs, practice logic, data, eval, Devpost)"
+     echo "  your lane:  unity/Assets/UntitledGuitarApp/Core/** (not Contracts) · core-build/** · core-tests/** · StreamingAssets/songs/** · tools/flags/** · docs/DATA.md · docs/SONGS.md"
+     echo "  NEVER edit: anything else under unity/ · tools/imu-bridge/** · art/** (Person 1's lane; the hook blocks it). No Unity or glasses here: stop at L1/L2 and write 'pending L3-L5 (Person 1)'"
+     echo "  need something there? add 'Person 2 → Person 1: <request>' under Blockers in docs/STATUS.md and keep working in your lane" ;;
+  *) ME=""
+     echo "⚠ PERSON NOT SET for this clone, so edits in both lanes are blocked. Tell your human to run ./scripts/set-person.sh 1 (the Mac with Unity + glasses) or ./scripts/set-person.sh 2 (the Core laptop). Do not run it yourself." ;;
+esac
+OPEN=$(grep -E '^## SL[0-9]+.*status: (doing|todo)' docs/TODO.md 2>/dev/null)
+if [ -n "$ME" ]; then
+  MINE=$(printf '%s\n' "$OPEN" | grep -E "owner:[^]]*Person $ME")
+  echo "next slice (yours): $(printf '%s\n' "$MINE" | head -n 1 | grep . || echo 'none open — see docs/TODO.md')"
+  echo "your open slices: $(printf '%s\n' "$MINE" | grep -oE '^## SL[0-9]+' | sed 's/^## //' | tr '\n' ' ')"
+else
+  echo "next slice: $(printf '%s\n' "$OPEN" | head -n 1 | grep . || echo 'see docs/TODO.md')"
+fi
 echo "--- STATUS (newest first) ---"; head -n 15 docs/STATUS.md 2>/dev/null
 echo "--- uncommitted ---"; git status --short 2>/dev/null | head -n 12
 exit 0

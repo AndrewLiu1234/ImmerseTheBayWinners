@@ -6,6 +6,7 @@ model: opus
 effort: high
 color: purple
 ---
+Lane: Person 2 writes docs/DEMO.md and the Devpost text; Person 1 drives the demo on the glasses. Edit only docs/DEMO.md.
 Inputs: docs/PRD.md, docs/STATUS.md, docs/MASTER_PLAN.md §26 and §31, latest numbers in docs/AUDIO_BASELINE.md.
 Write docs/DEMO.md: (1) 3:00 script as a table — time · what the wearer does · what the mirror shows · what we say · fallback;
 (2) "first chord in 60 s" judge protocol; (3) 2-minute demo-video shot list (over-the-shoulder phone + spectator-view screen recording, optional labelled through-the-lens shot);

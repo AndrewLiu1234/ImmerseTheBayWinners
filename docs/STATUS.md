@@ -1,5 +1,7 @@
 # STATUS — newest first (scribe keeps ≤40 lines; union-merged in git)
+<!-- - Sat HH:MM · Person 1 or Person 2 · track · what changed · level -->
 ## Now
+- Sat 01:00 · Person 1 · harness · people relabelled Person 1 / Person 2; lane guard added (`./scripts/set-person.sh`, protect-files, session hook). Person 2: run `./scripts/set-person.sh 2` after cloning · verified to L0 (hook tests)
 - Sat 00:20 · plan · repo scaffold + docs written (planning only; nothing built) · verified to L0 (scripts syntax, JSON, hook tests)
 ## Blockers
 - (none) — open questions: Q-TEAM-07, Q-SKILL-01

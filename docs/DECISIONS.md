@@ -1,21 +1,22 @@
 # DECISIONS — newest first (append-only; union-merged in git)
-<!-- D-<QID> · answer · who · HH:MM PT · reversible: yes|no · affects: docs/slices -->
-- D-Q-EMU-01 · Keep the Mac route: no Android emulator, no Android build for the demo · Andrew · Sat 00:23 PT · reversible: no (this weekend) · affects: docs/HOW_IT_WORKS.md §6
-- D-Q-PLAN-REPO · All planning delivered as GitHub-ready .md files + the Appendix A harness, unpacked · Andrew · Sat 00:00 PT · reversible: — · affects: README
-- D-Q-TEAM-04 · Work split: Andrew = XR + ghost hands + glasses; P2 = Core audio/logic + songs + data + Devpost · Andrew · Sat 00:00 PT · reversible: yes · affects: `docs/WORKSPLIT.md`
-- D-Q-HW-05 · Unity 2021.3.3f1 (installed), Built-in render pipeline · Andrew · Sat 00:00 PT · reversible: yes (M-S0) · affects: A2, README
-- D-Q-HW-02 · Apple silicon MacBook Pro · Andrew · Sat 00:00 PT · reversible: — · affects: §15
-- D-Q-DATA-01 · Open datasets first; ~30 min of our own recordings for mistakes and the eval set · Andrew · Sat 00:00 PT · reversible: yes · affects: `docs/DATA.md`, SL11
-- D-Q-SONG-01 · Songs: Happy Birthday (PD, lyrics) · Riptide and Stand By Me (chords only) · Andrew · Sat 00:00 PT · reversible: yes · affects: `docs/SONGS.md`, M1
-- D-Q-SCOPE-LYRICS · Playing matters more than singing: lyrics kept but optional (S5) · Andrew · Sat 00:00 PT · reversible: yes · affects: §23
-- D-Q-VIS-01 · **Ghost hands are the core feature:** fretting + strumming hands, glowing translucent blue, per the sketch (`docs/GHOST_HANDS.md`) · Andrew · Sat 00:00 PT · reversible: no · affects: §21, §23 M4, SL4
-- D-Q-DEMO-12 · Name = **"Untitled Guitar App"**. Code: `UntitledGuitarApp` (namespaces, folders, assemblies); short prefix `UGA` (log tag, env vars) · Andrew · Fri 23:42 PT · reversible: yes · affects: everywhere
+<!-- D-<QID> · answer · who (Person 1 | Person 2) · HH:MM PT · reversible: yes|no · affects: docs/slices -->
+- D-TEAM-labels · The two people are **Person 1** (XR: Unity + glasses) and **Person 2** (Core) in every doc, hook and agent prompt (older entries relabelled). Each clone sets its person with `./scripts/set-person.sh`; a hook blocks edits in the other person's lane · Person 1 · Sat 01:00 PT · reversible: yes · affects: `docs/WORKSPLIT.md`, CLAUDE.md, `.claude/**`
+- D-Q-EMU-01 · Keep the Mac route: no Android emulator, no Android build for the demo · Person 1 · Sat 00:23 PT · reversible: no (this weekend) · affects: docs/HOW_IT_WORKS.md §6
+- D-Q-PLAN-REPO · All planning delivered as GitHub-ready .md files + the Appendix A harness, unpacked · Person 1 · Sat 00:00 PT · reversible: — · affects: README
+- D-Q-TEAM-04 · Work split: Person 1 = XR + ghost hands + glasses; Person 2 = Core audio/logic + songs + data + Devpost · Person 1 · Sat 00:00 PT · reversible: yes · affects: `docs/WORKSPLIT.md`
+- D-Q-HW-05 · Unity 2021.3.3f1 (installed), Built-in render pipeline · Person 1 · Sat 00:00 PT · reversible: yes (M-S0) · affects: A2, README
+- D-Q-HW-02 · Apple silicon MacBook Pro · Person 1 · Sat 00:00 PT · reversible: — · affects: §15
+- D-Q-DATA-01 · Open datasets first; ~30 min of our own recordings for mistakes and the eval set · Person 1 · Sat 00:00 PT · reversible: yes · affects: `docs/DATA.md`, SL11
+- D-Q-SONG-01 · Songs: Happy Birthday (PD, lyrics) · Riptide and Stand By Me (chords only) · Person 1 · Sat 00:00 PT · reversible: yes · affects: `docs/SONGS.md`, M1
+- D-Q-SCOPE-LYRICS · Playing matters more than singing: lyrics kept but optional (S5) · Person 1 · Sat 00:00 PT · reversible: yes · affects: §23
+- D-Q-VIS-01 · **Ghost hands are the core feature:** fretting + strumming hands, glowing translucent blue, per the sketch (`docs/GHOST_HANDS.md`) · Person 1 · Sat 00:00 PT · reversible: no · affects: §21, §23 M4, SL4
+- D-Q-DEMO-12 · Name = **"Untitled Guitar App"**. Code: `UntitledGuitarApp` (namespaces, folders, assemblies); short prefix `UGA` (log tag, env vars) · Person 1 · Fri 23:42 PT · reversible: yes · affects: everywhere
 - D-Q-FIT-01 · **ASSUMED:** ghost hand + approach rings + crisp sheet (question left unanswered) · Claude · Fri 23:12 PT · reversible: yes · affects: §1B, §16, §23
-- D-HW-tether · Standalone/wireless preferred but impossible with the Air 2 Ultra; laptop tether accepted as necessary · Andrew · Fri 23:10 PT · reversible: — · affects: §26
-- D-HW-minimal · Minimal hardware: glasses only, **no webcam** or extra sensors · Andrew · Fri 23:10 PT · reversible: no · affects: §20 (camera-free alignment)
-- D-Q-HW-01 · Host = MacBook over USB-C. Android not realistic; iPhone has no SDK · Andrew · Fri 23:10 PT · reversible: no (this weekend) · affects: §1A, §15, §18
-- D-Q-ENG-02 · Use Unity, with the Unity MCP on this Mac · Andrew · Fri 22:58 PT · reversible: — · affects: Part I, A2
-- D-Q-REG-01 · Ghost hand on the **real neck** is required, not floating · Andrew · Fri 22:58 PT · reversible: — · affects: §20, §23 M3
-- D-Q-TEAM-03 · Steel-string acoustic · Andrew · Fri 22:58 PT · reversible: — · affects: §19, fixtures
-- D-Q-TEAM-01 · 2 people (roles still to assign; see §10, row "2") · Andrew · Fri 22:58 PT · reversible: yes · affects: §10, §24
-- PENDING · Q-TEAM-07 (P2 name/laptop/.NET), Q-SKILL-01 (superpowers precedence) — see docs/MASTER_PLAN.md §29
+- D-HW-tether · Standalone/wireless preferred but impossible with the Air 2 Ultra; laptop tether accepted as necessary · Person 1 · Fri 23:10 PT · reversible: — · affects: §26
+- D-HW-minimal · Minimal hardware: glasses only, **no webcam** or extra sensors · Person 1 · Fri 23:10 PT · reversible: no · affects: §20 (camera-free alignment)
+- D-Q-HW-01 · Host = MacBook over USB-C. Android not realistic; iPhone has no SDK · Person 1 · Fri 23:10 PT · reversible: no (this weekend) · affects: §1A, §15, §18
+- D-Q-ENG-02 · Use Unity, with the Unity MCP on this Mac · Person 1 · Fri 22:58 PT · reversible: — · affects: Part I, A2
+- D-Q-REG-01 · Ghost hand on the **real neck** is required, not floating · Person 1 · Fri 22:58 PT · reversible: — · affects: §20, §23 M3
+- D-Q-TEAM-03 · Steel-string acoustic · Person 1 · Fri 22:58 PT · reversible: — · affects: §19, fixtures
+- D-Q-TEAM-01 · 2 people (roles still to assign; see §10, row "2") · Person 1 · Fri 22:58 PT · reversible: yes · affects: §10, §24
+- PENDING · Q-TEAM-07 (Person 2 name/laptop/.NET), Q-SKILL-01 (superpowers precedence) — see docs/MASTER_PLAN.md §29

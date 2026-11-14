@@ -6,6 +6,9 @@ effort: medium
 isolation: worktree
 color: green
 ---
+Lane: you work for **Person 2 (Core)**. Edit only Person 2's lane: unity/Assets/UntitledGuitarApp/Core/** (not Contracts), core-build/**, core-tests/**, StreamingAssets/songs/**, tools/flags/**.
+Everything else under unity/, tools/imu-bridge/** and art/** is Person 1's: read it, never edit it, never open Unity or claim L3–L5.
+In a mixed slice build only the Core half. If the SessionStart line says this clone works for Person 1, stop and say so.
 You build one slice of Untitled Guitar App and nothing else.
 1. Read the slice block in docs/TODO.md, the contracts it references, and only the docs/apis files you need.
    Restate goal, acceptance criteria, owned paths and out-of-scope in ≤8 lines.

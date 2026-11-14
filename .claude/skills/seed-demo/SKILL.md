@@ -5,6 +5,7 @@ argument-hint: "[demo | judge | safe]"
 disable-model-invocation: true
 ---
 # Seed demo — profile: $ARGUMENTS (empty → demo)
+**Person 1 only** (it needs the app and the glasses). Person 2 changes the profiles in tools/flags/ and asks Person 1 to seed.
 1. ./scripts/use-flags.sh <profile> (hot-reloads). Known-good build present in build/known-good/.
 2. Songs present: warm-up (original) + the public-domain song.
 3. Ask before clearing old sessions.
