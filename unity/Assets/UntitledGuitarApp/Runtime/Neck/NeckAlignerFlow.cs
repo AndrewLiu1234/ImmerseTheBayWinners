@@ -188,6 +188,8 @@ namespace UntitledGuitarApp.Runtime.Neck
         public bool Reanchor;
         /// <summary>Why it failed, in words for the HUD and the log; null on success.</summary>
         public string Failure;
+        /// <summary>The same for the HUD: at most two short lines separated by '\n' (NeckAligner.LineMaxChars each).</summary>
+        public string ShortReason;
         /// <summary>The neck frame's world pose (valid when <see cref="Success"/>; also filled for a fit that failed a gate).</summary>
         public AlignedPose Pose;
         public bool HasPose;
@@ -342,7 +344,8 @@ namespace UntitledGuitarApp.Runtime.Neck
         {
             if (_phase != AlignPhase.Capturing) return false;
             _phase = AlignPhase.Cancelled;
-            _outcome = new AlignOutcome { Reanchor = _reanchor, Failure = string.IsNullOrEmpty(reason) ? "cancelled" : reason };
+            string why = string.IsNullOrEmpty(reason) ? "cancelled" : reason;
+            _outcome = new AlignOutcome { Reanchor = _reanchor, Failure = why.Replace('\n', ' '), ShortReason = why };
             return true;
         }
 
@@ -420,6 +423,7 @@ namespace UntitledGuitarApp.Runtime.Neck
             if (!result.Success)
             {
                 outcome.Failure = result.Failure;
+                outcome.ShortReason = "the glances did not\nfit a guitar neck";
                 return;
             }
             outcome.ResidualRmsMm = result.ResidualRmsMm;
@@ -428,10 +432,17 @@ namespace UntitledGuitarApp.Runtime.Neck
             FillPose(outcome, AlignMath.FromCore(result.Pose, _pivot, _leftHanded, _stringHeightMm));
 
             if (!(result.ResidualRmsMm <= MaxResidualRmsMm))
+            {
                 outcome.Failure = "fit error " + result.ResidualRmsMm.ToString("0") + " mm (needs " + MaxResidualRmsMm.ToString("0") +
                                   " or less): hold still and redo";
+                outcome.ShortReason = "fit " + result.ResidualRmsMm.ToString("0") + " mm (needs " + MaxResidualRmsMm.ToString("0") +
+                                      ")\nhold still and redo";
+            }
             else if (LooksMirrored(outcome.Pose, outcome.ViewerElevationDeg, _leftHanded))
+            {
                 outcome.Failure = "the fit is upside down: were the 2 nut glances swapped?";
+                outcome.ShortReason = "upside down: nut\nglances swapped?";
+            }
             else
                 outcome.Success = true;
         }
@@ -463,6 +474,7 @@ namespace UntitledGuitarApp.Runtime.Neck
             if (!pose.IsFinite)
             {
                 outcome.Failure = "the re-anchor glance gave no usable direction";
+                outcome.ShortReason = "re-anchor glance\nhad no direction";
                 return;
             }
             FillPose(outcome, pose);
