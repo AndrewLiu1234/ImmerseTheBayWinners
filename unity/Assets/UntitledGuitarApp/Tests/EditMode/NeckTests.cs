@@ -602,14 +602,18 @@ namespace UntitledGuitarApp.Tests.EditMode
         [Test]
         public void NeckLabel_DigitSize_IsTheOneMeasuredInUnity()
         {
-            // The evidence behind NeckLabel.DigitUnitsPerFontSize. In the 10:07 render a "1" was asked for 1.2 degrees at 0.9 m
-            // (18.85 mm), at font size 67, under a parent of scale 1.2, and scaled with the old figure of 0.0716 units per unit
-            // of font size. It measured 14.50 mm. The constant must reproduce that render.
-            float asked = NeckMath.SizeForAngle(1.2f, 0.9f);
-            float oldScale = asked / (67 * 0.0716f * 1.2f);
-            float drawnMm = oldScale * NeckLabel.DigitHeightUnits(67) * 1.2f * 1000f;
-            Assert.That(asked * 1000f, Is.EqualTo(18.85f).Within(0.01f));
-            Assert.That(drawnMm, Is.EqualTo(14.50f).Within(0.1f));
+            // The evidence behind NeckLabel.DigitUnitsPerFontSize: Editor/HudTextCalibration.cs (14 Nov ~12:40,
+            // build/previews/hudtext/hudtext-calibration.json). A NeckLabel "1" sized with the earlier constant 0.0551 was
+            // drawn at 1.3039 to 1.3046 times its request in all eight cases (1.2 to 4 degrees, 1.0 and 1.2 m; font sizes 87,
+            // 145, 218, 256); a control quad read 0.999. The constant must reproduce that run: a digit sized with 0.0551
+            // comes out DigitUnitsPerFontSize / 0.0551 times too big.
+            float asked = NeckMath.SizeForAngle(1.2f, 1.0f);
+            float scaleWithOld = asked / (87 * 0.0551f);
+            float drawn = scaleWithOld * NeckLabel.DigitHeightUnits(87);
+            Assert.That(drawn / asked, Is.EqualTo(1.3043f).Within(0.002f));
+            // and with the constant itself a request is drawn at its size (the eight measurements: 0.071842 .. 0.071881)
+            foreach (float measured in new[] { 0.071842f, 0.071872f, 0.071871f, 0.071881f })
+                Assert.That(measured / NeckLabel.DigitUnitsPerFontSize, Is.EqualTo(1f).Within(0.002f));
         }
 
         [Test]
