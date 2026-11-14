@@ -268,6 +268,63 @@ namespace UntitledGuitarApp.Tests.EditMode
             Assert.Less(ChordLabel.NextOffsetMeters(0.05f, 0.02f), ChordLabel.NextOffsetMeters(0.05f, 0.03f));
         }
 
+        [Test]
+        public void NextBeside_IsWhereTheDefinitionPutsIt()
+        {
+            // 4 and 1.8 degree caps at 1 m: 0.0698408 and 0.0314191 m (2 tan(deg / 2)); computed here, not by the label's code.
+            Vector2 o = ChordLabel.NextLocalOffset(0.0698408f, 0.0314191f);
+            Assert.AreEqual((2.26 / 2 + 0.25) * 0.0698408, o.x, 1e-6);        // 0.0963803 m: right of the widest name
+            Assert.AreEqual(-0.485 * (0.0698408 - 0.0314191), o.y, 1e-6);    // -0.0186345 m: baselines on one line
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void NextBeside_ClearsTheWidestNameAndSharesItsBaseline(bool largeText)
+        {
+            float s = HudText.TextScale(largeText);
+            float c = HudText.SizeForAngularHeight(ChordLabel.CurrentDegrees * s, 1f);
+            float n = HudText.SizeForAngularHeight(ChordLabel.NextDegrees * s, 1f);
+            Vector2 off = ChordLabel.NextLocalOffset(c, n);
+            float nameRight = 0.5f * ChordLabel.WidestNameCaps * c;              // the current chord is centred on the origin
+            Assert.GreaterOrEqual(off.x - nameRight, 0.2f * c, "clear space between the widest name and \"next\"");
+            float currentBaseline = -ChordLabel.AnchorAboveBaselineCaps * c;
+            float nextBaseline = off.y - ChordLabel.AnchorAboveBaselineCaps * n;
+            Assert.AreEqual(currentBaseline, nextBaseline, 1e-6);
+        }
+
+        [Test]
+        public void WidestNameCaps_CoversTheChordNamesWeShow()
+        {
+            // Arial Bold advance widths in font units ('hmtx'), cap height 1466: A 1479, D 1479, E 1366, G 1593, m 1821.
+            Assert.GreaterOrEqual(ChordLabel.WidestNameCaps, (1479 + 1821) / 1466f);   // "Am", "Dm": 2.251
+            Assert.GreaterOrEqual(ChordLabel.WidestNameCaps, (1366 + 1821) / 1466f);   // "Em": 2.174
+            Assert.GreaterOrEqual(ChordLabel.WidestNameCaps, 1593 / 1466f);            // "G": 1.087
+        }
+
+        [Test]
+        public void ChordLabel_PutsNextBesideTheName_FromTheFirstFrame()
+        {
+            // Needs the engine (GameObject, TextMesh): run in Unity's EditMode tests.
+            var root = new GameObject("ChordLabelTest");
+            try
+            {
+                ChordLabel label = ChordLabel.Create(root.transform, 1f);
+                label.SetChords("G", "C");
+                Transform next = label.transform.Find("NextChord");
+                Assert.IsNotNull(next);
+                float s = HudText.TextScale(UntitledGuitarApp.Runtime.Flags.FlagStore.Current.largeText);
+                Vector2 o = ChordLabel.NextLocalOffset(HudText.SizeForAngularHeight(ChordLabel.CurrentDegrees * s, 1f),
+                                                       HudText.SizeForAngularHeight(ChordLabel.NextDegrees * s, 1f));
+                Assert.AreEqual(o.x, next.localPosition.x, 1e-6);
+                Assert.AreEqual(o.y, next.localPosition.y, 1e-6);
+                Assert.AreEqual(TextAnchor.MiddleLeft, next.GetComponent<TextMesh>().anchor);
+            }
+            finally
+            {
+                Object.DestroyImmediate(root);
+            }
+        }
+
         // ---------------------------------------------------------------- mic meter: dB to bar
 
         [Test]

@@ -33,14 +33,21 @@ namespace UntitledGuitarApp.Runtime
     [DisallowMultipleComponent]
     public sealed class Bootstrap : MonoBehaviour
     {
-        // Head-locked placement for the walking skeleton, in degrees from the view centre at HudDistanceM (the view is about
-        // 46 x 27 degrees). The floating neck hangs lower left, roughly 2 to 6 degrees below centre, so the chord name sits
-        // above it ("next" is drawn under the current chord) and the mic meter lower right, inside the frame. The neck HUD
-        // card (Hud/Play) takes over the chord name once Core's practice events drive it. Checked on a -ugaSnapshot frame.
+        // Head-locked placement for the walking skeleton, in degrees from the view centre at HudDistanceM, for text at its TRUE
+        // size (HudText since 14 Nov 12:00; before, it drew ~0.79 of the request). Derived, not eyeballed, from the 11:38
+        // player frame in both eyes (the view is 46.1 x 26.9 degrees, 39.4 px/degree; "comfortable" = every ink edge at least
+        // 2 degrees inside each eye's frame). Obstacles: the neck with its X/O row, finger numbers and dots, and the fretting
+        // hand in all six poses (skeleton from the pose files, plus 2.14 degrees of flesh measured on the frame's G hand; zone
+        // top +5.3). Chord row ("G  next C": ChordLabel puts "next" beside the name since 14 Nov), worst case "Am  next  Am":
+        // ink el +6.7 to +11.0, az -18.8 to +2.0, 1.4 degrees above the hand zone. Mic meter, top right: bar +9.5 to +10.7,
+        // label +6.7 to +8.0 (az +2.5 to +19.5 with "NO DATA"), dB line +3.9 to +5.2. SIMULATED badge (23 degrees wide):
+        // bottom centre, el -11.2 to -9.3, 1.5 degrees under the finger numbers. Clean at a 0.4 degree clearance in both
+        // eyes; the check flags the 11:38 overlap and a planted 2 degree drop of the chord row. The neck HUD card (Hud/Play)
+        // takes over the chord name once Core's practice events drive it.
         const float HudDistanceM = 1f;
-        const float ChordAzimuthDeg = -14f, ChordElevationDeg = 8f;
-        const float MeterAzimuthDeg = 8f, MeterElevationDeg = -8f;   // its label hangs ~4 degrees below this anchor
-        const float BadgeAzimuthDeg = 0f, BadgeElevationDeg = 11f;
+        const float ChordAzimuthDeg = -14.5f, ChordElevationDeg = 8.5f;
+        const float MeterAzimuthDeg = 2.5f, MeterElevationDeg = 11f;     // top-left corner of the meter; its lines hang below
+        const float BadgeAzimuthDeg = 0f, BadgeElevationDeg = -10.25f;
         const float StatusIntervalSec = 0.5f;
         const string SmokeArgument = "-ugaSmokeSeconds";
         // With -ugaSnapshot <file.png>, the smoke run renders both eye cameras into one side-by-side frame (what the glasses
