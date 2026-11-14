@@ -155,7 +155,17 @@ namespace UntitledGuitarApp.Runtime
             else if (State.Mode == DemoMode.Idle && Hands != null) Hands.Idle(_idleChord, dt);
             // Learn: LearnPresenter, DevLearnScript and LearnMicTuner tick themselves; the presenter owns the fretting hand.
             UpdateChecksLabel();
+            UpdateReticle();
             RefreshStatus();
+        }
+
+        // The gaze reticle sits at the view centre, on top of whatever is there (the tuner's note, the pattern strip in the
+        // 12:47 player frame). Nothing in the demo is gaze-driven except the alignment glances, so it shows only then.
+        void UpdateReticle()
+        {
+            if (_boot.Reticle == null) return;
+            bool show = _boot.Aligner != null && _boot.Aligner.IsRunning;
+            if (_boot.Reticle.gameObject.activeSelf != show) _boot.Reticle.gameObject.SetActive(show);
         }
 
         void UpdateChecksLabel()
