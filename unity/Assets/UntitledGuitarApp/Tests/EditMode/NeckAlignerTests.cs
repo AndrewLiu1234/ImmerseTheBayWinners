@@ -544,6 +544,126 @@ namespace UntitledGuitarApp.Tests.EditMode
             Assert.IsFalse(NeckAnchorPolicy.IsHeadLockedMode(null));
         }
 
+        // ------------------------------------------------------------------ HUD layout vs the neck (relational, from the estimates)
+
+        static Quaternion Look(Vector3 direction)
+        {
+            Vector3 f = direction.normalized;
+            Vector3 x = Vector3.Cross(Vector3.up, f).normalized;
+            return NeckPlacement.RotationFromAxes(x, Vector3.Cross(f, x));
+        }
+
+        static bool Tangent(Vector3 head, Quaternion look, Vector3 point, out Vector2 t)
+        {
+            Vector3 v = AlignMath.Conjugate(look) * (point - head);
+            t = default(Vector2);
+            if (v.z <= 1e-4f) return false;
+            t = new Vector2(v.x / v.z, v.y / v.z);
+            return true;
+        }
+
+        /// <summary>The real neck as seen: both outer strings from the X / O row (30 mm beyond the nut) to fret 12, the nut, the targets.</summary>
+        static void NeckFeatures(Scene s, NeckSolver solver, System.Collections.Generic.List<Vector3> points, System.Collections.Generic.List<Vector3> targets)
+        {
+            var g = CoreNeckLayout.DefaultGeometry;
+            for (float along = -30f; along <= (float)g.FretDistanceMm(12); along += 5f)
+                foreach (int stringNumber in new[] { 6, 1 })
+                    points.Add(AlignMath.NeckToWorld(s.truth, s.leftHanded, AlignMath.NeckLocalMetres(new UntitledGuitarApp.Core.Theory.NeckPoint(along, g.StringAcrossMm(stringNumber, along)), H)));
+            for (int i = 0; i < NeckSolver.TargetCount; i++) targets.Add(TargetWorld(s, solver, (AlignTarget)i));
+        }
+
+        /// <summary>Every overlap between the HUD block (worst-case line lengths) and the neck, the targets or the reticle.</summary>
+        static System.Collections.Generic.List<string> HudOverlaps(Scene s, Quaternion look, string frame, Rect? planted)
+        {
+            var solver = new NeckSolver(CoreNeckLayout.DefaultGeometry, NeckSolverConfig.Default);
+            var points = new System.Collections.Generic.List<Vector3>();
+            var targets = new System.Collections.Generic.List<Vector3>();
+            NeckFeatures(s, solver, points, targets);
+            var rects = new System.Collections.Generic.List<Rect>();
+            for (int line = 0; line < NeckAligner.HudLineCount; line++)
+                rects.Add(NeckAligner.EstimatedLineRect(line, line == 0 ? NeckAligner.LineAMaxChars : NeckAligner.LineMaxChars, s.leftHanded));
+            if (planted.HasValue) rects.Add(planted.Value);
+
+            float parallax = Mathf.Tan(2.0f * Mathf.Deg2Rad);    // 1.5 deg eye parallax (text at 1.2 m, neck at ~0.6 m) + 0.5 clearance
+            float vertical = Mathf.Tan(0.5f * Mathf.Deg2Rad);
+            float targetExtra = Mathf.Tan(1.0f * Mathf.Deg2Rad);
+            var problems = new System.Collections.Generic.List<string>();
+            for (int r = 0; r < rects.Count; r++)
+            {
+                Rect near = new Rect(rects[r].xMin - parallax, rects[r].yMin - vertical, rects[r].width + 2f * parallax, rects[r].height + 2f * vertical);
+                Rect nearTarget = new Rect(near.xMin - targetExtra, near.yMin - targetExtra, near.width + 2f * targetExtra, near.height + 2f * targetExtra);
+                Vector2 t;
+                foreach (Vector3 p in points)
+                    if (Tangent(s.head, look, p, out t) && near.Contains(t)) { problems.Add(frame + ": line " + r + " covers the neck"); break; }
+                for (int i = 0; i < targets.Count; i++)
+                    if (Tangent(s.head, look, targets[i], out t) && nearTarget.Contains(t)) problems.Add(frame + ": line " + r + " covers target " + (AlignTarget)i);
+                Rect reticle = new Rect(near.xMin - Mathf.Tan(2f * Mathf.Deg2Rad), near.yMin - Mathf.Tan(2f * Mathf.Deg2Rad), near.width + 2f * Mathf.Tan(2f * Mathf.Deg2Rad), near.height + 2f * Mathf.Tan(2f * Mathf.Deg2Rad));
+                if (reticle.Contains(Vector2.zero)) problems.Add(frame + ": line " + r + " covers the reticle");
+            }
+            return problems;
+        }
+
+        [Test]
+        public void HudBlock_ClearsTheNeckTargetsAndReticle_InEverySceneStepAndResult()
+        {
+            var solver = new NeckSolver(CoreNeckLayout.DefaultGeometry, NeckSolverConfig.Default);
+            var all = new System.Collections.Generic.List<string>();
+            foreach (Scene s in Scenes())
+            {
+                for (int i = 0; i < NeckSolver.TargetCount; i++)
+                    all.AddRange(HudOverlaps(s, Look(TargetWorld(s, solver, (AlignTarget)i) - s.head), s.name + " step " + (i + 1), null));
+                Vector3 middle = 0.5f * (TargetWorld(s, solver, AlignTarget.NutLowE) + TargetWorld(s, solver, AlignTarget.Fret5LowE));
+                all.AddRange(HudOverlaps(s, Look(middle - s.head), s.name + " result", null));
+            }
+            foreach (string p in all) Console.WriteLine("HUD overlap: " + p);
+            Assert.IsEmpty(all);
+        }
+
+        [Test]
+        public void HudBlock_Check_FiresOnAPlantedOverlap()
+        {
+            // Planted: a text line laid over the nut must be reported (proves the check can fail).
+            Scene s = Scenes()[0];
+            var solver = new NeckSolver(CoreNeckLayout.DefaultGeometry, NeckSolverConfig.Default);
+            Vector3 middle = 0.5f * (TargetWorld(s, solver, AlignTarget.NutLowE) + TargetWorld(s, solver, AlignTarget.Fret5LowE));
+            Quaternion look = Look(middle - s.head);
+            Vector2 nut;
+            Assert.IsTrue(Tangent(s.head, look, TargetWorld(s, solver, AlignTarget.NutLowE), out nut));
+            var planted = new Rect(nut.x - 0.1f, nut.y - 0.01f, 0.2f, 0.02f);
+            var problems = HudOverlaps(s, look, "planted", planted);
+            Assert.IsTrue(problems.Exists(p => p.Contains("line " + NeckAligner.HudLineCount + " covers target NutLowE")), string.Join(" | ", problems));
+            Assert.IsTrue(problems.Exists(p => p.Contains("line " + NeckAligner.HudLineCount + " covers the neck")));
+        }
+
+        [Test]
+        public void HudStrings_FitTheirLines()
+        {
+            foreach (string a in NeckAligner.StepLineA) Assert.LessOrEqual(a.Length, NeckAligner.LineAMaxChars, a);
+            Assert.LessOrEqual(NeckAligner.ReanchorLineA.Length, NeckAligner.LineAMaxChars);
+            foreach (string b in NeckAligner.StepLineB) Assert.LessOrEqual(b.Length, NeckAligner.LineMaxChars, b);
+            Assert.LessOrEqual(NeckAligner.HoldHint.Length, NeckAligner.LineMaxChars);
+            // Results, worst-case numbers (built the same way as NeckAligner.ShowResult).
+            Assert.LessOrEqual(("fit 15 mm · nut 90 cm").Length, NeckAligner.LineMaxChars);
+            Assert.LessOrEqual(("Off the nut? Press Z").Length, NeckAligner.LineMaxChars);
+            Assert.LessOrEqual(("nut moved 999 mm").Length, NeckAligner.LineMaxChars);
+            Assert.LessOrEqual(("Space: try again").Length, NeckAligner.LineMaxChars);
+            // Failure reasons from the flow's gates and Core's own failure.
+            Scene s = Scenes()[0];
+            var reasons = new System.Collections.Generic.List<string>
+            {
+                RunWithGlances(s, NutsSwapped, 0f, 0).ShortReason,
+                RunWithGlances(s, new[] { AlignTarget.NutLowE, AlignTarget.NutHighE, AlignTarget.Fret12LowE, AlignTarget.Fret5LowE }, 0f, 0).ShortReason,
+                RunWithGlances(s, new[] { AlignTarget.NutLowE, AlignTarget.NutLowE, AlignTarget.NutLowE, AlignTarget.NutLowE }, 0f, 0).ShortReason,
+            };
+            foreach (string reason in reasons)
+            {
+                string first, second;
+                NeckAligner.SplitReason(reason, out first, out second);
+                Assert.LessOrEqual(first.Length, NeckAligner.LineMaxChars, reason);
+                Assert.LessOrEqual(second.Length, NeckAligner.LineMaxChars, reason);
+            }
+        }
+
         // ------------------------------------------------------------------ HUD text helper
 
         [Test]

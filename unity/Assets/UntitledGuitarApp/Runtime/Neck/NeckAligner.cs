@@ -45,7 +45,7 @@ namespace UntitledGuitarApp.Runtime.Neck
         public const float HudDistanceM = 1.2f;
 
         /// <summary>The block's inner edge, degrees from the view centre toward the side away from the neck.</summary>
-        public const float HudInnerAzimuthDeg = 3f;
+        public const float HudInnerAzimuthDeg = 5f;
 
         /// <summary>Cap height of line A (what to look at / the result), degrees.</summary>
         public const float LineACapDeg = 1.6f;
@@ -54,15 +54,38 @@ namespace UntitledGuitarApp.Runtime.Neck
         public const float LineCapDeg = 1.2f;
 
         /// <summary>Line centres above the view centre, degrees: A, B, C, D (the view is 27 degrees tall: +-13.5).</summary>
-        public static readonly float[] LineElevationDeg = { 11.4f, 9.2f, 7.3f, 5.4f };
+        public static readonly float[] LineElevationDeg = { 12.0f, 9.9f, 8.1f, 6.3f };
 
         /// <summary>Longest line A: about 1.0 degree per character at 1.6 degree caps, so 14 characters are about 14 degrees.</summary>
         public const int LineAMaxChars = 14;
 
-        /// <summary>Longest line B-D: about 0.77 degree per character at 1.2 degree caps, so 23 characters are about 18 degrees.</summary>
-        public const int LineMaxChars = 23;
+        /// <summary>Longest line B-D: about 0.77 degree per character at 1.2 degree caps, so 20 characters are about 15 degrees
+        /// (the block then ends about 21 degrees right of centre, inside the 23 degree half-width).</summary>
+        public const int LineMaxChars = 20;
 
         public const int HudLineCount = 4;
+
+        /// <summary>Layout estimate (10% above the 12:38 measurement): one character is this many cap heights wide.</summary>
+        public const float EstimatedCharWidthPerCap = 0.70f;
+
+        /// <summary>Layout estimate: a line's box (ascenders and descenders included) is this many cap heights tall.</summary>
+        public const float EstimatedLineHeightPerCap = 1.5f;
+
+        /// <summary>
+        /// Where HUD line <paramref name="line"/> with <paramref name="chars"/> characters lies in the head's view, as a rectangle
+        /// in tangent coordinates (x = tan of the angle right of centre, y = tan of the angle above it), from the layout constants
+        /// and the estimates above. Pure; used by the layout test. The preview checks the real rendered bounds instead.
+        /// </summary>
+        public static Rect EstimatedLineRect(int line, int chars, bool leftSide)
+        {
+            float cap = line == 0 ? LineACapDeg : LineCapDeg;
+            float inner = Mathf.Tan(HudInnerAzimuthDeg * Mathf.Deg2Rad);
+            float width = Mathf.Tan(cap * Mathf.Deg2Rad) * EstimatedCharWidthPerCap * Mathf.Max(0, chars);
+            float height = Mathf.Tan(cap * Mathf.Deg2Rad) * EstimatedLineHeightPerCap;
+            float centreY = Mathf.Tan(LineElevationDeg[Mathf.Clamp(line, 0, HudLineCount - 1)] * Mathf.Deg2Rad);
+            float xMin = leftSide ? -inner - width : inner;
+            return new Rect(xMin, centreY - 0.5f * height, width, height);
+        }
 
         /// <summary>A capture needs the gaze to hold still within about this radius (Person 2: aim for dwell jitter 0.5 or less).</summary>
         public const float SteadyThresholdDeg = 0.5f;
@@ -84,10 +107,12 @@ namespace UntitledGuitarApp.Runtime.Neck
         static readonly Color GoodColor = new Color(0.50f, 1.00f, 0.62f, 1f);
         static readonly Color BadColor = new Color(1.00f, 0.78f, 0.35f, 1f);
 
-        static readonly string[] StepLineA = { "1/4: the nut", "2/4: the nut", "3/4: fret 5", "4/4: fret 12" };
-        static readonly string[] StepLineB = { "on the thick low E", "on the thin high E", "on the thick low E", "on the thick low E" };
-        const string ReanchorLineA = "Re-anchor: nut";
-        const string HoldHint = "Hold still, or Space";
+        /// <summary>Line A of each step prompt (at most LineAMaxChars).</summary>
+        public static readonly string[] StepLineA = { "1/4: the nut", "2/4: the nut", "3/4: fret 5", "4/4: fret 12" };
+        /// <summary>Line B of each step prompt (at most LineMaxChars).</summary>
+        public static readonly string[] StepLineB = { "on the thick low E", "on the thin high E", "on the thick low E", "on the thick low E" };
+        public const string ReanchorLineA = "Re-anchor: nut";
+        public const string HoldHint = "Hold still, or Space";
 
         Transform _head;
         FloatingNeck _neck;
@@ -293,7 +318,7 @@ namespace UntitledGuitarApp.Runtime.Neck
             }
             if (!HeadTrackedNow())
             {
-                if (_flow.Cancel("head tracking stopped\nalignment needs the IMU")) Ended(_flow.Outcome);
+                if (_flow.Cancel("tracking stopped:\nalignment needs IMU")) Ended(_flow.Outcome);
                 return;
             }
             if (_head == null) return;
