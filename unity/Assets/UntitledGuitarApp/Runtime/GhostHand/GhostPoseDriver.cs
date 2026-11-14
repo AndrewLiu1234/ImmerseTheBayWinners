@@ -426,7 +426,8 @@ namespace UntitledGuitarApp.Runtime.GhostHand
     /// Drives the 16 bones of an imported hand rig from GhostPose data: Apply (jump), Blend (between two poses), MorphTo +
     /// Tick (eased move to the next pose over a few hundred milliseconds). Plain C#: the owner (PosedGhostHand) calls Tick
     /// from its Update. Writes only the model root's local position, rotation and scale and the 16 bones' localRotation.
-    /// Apply, Blend, MorphTo and Tick allocate nothing.
+    /// Apply, Blend, MorphTo and Tick allocate nothing once calibrated (call Calibrate at set-up; otherwise the first pose
+    /// calibrates, which allocates once).
     /// </summary>
     public sealed class GhostPoseDriver
     {
