@@ -96,7 +96,9 @@ namespace UntitledGuitarApp.Editor
         const float FrameSeconds = 1f / 60f;
         /// <summary>The beats pass 2 stops at: a quarter into each of bar 1's eight slots.</summary>
         static readonly double[] StrumBeats = { 0.125, 0.625, 1.125, 1.625, 2.125, 2.625, 3.125, 3.625 };
-        const float PickMarginMm = 3f;            // the pick may be this far outside the outer strings
+        // the pick may be this far outside the outer strings: the authored strokes start and end beyond them (pose_hands.py
+        // STRUM_POSES: down-start 12 mm outside string 6, down-end 12 mm outside string 1, up-start 10 mm)
+        const float PickMarginMm = 15f;
         const float HandsMinGapMm = 30f;          // the two hands' joints must stay this far apart
 
         // ---- pass 1: a straight virtual neck in the pinned frame, literal numbers (preview only; the app gets them from Core) ----
