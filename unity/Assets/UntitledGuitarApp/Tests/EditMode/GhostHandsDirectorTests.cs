@@ -421,6 +421,82 @@ namespace UntitledGuitarApp.Tests.EditMode
             Assert.AreEqual(float.PositiveInfinity, GhostHandChecks.MinDistanceMm(fretting, 0, strumming, 2));
         }
 
+        // ================================================================================================ the stroke sweep (pure)
+
+        // the floating Core neck's strings at the strum line (x ~ 248 mm): 8.42 mm apart, string 1 at +z, 2 mm high
+        static readonly float[] StringZ = { 21.05f, 12.63f, 4.21f, -4.21f, -12.63f, -21.05f };
+        const float StringY = 2f;
+
+        [Test]
+        public void SweepTarget_DownStroke_StartsOutsideTheChordsBassString_DipsIntoTheStrings_AndEndsPastStringOne()   // pure
+        {
+            // G (bass string 6): from 5 mm outside string 6 to 5 mm past string 1, lifted 6 mm at both ends, 1 mm above in the middle
+            Vector3 start = StrokeSweep.Target('D', 6, 0f, 248f, StringY, StringZ);
+            Vector3 mid = StrokeSweep.Target('D', 6, 0.5f, 248f, StringY, StringZ);
+            Vector3 end = StrokeSweep.Target('D', 6, 1f, 248f, StringY, StringZ);
+            AssertNear(new Vector3(248f, 9f, -26.05f), start, 1e-3f, "G start");
+            AssertNear(new Vector3(248f, 3f, 0f), mid, 1e-3f, "G middle: in the string plane");
+            AssertNear(new Vector3(248f, 9f, 26.05f), end, 1e-3f, "G end");
+            Assert.AreEqual(-12.63f - 5f, StrokeSweep.Target('D', 5, 0f, 248f, StringY, StringZ).z, 1e-3f, "C / Am start outside string 5");
+            Assert.AreEqual(-4.21f - 5f, StrokeSweep.Target('D', 4, 0f, 248f, StringY, StringZ).z, 1e-3f, "D starts outside string 4");
+            Assert.AreEqual(-26.05f, StrokeSweep.Target('D', 0, 0f, 248f, StringY, StringZ).z, 1e-3f, "an unknown bass string counts as 6");
+            Assert.AreEqual(3f, StrokeSweep.Target('D', 5, 0.3f, 248f, StringY, StringZ).y, 1e-3f, "between the struck strings: in the plane");
+        }
+
+        [Test]
+        public void SweepTarget_UpStroke_GoesFromPastStringOneToBetweenStringsThreeAndFour()   // pure
+        {
+            Vector3 start = StrokeSweep.Target('U', 6, 0f, 248f, StringY, StringZ);
+            Vector3 end = StrokeSweep.Target('U', 6, 1f, 248f, StringY, StringZ);
+            AssertNear(new Vector3(248f, 9f, 26.05f), start, 1e-3f, "U start: 5 mm past string 1, lifted");
+            Assert.AreEqual(0f, end.z, 1e-3f, "half-way between strings 3 and 4");
+            float lift = 4.21f / 5f;
+            Assert.AreEqual(3f + 6f * lift * lift * (3f - 2f * lift), end.y, 1e-3f, "lifting as it leaves the treble strings");
+            int from, to;
+            StrokeSweep.StruckStrings('U', 6, out from, out to);
+            Assert.AreEqual(1, from);
+            Assert.AreEqual(3, to);
+            StrokeSweep.StruckStrings('D', 5, out from, out to);
+            Assert.AreEqual(5, from);
+            Assert.AreEqual(1, to);
+        }
+
+        [Test]
+        public void SweepPickAndOffset_PickIsNineMillimetresPalmSideOfThePinch_OffsetNeverMovesAlongTheNeck()   // pure
+        {
+            AssertNear(new Vector3(1f, -9f, 0f), StrokeSweep.Pick(Vector3.zero, new Vector3(2f, 0f, 0f), Quaternion.identity), 1e-5f, "identity");
+            float h = Mathf.Sqrt(0.5f);
+            Quaternion quarterAboutZ = new Quaternion(0f, 0f, h, h);            // +90 degrees about z: -y goes to +x
+            AssertNear(new Vector3(10f, 0f, 0f), StrokeSweep.Pick(Vector3.zero, new Vector3(2f, 0f, 0f), quarterAboutZ), 1e-4f, "turned");
+            Vector3 offset = StrokeSweep.Offset(new Vector3(248f, 3f, 10f), new Vector3(251f, 2.5f, 4f));
+            AssertNear(new Vector3(0f, 0.5f, 6f), offset, 1e-5f, "only across and up");
+        }
+
+        [Test]
+        public void StrokeStrikes_PassesTheSweep_AndFiresOnTheOldFlatBlend()   // pure
+        {
+            var path = new Vector3[21];
+            for (int i = 0; i < path.Length; i++) path[i] = StrokeSweep.Target('D', 6, i / 20f, 248f, StringY, StringZ);
+            string why;
+            Assert.IsTrue(GhostHandChecks.StrokeStrikes(path, path.Length, StringZ, StringY, 6, 1, 4f, 3f, out why), "G sweep: " + why);
+            for (int i = 0; i < path.Length; i++) path[i] = StrokeSweep.Target('D', 5, i / 20f, 248f, StringY, StringZ);
+            Assert.IsTrue(GhostHandChecks.StrokeStrikes(path, path.Length, StringZ, StringY, 5, 1, 4f, 3f, out why), "C sweep: " + why);
+            for (int i = 0; i < path.Length; i++) path[i] = StrokeSweep.Target('U', 6, i / 20f, 248f, StringY, StringZ);
+            Assert.IsTrue(GhostHandChecks.StrokeStrikes(path, path.Length, StringZ, StringY, 1, 3, 4f, 3f, out why), "U sweep: " + why);
+
+            // PLANTED: the authored blend alone, 0.5 mm above the strings from 12 mm outside string 6 to 12 mm past string 1
+            for (int i = 0; i < path.Length; i++) path[i] = new Vector3(248f, StringY + 0.5f, -33.3f + 66.6f * i / 20f);
+            Assert.IsFalse(GhostHandChecks.StrokeStrikes(path, path.Length, StringZ, StringY, 5, 1, 4f, 3f, out why), "C: the old blend");
+            StringAssert.Contains("string 6 is struck", why);
+            StringAssert.Contains("starts only 0.5 mm above", why);
+            Assert.IsFalse(GhostHandChecks.StrokeStrikes(path, path.Length, StringZ, StringY, 6, 1, 4f, 3f, out why), "G: the old blend");
+            StringAssert.Contains("ends only 0.5 mm above", why);
+            // PLANTED: a pick that stays 12 mm up (where the round-1 JSON's pinch point was) never strikes a string
+            for (int i = 0; i < path.Length; i++) path[i] = new Vector3(248f, StringY + 12f, -33.3f + 66.6f * i / 20f);
+            Assert.IsFalse(GhostHandChecks.StrokeStrikes(path, path.Length, StringZ, StringY, 6, 1, 4f, 3f, out why));
+            StringAssert.Contains("string 1 is not crossed", why);
+        }
+
         // ================================================================================================ fretting morph (pure)
 
         [Test]
