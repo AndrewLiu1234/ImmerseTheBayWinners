@@ -718,6 +718,48 @@ namespace UntitledGuitarApp.Tests.EditMode
             AssertNear(half, fretting.Driver.CurrentRootPositionMm, 0.5f, "fretting wrist half-way from Am to G");
         }
 
+        [Test]
+        public void Director_RealStrummingHandOnTheFloatingNeck_PickFollowsTheSweep_AndNeverJumps()
+        {
+            FloatingNeck neck = FloatingNeck.Create(null);
+            _made.Add(neck.gameObject);
+            Assert.IsTrue(neck.Build(CoreNeckLayout.Create(CoreNeckLayout.DefaultGeometry)));
+            neck.PlaceFloating(null);
+            var library = new GhostPoseLibrary();
+            library.Reload();
+            PosedGhostHand strumming = GhostHandsDirector.CreateStrummingHand(neck, library);
+            if (!strumming.IsAvailable)
+                Assert.Inconclusive("the strumming FBX or poses are not imported: " + strumming.UnavailableReason + ". This is not a pass.");
+            GhostHandsDirector d = GhostHandsDirector.Create(null, strumming);
+
+            // one bar from the end of the count-in at 240 frames a second, ticking the eases as Update would
+            const float dt = 1f / 240f;
+            Vector3 last = Vector3.zero;
+            float worstStep = 0f, worstPick = 0f;
+            bool has = false;
+            int strokeFrames = 0;
+            for (double beat = -1.0; beat < 4.0; beat += dt * RiptideBps)
+            {
+                d.Apply(RiptideFrame(beat), dt);
+                strumming.Tick(dt);
+                Vector3 wrist = strumming.Driver.ShownRootPositionMm;
+                if (has) worstStep = Mathf.Max(worstStep, (wrist - last).magnitude);
+                last = wrist;
+                has = true;
+                if (d.LastStrum.Phase != StrumPhase.Stroke) continue;
+                strokeFrames++;
+                Vector3 thumb, index;
+                bool hasThumb = strumming.TryGetFingertip(0, out thumb), hasIndex = strumming.TryGetFingertip(1, out index);
+                Assert.IsTrue(hasThumb && hasIndex);
+                Vector3 pick = StrokeSweep.Pick(neck.transform.InverseTransformPoint(thumb) * 1000f, neck.transform.InverseTransformPoint(index) * 1000f,
+                                                strumming.Driver.GetCurrentRotation(GhostPose.Wrist));
+                worstPick = Mathf.Max(worstPick, (pick - d.PickTargetMm).magnitude);
+            }
+            Assert.Greater(strokeFrames, 100, "a bar of riptide has six strokes");
+            Assert.Less(worstPick, 1f, "the drawn pick is on the sweep target during every stroke frame (worst " + worstPick + " mm)");
+            Assert.Less(worstStep, 6f, "no jump: the wrist moves at most 6 mm in a 1/240 s frame (worst " + worstStep + " mm)");
+        }
+
         // ================================================================================================ helpers
 
         static StrumSample Sample(double beat)

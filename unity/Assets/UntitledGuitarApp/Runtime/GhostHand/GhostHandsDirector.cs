@@ -40,7 +40,6 @@
 // No per-frame allocation. Plain C#: the owner (Bootstrap) calls Apply or Idle once a frame; PosedGhostHand.Update runs the
 // eases (call PosedGhostHand.Tick yourself where Update does not run: previews, tests).
 using UnityEngine;
-using UntitledGuitarApp.Core.Theory;
 using UntitledGuitarApp.Runtime.Flags;
 using UntitledGuitarApp.Runtime.Neck;
 using UntitledGuitarApp.Runtime.Practice;
@@ -267,8 +266,7 @@ namespace UntitledGuitarApp.Runtime.GhostHand
             if (!ReferenceEquals(chord, _bassChord))
             {
                 _bassChord = chord;
-                ChordShape shape;
-                _bassString = chord != null && ChordLibrary.TryGet(chord, out shape) ? shape.BassString : 6;
+                _bassString = StrokeSweep.BassString(chord);
             }
             return _bassString;
         }

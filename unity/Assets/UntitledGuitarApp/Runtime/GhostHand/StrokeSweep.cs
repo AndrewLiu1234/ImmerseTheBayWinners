@@ -19,6 +19,7 @@
 // The translation is target - authored pick, applied to the whole hand (GhostPoseDriver.RootOffsetMm); along the neck (x)
 // it is zero, so the strum line stays where it was authored.
 using UnityEngine;
+using UntitledGuitarApp.Core.Theory;
 
 namespace UntitledGuitarApp.Runtime.GhostHand
 {
@@ -34,6 +35,13 @@ namespace UntitledGuitarApp.Runtime.GhostHand
         public const float EndLiftMm = 6f;
         /// <summary>The highest string an upstroke strikes (it ends half-way to the next one).</summary>
         public const int UpStrokeLastString = 3;
+
+        /// <summary>The lowest string a chord is strummed from (Core's ChordShape.BassString); 6 for an unknown or null chord.</summary>
+        public static int BassString(string chord)
+        {
+            ChordShape shape;
+            return chord != null && ChordLibrary.TryGet(chord, out shape) ? shape.BassString : 6;
+        }
 
         /// <summary>The pick of a hand from its thumb tip, index tip and the wrist's total rotation (pose or neck frame).</summary>
         public static Vector3 Pick(Vector3 thumbTipMm, Vector3 indexTipMm, Quaternion wristRotation)

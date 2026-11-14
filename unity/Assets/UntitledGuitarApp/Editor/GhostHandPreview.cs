@@ -29,10 +29,16 @@
 //                              top row frames 0-3, bottom row 4-7, over black
 //   strum_sheet_closeup.png    the same 8 frames from the same eye, zoomed onto the neck (fixed framing), over black
 //   strum_eye_<n>.png          frame n at full eye resolution
-//   strum_preview.json         per frame: beat, slot, strumming phase and poses, both wrists in neck mm, the pick point,
+//   strum_sheet_strokes.png    ONE down-stroke (top row, slot 6, G) and ONE up-stroke (bottom row, slot 7) at stroke phases
+//                              0, 0.25, 0.5, 0.75, 1 (left to right), close up on the strumming hand, over black
+//   strum_preview.json         per frame: beat, slot, strumming phase and poses, both wrists in neck mm, the pick (9 mm
+//                              palm side of the thumb-index pinch, as pose_hands.py holds it) and the pinch, the sweep offset,
 //                              the fretting chord / morph / fade and every fingertip's distance to its dot, plus the
 //                              relational checks (pick over the drawn strings, gap between the hands) and a PLANTED case
-//                              that must fire (the same pick with the hand at the socket, as if not moved to the strum zone)
+//                              that must fire (the same pick with the hand at the socket, as if not moved to the strum zone);
+//                              per stroke of bar 1: the pick at phases 0, 0.25, 0.5, 0.75, 1 and GhostHandChecks.StrokeStrikes
+//                              (crosses every string it should within 4 mm of the string plane, no other, lifted at both
+//                              ends), plus its planted case: the same stroke with the sweep off must fail
 //
 // APIS (Unity 2021.3 Scripting Reference / Manual, local copy under Unity.app/Contents/Documentation/en, online under
 // https://docs.unity3d.com/2021.3/Documentation/; excerpts in docs/apis/unity/preview-render.md):
@@ -101,6 +107,11 @@ namespace UntitledGuitarApp.Editor
         // strings are 2.4 mm wider a side than under the floating strum line; the thumb-index pinch of down-end is 16 mm out
         const float PickMarginMm = 20f;
         const float HandsMinGapMm = 30f;          // the two hands' joints must stay this far apart
+        const int StrokeSamples = 21;             // per stroke for the strike check; every 5th goes into the JSON
+        const float StrikeHeightMm = 4f;          // a string counts as struck when the pick passes it this close to the plane
+        const float EndLiftMinMm = 3f;            // a stroke must start and end at least this far above the strings
+        const int SheetStrokeDown = 6, SheetStrokeUp = 7;   // the two strokes of strum_sheet_strokes.png (both on G)
+        static readonly float[] SheetPhases = { 0f, 0.25f, 0.5f, 0.75f, 1f };
 
         // ---- pass 1: a straight virtual neck in the pinned frame, literal numbers (preview only; the app gets them from Core) ----
         const float ScaleLength = 0.648f;       // 25.5 inch scale
@@ -365,7 +376,7 @@ namespace UntitledGuitarApp.Editor
             GameObject head = null, eyeObject = null;
             FloatingNeck neck = null;
             RenderTexture eyeTarget = null, cellTarget = null;
-            Texture2D eyeImage = null, sheetEye = null, sheetClose = null;
+            Texture2D eyeImage = null, sheetEye = null, sheetClose = null, sheetStrokes = null;
             try
             {
                 ShaderUtil.allowAsyncCompilation = false;
@@ -418,6 +429,7 @@ namespace UntitledGuitarApp.Editor
                 eyeImage = new Texture2D(optics.eyeWidth, optics.eyeHeight, TextureFormat.RGB24, false);
                 sheetEye = new Texture2D(CellWidth * SheetColumns, CellHeight * SheetRows, TextureFormat.RGB24, false);
                 sheetClose = new Texture2D(CellWidth * SheetColumns, CellHeight * SheetRows, TextureFormat.RGB24, false);
+                sheetStrokes = new Texture2D(CellWidth * SheetPhases.Length, CellHeight * 2, TextureFormat.RGB24, false);
 
                 GhostHandsDirector director = GhostHandsDirector.Create(fretting, strumming);
                 float bps = RiptideBpm / 60f;
@@ -483,8 +495,75 @@ namespace UntitledGuitarApp.Editor
                     if (plantedFiredHere) plantedFired++;
                     if (!checksOk) checksFailed++;
                 }
+                // Every stroke of bar 1 along its own time line (the hand is beat-locked, so Apply at any beat poses it exactly).
+                json.Append("\n  ],\n  \"strokes\": [\n");
+                int strokes = 0, strokesPassing = 0, plantedStrokesFired = 0;
+                var path = new Vector3[StrokeSamples];
+                var stringZ = new float[NeckLayout.StringCount];
+                for (int k = 0; k < RiptideSlots.Length; k++)
+                {
+                    char kind = StrumMath.SlotKind(RiptideSlots[k]);
+                    if (kind == '-') continue;
+                    string chord = RiptideFrame(k / (double)RiptideSlotsPerBeat, bps).Chord;
+                    int from, to;
+                    StrokeSweep.StruckStrings(kind, StrokeSweep.BassString(chord), out from, out to);
+                    SampleStroke(director, neck, strumming, k, bps, false, path);            // PLANTED: the authored blend alone
+                    StringZAt(layout, path[StrokeSamples / 2].x, stringZ);
+                    string plantedWhy;
+                    bool plantedPass = GhostHandChecks.StrokeStrikes(path, StrokeSamples, stringZ, layout.stringHeightMm, from, to, StrikeHeightMm, EndLiftMinMm, out plantedWhy);
+                    SampleStroke(director, neck, strumming, k, bps, true, path);             // the sweep
+                    StringZAt(layout, path[StrokeSamples / 2].x, stringZ);
+                    string why;
+                    bool pass = GhostHandChecks.StrokeStrikes(path, StrokeSamples, stringZ, layout.stringHeightMm, from, to, StrikeHeightMm, EndLiftMinMm, out why);
+                    strokes++;
+                    if (pass) strokesPassing++;
+                    if (!plantedPass) plantedStrokesFired++;
+                    if (strokes > 1) json.Append(",\n");
+                    json.Append("    { \"slot\": ").Append(k).Append(", \"kind\": \"").Append(kind).Append("\", \"chord\": \"").Append(chord ?? "")
+                        .Append("\", \"strings\": [").Append(from).Append(", ").Append(to).Append("], \"stringYMm\": ").Append(F(layout.stringHeightMm))
+                        .Append(", \"stringZMm\": [");
+                    for (int i = 0; i < stringZ.Length; i++) json.Append(i > 0 ? ", " : "").Append(F(stringZ[i]));
+                    json.Append("],\n      \"pickAtPhase\": { ");
+                    for (int i = 0; i < SheetPhases.Length; i++)
+                        json.Append(i > 0 ? ", " : "").Append("\"").Append(F(SheetPhases[i])).Append("\": ").Append(V(path[i * (StrokeSamples - 1) / 4]));
+                    json.Append(" },\n      \"strikes\": ").Append(pass ? "true" : "false").Append(", \"why\": \"").Append(why ?? "")
+                        .Append("\",\n      \"planted\": { \"case\": \"the same stroke with the sweep off (authored blend alone)\", \"strikes\": ")
+                        .Append(plantedPass ? "true" : "false").Append(", \"fired\": ").Append(plantedPass ? "false" : "true")
+                        .Append(", \"why\": \"").Append(plantedWhy ?? "").Append("\" } }");
+                    Debug.Log("[GhostHandPreview] stroke slot " + k + " " + kind + " on " + chord + ": " + (pass ? "strikes strings " + from + "-" + to : why) +
+                              "; planted (sweep off): " + (plantedPass ? "PASSED (the check did not fire)" : "fired: " + plantedWhy));
+                }
+                director.Sweep = true;
+
+                // ONE down-stroke and ONE up-stroke at five phases, close up on the strumming hand
+                Quaternion strokeRotation;
+                float strokeFov;
+                StrokeFraming(neck, eyePosition, head.transform.up, aspect, out strokeRotation, out strokeFov);
+                eye.ResetProjectionMatrix();
+                eye.transform.SetPositionAndRotation(eyePosition, strokeRotation);
+                eye.fieldOfView = strokeFov;
+                eye.aspect = aspect;
+                for (int row = 0; row < 2; row++)
+                {
+                    int slot = row == 0 ? SheetStrokeDown : SheetStrokeUp;
+                    for (int i = 0; i < SheetPhases.Length; i++)
+                    {
+                        double sheetBeat = (slot + SheetPhases[i] * StrumMath.StrokeFraction) / RiptideSlotsPerBeat;
+                        director.Apply(RiptideFrame(sheetBeat, bps), 0f);
+                        RenderTo(eye, cellTarget, sheetStrokes, i * CellWidth, (1 - row) * CellHeight);
+                    }
+                }
+                sheetStrokes.Apply(false);
+                string sheetStrokesPath = Path.Combine(folder, "strum_sheet_strokes.png");
+                File.WriteAllBytes(sheetStrokesPath, ImageConversion.EncodeToPNG(sheetStrokes));
+                written.Add(sheetStrokesPath);
+
                 json.Append("\n  ],\n  \"summary\": { \"frames\": ").Append(StrumBeats.Length).Append(", \"framesFailingAChecks\": ").Append(checksFailed)
-                    .Append(", \"plantedCaseFiredInFrames\": ").Append(plantedFired).Append(" }\n}\n");
+                    .Append(", \"plantedCaseFiredInFrames\": ").Append(plantedFired)
+                    .Append(", \"strokes\": ").Append(strokes).Append(", \"strokesStriking\": ").Append(strokesPassing)
+                    .Append(", \"plantedStrokeCaseFired\": ").Append(plantedStrokesFired).Append(" }\n}\n");
+                if (strokesPassing != strokes) Debug.LogError("[GhostHandPreview] " + (strokes - strokesPassing) + " of " + strokes + " strokes do not strike their strings (strum_preview.json strokes[].why)");
+                if (plantedStrokesFired != strokes) Debug.LogError("[GhostHandPreview] the planted stroke case (sweep off) passed in " + (strokes - plantedStrokesFired) + " strokes: the strike check is not trustworthy");
 
                 sheetEye.Apply(false);
                 sheetClose.Apply(false);
@@ -511,6 +590,7 @@ namespace UntitledGuitarApp.Editor
                 if (eyeImage != null) UnityEngine.Object.DestroyImmediate(eyeImage);
                 if (sheetEye != null) UnityEngine.Object.DestroyImmediate(sheetEye);
                 if (sheetClose != null) UnityEngine.Object.DestroyImmediate(sheetClose);
+                if (sheetStrokes != null) UnityEngine.Object.DestroyImmediate(sheetStrokes);
                 EditorSceneManager.ClosePreviewScene(scene);
                 DestroyLeftovers(neck != null ? neck.gameObject : null, head, eyeObject);
             }
@@ -521,6 +601,45 @@ namespace UntitledGuitarApp.Editor
             director.Apply(frame, dt);
             fretting.Tick(dt);       // what PosedGhostHand.Update does in Play Mode
             strumming.Tick(dt);
+        }
+
+        // One stroke of the pattern sampled along its own time line: slot phase 0 .. StrokeFraction (stroke weight 0 .. 1).
+        static void SampleStroke(GhostHandsDirector director, FloatingNeck neck, PosedGhostHand strumming, int slot, float bps, bool sweep, Vector3[] path)
+        {
+            director.Sweep = sweep;
+            for (int i = 0; i < path.Length; i++)
+            {
+                double phase = i / (double)(path.Length - 1) * StrumMath.StrokeFraction;
+                director.Apply(RiptideFrame((slot + phase) / RiptideSlotsPerBeat, bps), 0f);
+                path[i] = PickNeckMm(neck, strumming);
+            }
+        }
+
+        static void StringZAt(NeckLayout layout, float xMm, float[] stringZ)
+        {
+            for (int i = 0; i < stringZ.Length; i++) stringZ[i] = NeckMath.StringZMm(layout, i + 1, xMm);
+        }
+
+        // The pick as the rig draws it: 9 mm palm side of the thumb-index pinch (StrokeSweep.Pick), neck-frame mm.
+        static Vector3 PickNeckMm(FloatingNeck neck, PosedGhostHand hand)
+        {
+            Vector3 thumb, index;
+            hand.TryGetFingertip(0, out thumb);
+            hand.TryGetFingertip(1, out index);
+            return StrokeSweep.Pick(NeckMm(neck, thumb), NeckMm(neck, index), hand.Driver.GetCurrentRotation(GhostPose.Wrist));
+        }
+
+        // A tight close-up on the strumming hand: from just before the pick line to just past the wrist.
+        static void StrokeFraming(FloatingNeck neck, Vector3 eyePosition, Vector3 up, float aspect, out Quaternion rotation, out float verticalFov)
+        {
+            float strumX = neck.StrumZone.localPosition.x / NeckMath.MetresPerMm;
+            Vector3 a = neck.transform.TransformPoint(NeckMath.LocalMetres(strumX - 95f, 0f, 0f));
+            Vector3 b = neck.transform.TransformPoint(NeckMath.LocalMetres(strumX + 75f, 0f, 0f));
+            Vector3 da = (a - eyePosition).normalized, db = (b - eyePosition).normalized;
+            rotation = Quaternion.LookRotation((da + db).normalized, up);
+            float spanDeg = Vector3.Angle(da, db) + 3f;
+            float vertical = 2f * Mathf.Atan(Mathf.Tan(0.5f * spanDeg * Mathf.Deg2Rad) / aspect) * Mathf.Rad2Deg;
+            verticalFov = Mathf.Clamp(vertical, 4f, 27f);
         }
 
         /// <summary>What the play-along producer gives for riptide-loop at 100%: a count-in on negative beats, then Am 2, G 2,
@@ -632,7 +751,8 @@ namespace UntitledGuitarApp.Editor
             Vector3 thumb, index1;
             strumming.TryGetFingertip(0, out thumb);
             strumming.TryGetFingertip(1, out index1);
-            Vector3 pick = NeckMm(neck, 0.5f * (thumb + index1));           // the pinch of thumb and index, where a pick is held
+            Vector3 pinch = NeckMm(neck, 0.5f * (thumb + index1));          // the pinch of thumb and index
+            Vector3 pick = PickNeckMm(neck, strumming);                     // the pick held in it: 9 mm palm side
             float solidTo = StringsSolidToXMm(neck);
             string why;
             bool pickOk = GhostHandChecks.PickOverStrings(pick, 0f, solidTo, NeckMath.StringZMm(layout, 1, pick.x), NeckMath.StringZMm(layout, 6, pick.x),
@@ -657,7 +777,9 @@ namespace UntitledGuitarApp.Editor
                 .Append("\", \"slotPhase\": ").Append(F(s.SlotPhase)).Append(", \"phase\": \"").Append(s.Phase.ToString())
                 .Append("\", \"from\": \"").Append(s.From).Append("\", \"to\": \"").Append(s.To).Append("\", \"blend\": ").Append(F(s.Blend))
                 .Append(", \"striking\": ").Append(s.Striking ? "true" : "false")
-                .Append(", \"wristNeckMm\": ").Append(V(strumWrist)).Append(", \"pickNeckMm\": ").Append(V(pick)).Append(" },\n");
+                .Append(", \"wristNeckMm\": ").Append(V(strumWrist)).Append(", \"pickNeckMm\": ").Append(V(pick))
+                .Append(", \"pickAboveStringsMm\": ").Append(F(pick.y - layout.stringHeightMm)).Append(", \"pinchNeckMm\": ").Append(V(pinch))
+                .Append(", \"sweepOffsetMm\": ").Append(V(director.StrumOffsetMm)).Append(" },\n");
             json.Append("      \"fretting\": { \"chord\": \"").Append(frame.Chord ?? "").Append("\", \"from\": \"").Append(director.FrettingFrom)
                 .Append("\", \"to\": \"").Append(director.FrettingTo).Append("\", \"morph\": ").Append(F(director.FrettingMorph))
                 .Append(", \"fade\": ").Append(F(director.FrettingFade)).Append(", \"wristNeckMm\": ").Append(V(fretWrist))
