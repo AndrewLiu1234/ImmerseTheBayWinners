@@ -13,6 +13,8 @@ USAGE (Blender 5.2; options after the "--"; --python-exit-code must come before 
                    (Unity: Resources.Load<GameObject>("GhostHand/ghost_hand_fretting") and ".../ghost_hand_strumming")
   --poses DIR      pose files whose bind block the FBX must match, default <repo>/unity/Assets/StreamingAssets/poses
   --check-only     export nothing; check the FBX files already in --out-dir against the .blend
+  --vertex-colours none|shader   default none: the FBX carries no vertex colours. shader: one colour layer in the
+                   ghost shader's convention (see VERTEX DATA). The .blend's FingerMask colour is never exported.
 
 Exit code 1 (with --python-exit-code 1) when anything does not match. Writes no .meta files (Unity makes those).
 
@@ -21,7 +23,8 @@ ghost_hand_strumming.fbx = GhostHand_Strumming, the RIGHT hand)
   * the armature with exactly the 16 pinned bones (wrist; thumb|index|middle|ring|pinky x proximal|intermediate|distal),
     in the BIND (rest) pose: actions are dropped and every pose bone is reset first. No leaf ("_end") bones, so a
     fingertip (the tail of a *_distal bone) is not a node: take it from the pose files' bind.fingertips;
-  * the skinned mesh (about 5,400 triangles, at most 4 bones per vertex) and its one material slot "GhostHand".
+  * ONE skinned mesh in one connected piece (5,376 triangles, at most 4 bones per vertex) with ONE material slot,
+    "GhostHand": overlapping separate parts would add up into bright seams on the additive display.
 
 THE FRAME UNITY GETS (the reason for everything in prepare_hand below)
   The pose files measure rotations in the hand's MODEL space: the armature's own axes with the axis rule
@@ -35,10 +38,11 @@ THE FRAME UNITY GETS (the reason for everything in prepare_hand below)
   and the armature object gets the inverse of the exporter's axis rotation. After the exporter (rotation) and Unity
   (x -> -x) the data lands on (X, Z, Y) with nothing left on the root transforms.
 
-VERTEX DATA FOR THE GHOST SHADER (Runtime/Resources/Shaders/GhostHand.shader reads the vertex colour)
-  colour (one layer, exported raw = linear)  r = fingertip glow (UV 'GhostMask' u), g = 0,
-                                             b = fade out (1 - GhostMask v: 0 on the hand, 1 at the end of the wrist stub),
-                                             a = 1.  The shader takes tip = r - g and cover = 1 - (b - g).
+VERTEX DATA (Runtime/Resources/Shaders/GhostHand.shader reads vertex colour as control data: tip = r - g, fade = b - g)
+  colour   default: none. The .blend's FingerMask attribute (one finger per channel) would light the index finger
+           and hide the ring finger, so it never goes into the colour. With --vertex-colours shader: one layer,
+           written raw (linear): r = fingertip glow (GhostMask u), g = 0, b = 1 - GhostMask v (1 at the end of the
+           wrist stub), a = 1.
   UV0 'GhostMask'      (u = fingertip glow, v = 1 on the hand -> 0 at the stub end), as in the .blend
   UV1 'FingerMask_IM'  (u = index, v = middle)   per-finger masks, 1 on that finger, for a finger-by-finger shader
   UV2 'FingerMask_RP'  (u = ring,  v = pinky)    (the .blend's FingerMask colour attribute, moved out of the colour)
@@ -60,7 +64,7 @@ from mathutils import Matrix, Vector
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import build_hand_rig as rig  # noqa: E402  (the 16 canonical bone names and parents)
 
-SCRIPT_VERSION = "1.0.0"
+SCRIPT_VERSION = "1.1.0"  # 1.1.0: no vertex colours by default (--vertex-colours shader for the shader's convention)
 HANDS = (("fretting", "GhostHand_Fretting"), ("strumming", "GhostHand_Strumming"))
 FBX_NAME = "ghost_hand_%s.fbx"
 MAX_BYTES = 2 * 1024 * 1024
@@ -77,7 +81,7 @@ FBX_OPTIONS = dict(
     bake_space_transform=False,          # "Apply Transform": documented as broken with armatures
     use_mesh_modifiers=False,            # the mesh as stored = its bind shape (the Armature modifier is never applied)
     mesh_smooth_type="FACE", use_subsurf=False, use_mesh_edges=False, use_tspace=False, use_triangles=False,
-    colors_type="LINEAR", prioritize_active_color=False,     # masks, not colours: write the stored values
+    colors_type="NONE", prioritize_active_color=False,       # --vertex-colours shader sets LINEAR (values as stored)
     use_custom_props=False,
     add_leaf_bones=False, primary_bone_axis="Y", secondary_bone_axis="X",
     use_armature_deform_only=True, armature_nodetype="NULL",
@@ -176,8 +180,8 @@ def capture(arm, mesh):
 # ----------------------------------------------------------------------------------------------------------------------
 # export
 # ----------------------------------------------------------------------------------------------------------------------
-def prepare_hand(arm, mesh, src):
-    """Put this hand in its bind pose, in the export frame, with the shader's vertex data. Changes the open scene only."""
+def prepare_hand(arm, mesh, src, colours="none"):
+    """Put this hand in its bind pose, in the export frame, with its vertex data. Changes the open scene only."""
     if arm.animation_data is not None:
         arm.animation_data_clear()                     # no action may pull the pose back
     for pb in arm.pose.bones:
@@ -201,19 +205,19 @@ def prepare_hand(arm, mesh, src):
     arm.matrix_world = AXIS_FIX
 
     me = mesh.data
-    n = len(me.loops)
-    for ca in [a.name for a in me.color_attributes]:
+    for ca in [a.name for a in me.color_attributes]:   # FingerMask leaves the colour in every mode (it moves to UVs)
         me.color_attributes.remove(me.color_attributes[ca])
-    col = me.color_attributes.new(name="GhostColor", type="FLOAT_COLOR", domain="CORNER")
-    flat = []
-    for u, v in src["ghost"]:
-        flat.extend((u, 0.0, 1.0 - v, 1.0))
-    col.data.foreach_set("color", flat)
     for name, pick in (("FingerMask_IM", (0, 1)), ("FingerMask_RP", (2, 3))):
         layer = me.uv_layers.new(name=name, do_init=False)
         layer.data.foreach_set("uv", [c[k] for c in src["finger"] for k in pick])
-    if len(col.data) != n:
-        raise ExportError("internal: colour layer size")
+    if colours == "shader":
+        col = me.color_attributes.new(name="GhostColor", type="FLOAT_COLOR", domain="CORNER")
+        flat = []
+        for u, v in src["ghost"]:
+            flat.extend((u, 0.0, 1.0 - v, 1.0))
+        col.data.foreach_set("color", flat)
+        if len(col.data) != len(me.loops):
+            raise ExportError("internal: colour layer size")
     me.update()
     bpy.context.view_layer.update()
 
@@ -244,7 +248,9 @@ def scrub_header(elem_root, blend_name):
     return done
 
 
-def export_hand(arm, mesh, path, blend_name):
+def export_hand(arm, mesh, path, blend_name, colours="none"):
+    options = dict(FBX_OPTIONS)
+    options["colors_type"] = "LINEAR" if colours == "shader" else "NONE"
     for ob in bpy.context.view_layer.objects:
         ob.select_set(False)
     for ob in (arm, mesh):
@@ -271,7 +277,7 @@ def export_hand(arm, mesh, path, blend_name):
 
     encode_bin.write, fbx_utils._key_to_uuid = write, stable_uuid
     try:
-        result = bpy.ops.export_scene.fbx(filepath=path, check_existing=False, **FBX_OPTIONS)
+        result = bpy.ops.export_scene.fbx(filepath=path, check_existing=False, **options)
     finally:
         encode_bin.write, fbx_utils._key_to_uuid = original_write, original_uuid
     if "FINISHED" not in result:
@@ -404,8 +410,8 @@ def unity_euler(r):
     return tuple((a + 360.0) % 360.0 if abs(a) > 1e-7 else 0.0 for a in (x, y, z))
 
 
-def unity_view(path, src, hand, poses_dir):
-    """Simulate Unity 2021.3's FBX import with default settings (README.md "What Unity sees") and compare."""
+def unity_view(path, src, hand, poses_dir, colour_mode="none"):
+    """Simulate Unity 2021.3's FBX import with default settings (README.md "The hierarchy Unity sees") and compare."""
     say("  -- as Unity will import it (simulated from the FBX data; Unity itself was not run) --")
     version, root = read_fbx(path)
     gs = p70(root.first("GlobalSettings"))
@@ -533,13 +539,46 @@ def unity_view(path, src, hand, poses_dir):
         if len(pts) != len(src["verts"]) or tris != src["tris"] or worst_v > POS_TOL_MM:
             problems.append("mesh differs from the source (%d/%d vertices, %d/%d triangles, %.4f mm)" % (
                 len(pts), len(src["verts"]), tris, src["tris"], worst_v))
+        # one piece: overlapping separate parts would add up into bright seams on the additive display
+        nverts = len(co) // 3
+        link = list(range(nverts))
+
+        def find(a):
+            while link[a] != a:
+                link[a] = link[link[a]]
+                a = link[a]
+            return a
+        poly = []
+        for i in pvi:
+            poly.append(i if i >= 0 else ~i)           # the last index of a polygon is stored as -(index + 1)
+            if i < 0:
+                for b in poly[1:]:
+                    ra, rb = find(poly[0]), find(b)
+                    if ra != rb:
+                        link[ra] = rb
+                poly = []
+        pieces = len({find(v) for v in range(nverts)})
+        materials = objects.all("Material")
+        mat_layers = geo.all("LayerElementMaterial")
+        mat_index = set()
+        if mat_layers and mat_layers[0].first("Materials") is not None:
+            mat_index = set(mat_layers[0].first("Materials").props[0])
+        say("        %d connected piece(s); %d material(s) %s, polygon material indices %s" % (
+            pieces, len(materials), [fbx_name(m.props[1]) for m in materials], sorted(mat_index)))
+        if pieces != 1:
+            problems.append("the mesh is %d separate pieces, not one" % pieces)
+        if len(materials) != 1 or not mat_index <= {0}:
+            problems.append("expected one material slot used by every polygon")
+
         colours = geo.all("LayerElementColor")
         uvs = geo.all("LayerElementUV")
         uv_names = [fbx_name(u.first("Name").props[0]) for u in uvs]
-        say("        colour layers %s; UV layers %s" % ([fbx_name(c.first("Name").props[0]) for c in colours], uv_names))
-        if len(colours) != 1 or uv_names != ["GhostMask", "FingerMask_IM", "FingerMask_RP"]:
-            problems.append("expected 1 colour layer and UVs GhostMask, FingerMask_IM, FingerMask_RP")
-        else:
+        say("        vertex colour layers %s (--vertex-colours %s); UV layers %s" % (
+            [fbx_name(c.first("Name").props[0]) for c in colours], colour_mode, uv_names))
+        want_layers = 1 if colour_mode == "shader" else 0
+        if len(colours) != want_layers:
+            problems.append("expected %d vertex colour layer(s) for --vertex-colours %s, found %d" % (want_layers, colour_mode, len(colours)))
+        elif colours:
             table, index = colours[0].first("Colors").props[0], colours[0].first("ColorIndex").props[0]
             got = [table[4 * i:4 * i + 4] for i in index]
             want = [(u, 0.0, 1.0 - v, 1.0) for u, v in src["ghost"]]
@@ -548,6 +587,9 @@ def unity_view(path, src, hand, poses_dir):
             say("        vertex colour (r = tip glow, b = fade out): %s; vs GhostMask: worst %.2e" % (", ".join(chans), worst_c))
             if worst_c > 1e-6:
                 problems.append("vertex colours do not follow the shader convention (%.2e)" % worst_c)
+        if uv_names != ["GhostMask", "FingerMask_IM", "FingerMask_RP"]:
+            problems.append("expected UV layers GhostMask, FingerMask_IM, FingerMask_RP, found %s" % uv_names)
+        else:
             for layer, pick in ((uvs[1], (0, 1)), (uvs[2], (2, 3))):
                 table, index = layer.first("UV").props[0], layer.first("UVIndex").props[0]
                 worst_u = max(max(abs(table[2 * i] - f[pick[0]]), abs(table[2 * i + 1] - f[pick[1]]))
@@ -583,7 +625,7 @@ def unity_view(path, src, hand, poses_dir):
 # ----------------------------------------------------------------------------------------------------------------------
 # check 2: re-import into an empty Blender scene
 # ----------------------------------------------------------------------------------------------------------------------
-def reimport_check(path, src):
+def reimport_check(path, src, colour_mode="none"):
     say("  -- re-imported into an empty Blender scene (bpy.ops.import_scene.fbx, defaults, colours read as linear) --")
     bpy.ops.wm.read_factory_settings(use_empty=True)
     result = bpy.ops.import_scene.fbx(filepath=path, colors_type="LINEAR")
@@ -650,7 +692,12 @@ def reimport_check(path, src):
         worst_v, worst_w, most, tris, src["tris"]))
     if tris != src["tris"] or worst_v > POS_TOL_MM or worst_w > 1e-4 or most > 4:
         problems.append("mesh or skin differs from the source")
-    say("        UV maps %s; colour attributes %s" % ([u.name for u in me.uv_layers], [(c.name, c.data_type, c.domain) for c in me.color_attributes]))
+    say("        UV maps %s; colour attributes %s; materials %s" % ([u.name for u in me.uv_layers],
+        [(c.name, c.data_type, c.domain) for c in me.color_attributes], [m.name if m else None for m in me.materials]))
+    if len(me.color_attributes) != (1 if colour_mode == "shader" else 0):
+        problems.append("%d colour attribute(s) for --vertex-colours %s" % (len(me.color_attributes), colour_mode))
+    if len(me.materials) != 1:
+        problems.append("%d material slots, expected 1" % len(me.materials))
     return problems
 
 
@@ -664,6 +711,7 @@ def parse_args(argv):
     ap.add_argument("--out-dir", default=None)
     ap.add_argument("--poses", default=None)
     ap.add_argument("--check-only", action="store_true")
+    ap.add_argument("--vertex-colours", choices=("none", "shader"), default="none")
     a = ap.parse_args(argv)
     if a.out_dir is None or a.poses is None:
         root = repo_root()
@@ -695,8 +743,8 @@ def main():
         os.makedirs(a.out_dir, exist_ok=True)
         for hand, arm_name in HANDS:
             arm, mesh = hand_objects(arm_name)
-            prepare_hand(arm, mesh, sources[hand])
-            export_hand(arm, mesh, paths[hand], os.path.basename(a.blend))
+            prepare_hand(arm, mesh, sources[hand], a.vertex_colours)
+            export_hand(arm, mesh, paths[hand], os.path.basename(a.blend), a.vertex_colours)
             st = os.stat(paths[hand])
             if st.st_mtime_ns <= started:
                 raise ExportError("%s was not written by this run" % paths[hand])
@@ -714,16 +762,18 @@ def main():
             failures.append("%s is bigger than 2 MB" % path)
         if b"/Users/" in open(path, "rb").read():
             say("  warning: the file contains a local path ('/Users/')")
-        failures += ["%s: %s" % (os.path.basename(path), p) for p in unity_view(path, src, hand, a.poses)]
+        failures += ["%s: %s" % (os.path.basename(path), p) for p in unity_view(path, src, hand, a.poses, a.vertex_colours)]
     for hand, _arm_name in HANDS:              # last: each re-import starts from an empty scene
         if os.path.isfile(paths[hand]):
             say("")
             say(os.path.basename(paths[hand]))
-            failures += ["%s (re-import): %s" % (os.path.basename(paths[hand]), p) for p in reimport_check(paths[hand], sources[hand])]
+            failures += ["%s (re-import): %s" % (os.path.basename(paths[hand]), p)
+                         for p in reimport_check(paths[hand], sources[hand], a.vertex_colours)]
     say("")
     if failures:
         raise ExportError("%d check(s) failed:\n  " % len(failures) + "\n  ".join(failures))
-    say("export_fbx.py: OK - both FBX files match the source rig%s" % (" (check only)" if a.check_only else ""))
+    say("export_fbx.py: OK - both FBX files match the source rig (vertex colours: %s)%s" % (
+        a.vertex_colours, " (check only)" if a.check_only else ""))
 
 
 if __name__ == "__main__":
