@@ -1190,7 +1190,9 @@ namespace UntitledGuitarApp.Tests.EditMode
                              "string " + s + "'s line starts at its end at the nut");
                 Vector3 own = row + across * (NeckMeshBuilder.MarkSlotOffset(s) * sizes.markPitchMm);
                 float toOwn = (endMm - own).magnitude;
-                Assert.That(toOwn, Is.EqualTo(sizes.markRadiusMm + 0.5f * sizes.markStrokeMm).Within(1e-3f), "and stops just short of its own mark");
+                Assert.That(toOwn, Is.EqualTo(NeckMeshBuilder.MarkLeadStopMm(sizes, marks[s - 1])).Within(1e-3f), "and stops just short of its own mark");
+                float tips = marks[s - 1] == StringMark.Muted ? (sizes.markRadiusMm - sizes.markStrokeMm * 0.35355f) * Mathf.Sqrt(2f) : sizes.markRadiusMm;
+                Assert.That(toOwn - tips, Is.GreaterThanOrEqualTo(0.5f * sizes.markStrokeMm - 1e-3f), "outside the ring, or beyond the tips of the X's arms");
                 for (int other = 1; other <= 6; other++)
                 {
                     if (other == s) continue;

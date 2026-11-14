@@ -206,18 +206,19 @@ namespace UntitledGuitarApp.Runtime.Neck
                     int stringNumber = i + 1;
                     Vector3 centre = row + across * (MarkSlotOffset(stringNumber) * sizes.markPitchMm);
 
-                    // The string's own line, from its end at the nut to just short of its mark. It follows the string's gain
-                    // group, so it dims with a string that is not played.
+                    // The string's own line, from its end at the nut to just short of its mark (for an X, short of the tips of
+                    // its arms, so a line that arrives along a diagonal never reads as a longer arm). It follows the string's
+                    // gain group, so it dims with a string that is not played.
                     Vector3 start = new Vector3(-sizes.nutMm, h, layout.stringZAtNutMm[i]);
                     Vector3 toMark = centre - start;
                     float length = toMark.magnitude;
+                    float stop = MarkLeadStopMm(sizes, marks[i]);
                     Vector3 dir = length > 1e-4f ? toMark / length : along;
                     Vector3 side = Vector3.Cross(dir, view);
-                    if (length > r + sizes.markStrokeMm && side.sqrMagnitude > 1e-8f)
+                    if (length > stop + sizes.markStrokeMm && side.sqrMagnitude > 1e-8f)
                     {
                         side = side.normalized * (0.5f * sizes.StringWidthMm(stringNumber));
-                        g.Line(Mm(start), Mm(centre - dir * (r + 0.5f * sizes.markStrokeMm)), Mm(side), lead, lead, false, true,
-                               NeckGeometry.StringGroup(stringNumber), 0f);
+                        g.Line(Mm(start), Mm(centre - dir * stop), Mm(side), lead, lead, false, true, NeckGeometry.StringGroup(stringNumber), 0f);
                     }
 
                     if (marks[i] == StringMark.Open)
@@ -236,6 +237,17 @@ namespace UntitledGuitarApp.Runtime.Neck
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// How far from a mark's centre the line that leads to it stops, in mm: half a stroke outside the O's ring, or half a
+        /// stroke beyond the tips of the X's arms (they reach (r - stroke / 2 / sqrt 2) * sqrt 2 along the diagonals).
+        /// </summary>
+        public static float MarkLeadStopMm(NeckSizes sizes, StringMark mark)
+        {
+            float r = sizes.markRadiusMm;
+            float reach = mark == StringMark.Muted ? (r - sizes.markStrokeMm * 0.35355f) * 1.41421f : r;
+            return reach + 0.5f * sizes.markStrokeMm;
         }
 
         /// <summary>
