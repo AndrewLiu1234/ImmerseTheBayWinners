@@ -1,6 +1,7 @@
 # STATUS — newest first (scribe keeps ≤40 lines; union-merged in git)
 <!-- - Sat HH:MM · Person 1 or Person 2 · track · what changed · level -->
 ## Now
+- Sat 18:29 · Person 2 · SL3 · real-guitar strum check (744a3d1, merged): 98 Hz body air resonance out of the stray-energy score, stricter evidence for rival chords/faults, onset refractory 130 ms, window 80–300 ms → strum_chord_acc_quiet 68.4→90.1 %, false_clean 2.6→0.0 %, onsets 76→71 (DEV set, tuned on — venue set is the real test; body band F2–G#2 is this guitar's) · verified to L2 · pending venue eval, L3–L5 (Person 1)
 - Sat 18:14 · Person 2 · SL2/SL3 L2 · 112 quiet dev clips in (ce29f1f). Real-guitar first pass: strum_chord_acc_quiet 68.4% (clean D 0/6, Em 0/8; 76 onsets from 55 strums), strum_false_clean 2.6%; pluck_correct_quiet 67.3% (WrongString ×10, onset missed on ~20 clips) — new report-only PluckRecordedEvalTests. dsp-engineer re-tuning the strum path now · verified to L2 · pending venue eval set, L3–L5 (Person 1)
 - Sat 18:14 · Person 2 · decisions · WrongString tip approved; Riptide credit names James Keogh; Happy Birthday PD cites Marya v. Warner/Chappell (2015) · L1
 - Sat 15:38 · Person 2 · SL1 L2 · 18 recorded open-string dev clips (quiet, MacBook Voice Memos) committed; tuner 18/18 within ±10 c, max 6.3 c (first pass 12/18: both E strings ~12 c flat → guitar retuned + re-recorded). E4 take 1 had 20% octave frames (median fine) — watch needle flicker on device · verified to L2 · pending venue eval set, baseline, L3–L5 (Person 1)
