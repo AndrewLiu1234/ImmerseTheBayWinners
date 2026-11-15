@@ -69,8 +69,11 @@ list you type, then runs `./scripts/verify.sh` (AllSongsValid) and asks `music-t
 
 ## Sources
 
-- Happy Birthday is public domain in the US after the 2015 ruling and 2016 settlement:
+- Happy Birthday is public domain in the US after the 2015 ruling and 2016 settlement. Ruling: *Marya v. Warner/Chappell
+  Music, Inc.*, 131 F. Supp. 3d 975 (C.D. Cal. 2015) ([CourtListener](https://www.courtlistener.com/opinion/7315753/marya-v-warnerchappell-music-inc/));
+  it held Warner/Chappell had no valid lyrics copyright, and the 2016 settlement put the song in the public domain. News:
   [ABC7](https://abc7.com/happy-birthday-song-licensing-agreement-public-domain-copyright/1403454/),
   [NBC Los Angeles](https://www.nbclosangeles.com/news/national-international/happy-birthday-lawsuit-settlement-public-domain/116048/?amp=1)
 - Riptide chord loop (Am, G, C; F in the bridge; capo 1 on the record):
-  [ukulelego](https://ukulelego.com/?p=3710), [pickuptheguitar](https://pickuptheguitar.com/riptide-chords-no-capo)
+  [ukulelego](https://ukulelego.com/?p=3710), [pickuptheguitar](https://pickuptheguitar.com/riptide-chords-no-capo).
+  Writer: James Keogh (Vance Joy) — [American Songwriter](https://americansongwriter.com/riptide-vance-joy-james-keogh-behind-the-song/)

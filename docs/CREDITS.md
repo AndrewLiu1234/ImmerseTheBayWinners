@@ -6,6 +6,6 @@
 - Guitar chords database — Osmalskyj et al., University of Liège (if used; local eval only)
 ## Songs
 - Happy Birthday to You — public domain (US)
-- Riptide (Vance Joy) and Stand By Me (Ben E. King, Leiber, Stoller) — chord progressions only, no lyrics or melody
+- Riptide (Vance Joy; written by James Keogh) and Stand By Me (Ben E. King, Leiber, Stoller) — chord progressions only, no lyrics or melody
 ## Assets
 - Ghost-hand mesh/rig: (fill in: own Blender model or CC0 source + link)

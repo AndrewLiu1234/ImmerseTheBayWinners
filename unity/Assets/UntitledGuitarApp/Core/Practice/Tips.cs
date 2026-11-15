@@ -12,7 +12,7 @@ namespace UntitledGuitarApp.Core.Practice
     /// <item>WrongFretLow / WrongFretHigh: "Finger {f}: one fret higher" / "… lower" ("two frets" when 2 off); an open target
     /// sounding sharp: "Play string {s} open, no finger".</item>
     /// <item>WrongString: "Pluck string {s}, not string {n}" — only the picking hand can make a neighbour's own chord note
-    /// (proposed change to B6's "Finger {f} goes on string {s}"; pending music-teacher sign-off).</item>
+    /// (replaces B6's "Finger {f} goes on string {s}"; approved by Person 2, D-P2-WRONGSTRING).</item>
     /// <item>Muted, FRETTED string: "Finger {f}: press with fingertip". Muted OPEN string: "String {s} muted — arch finger {g}",
     /// g = the finger on the bass-side neighbour, else the treble-side one; "… arch your fingers" when neither is fretted.</item>
     /// <item>ExtraString "Skip string {s}" · Unclear "Pluck string {s} again, slowly" · ShortRing "Let string {s} ring".</item>

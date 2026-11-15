@@ -1,5 +1,7 @@
 # DECISIONS — newest first (append-only; union-merged in git)
 <!-- D-<QID> · answer · who (Person 1 | Person 2) · HH:MM PT · reversible: yes|no · affects: docs/slices -->
+- D-P2-WRONGSTRING · WrongString tip = "Pluck string {s}, not string {n}" (replaces B6 "Finger {f} goes on string {s}") · Person 2 · Sat 18:14 PT · reversible: yes · affects: Core/Practice/Tips, SL2
+- D-P2-CREDITS · Riptide credit names the writer James Keogh; Happy Birthday PD source cites Marya v. Warner/Chappell (C.D. Cal. 2015) · Person 2 · Sat 18:14 PT · reversible: yes · affects: songs/riptide-loop, docs/SONGS.md, docs/CREDITS.md
 - D-P2-RENAME · Core-side duplicates of Contracts names renamed (PatternClockSlot, PlayAlongTarget, TunerState); Contracts untouched · Person 2 · Sat 14:55 PT · reversible: yes · affects: Core/Practice, Core/Audio
 - D-P2-TIPS · Tip rules per music-teacher: fretted muted string → "press finger N's tip", arch tip only for open strings; WrongFret → "one fret higher/lower" · Person 2 · Sat 13:45 PT · reversible: yes · affects: Core/Practice/Tips, SL2
 - D-P2-PLAYALONG · Wait-mode defaults: hold at every change incl. chord 0, escape after 8 s or 6 wrong strums or Skip, 0.3 s early grace; timing on-time ±60 ms, match window ±150 ms; drill clean = ≤3 s · Person 2 · Sat 12:45 PT · reversible: yes · affects: SL5, SL6, SL7
