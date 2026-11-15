@@ -173,6 +173,33 @@ public class SpectralFluxOnsetTests
         Assert.True(us < 1000, $"{us:F0} µs per hop");
     }
 
+    // Dev recordings (pluck-C/G/EMIN): a capture that starts while a string still rings fired an onset at 0.000 s (the first
+    // hops are compared with the zero-initialised spectra), and that start-up flux then sat in the median and hid the real
+    // pluck 0.2 s later. A stream that starts mid-sound has no "before": no onset until the comparison frames hold real audio.
+    [Fact]
+    public void Process_StreamStartsMidRing_NoStartupOnsetAndLaterPluckFound()
+    {
+        var ring = KarplusStrong.Pluck(52, 2000, Sr, seed: 3, t60Sec: 4.0, amplitude: 0.3f);
+        var x = new float[Sr * 3 / 2];
+        Array.Copy(ring, Sr / 2, x, 0, x.Length);                       // the E3 was plucked 0.5 s before the stream began
+        var p = KarplusStrong.Pluck(55, 1000, Sr, seed: 4, t60Sec: 4.0, amplitude: 0.1f);
+        Signals.MixInto(x, p, (int)(0.05 * Sr), 1f);                   // new G3 pluck at 50 ms (start-up flux used to sit in the median)
+        Signals.MixInto(x, Signals.WhiteNoise(1500, 0.003, seed: 8, sampleRate: Sr), 0, 1f);   // laptop-mic room floor ≈ −50 dBFS
+        var on = Detect(x);
+        Assert.Single(on);
+        Assert.InRange(on[0], 0.05 - TolSec, 0.05 + TolSec);
+    }
+
+    [Fact]
+    public void Process_StreamStartsSilentThenEarlyPluck_StillDetected()
+    {
+        var x = new float[Sr];
+        Signals.MixInto(x, KarplusStrong.Pluck(55, 900, Sr, seed: 4, t60Sec: 4.0, amplitude: 0.3f), (int)(0.02 * Sr), 1f);
+        var on = Detect(x);
+        Assert.Single(on);
+        Assert.InRange(on[0], 0.02 - TolSec, 0.02 + TolSec);
+    }
+
     [Fact]
     public void Reset_RestartsClock()
     {

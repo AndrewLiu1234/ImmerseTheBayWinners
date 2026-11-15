@@ -103,6 +103,13 @@ namespace UntitledGuitarApp.Core.Audio
         /// <summary>… and the first analysis frame must be no more than this many dB below the attack (else the "note" is the
         /// residue of a deadened string: a muted thud is ≈ 50 dB down 40 ms after the pick, a short ring ≈ 8 dB).</summary>
         public double PluckSustainDb { get; }
+        /// <summary>When the note was found without a usable YIN median (salience fallback, octave-corrected or rival-ringing
+        /// frames), its reported Hz is measured by searching ± this many cents around the hypothesis for the frequency whose
+        /// partials hold the most power — the HUD shows cents, so echoing the nominal frequency (0 c) would be a lie. 50 c =
+        /// half a semitone: covers PluckMatchCents (45) without reaching the next hypothesis.</summary>
+        public double PluckRefineCents { get; }
+        /// <summary>Step of that search, cents. 5 c ≈ the resolution a beginner's tuning tip needs; 21 probes × PluckPartials Goertzels.</summary>
+        public double PluckRefineStepCents { get; }
         /// <summary>Ring-out target, s (§19 quality: every expected string still rings ≥ 0.8 s). Shorter → ShortRing
         /// ("let string N ring"). Judged only when the window reaches this far past the onset.</summary>
         public double RingOutSec { get; }
@@ -110,6 +117,12 @@ namespace UntitledGuitarApp.Core.Audio
         /// still rings (G3's 5th partial 980 Hz sits 8 Hz from B3's 4th, 988 Hz — synthetic: a free B3 over a ringing G3 read
         /// 0.56 s with 4 partials) and die first on any real string anyway.</summary>
         public int RingPartials { get; }
+        /// <summary>… but on a low string, every partial up to this frequency (Hz) is tracked (count = max(RingPartials,
+        /// ⌊this / f0⌋)). A laptop mic and the body roll off the bass strings' first two partials, and G2 sits on the ≈ 98 Hz
+        /// air mode that dies within 0.3 s, while partials 3–5 ring for seconds (dev clip G_s6__01: 98/196 Hz −30 dB by 0.5 s,
+        /// 392 Hz flat → false ShortRing). 400 Hz changes only C3 and below (E2/G2 4 partials, A2/C3 3), far from the G3/B3
+        /// collision above.</summary>
+        public double RingMinTopHz { get; }
         /// <summary>Sustain = time for the fitted decay of the first <see cref="RingPartials"/> partials to fall this many dB
         /// from the first analysis frame. 30 dB: a free steel string (T60 ≥ 2 s) needs ≥ 1 s for it; a finger leaning on the
         /// string (T60 ≈ 0.8 s) gets there in 0.4 s. Pass line: T60 ≈ 1.5 s.</summary>
@@ -273,8 +286,11 @@ namespace UntitledGuitarApp.Core.Audio
             double pluckAttackRiseDb = 3.0,
             double pluckMinSalience = 0.05,
             double pluckSustainDb = 20.0,
+            double pluckRefineCents = 50.0,
+            double pluckRefineStepCents = 5.0,
             double ringOutSec = 0.8,
             int ringPartials = 2,
+            double ringMinTopHz = 400.0,
             double ringDropDb = 30.0,
             double ringFloorDb = 6.0,
             double ringCutDb = 10.0,
@@ -337,6 +353,9 @@ namespace UntitledGuitarApp.Core.Audio
             if (!(ringOutSec > 0) || ringOutSec > 5) throw new ArgumentOutOfRangeException(nameof(ringOutSec));
             if (!(ringDropDb > 0)) throw new ArgumentOutOfRangeException(nameof(ringDropDb));
             if (ringPartials < 1 || ringPartials > 8) throw new ArgumentOutOfRangeException(nameof(ringPartials));
+            if (!(ringMinTopHz >= 0) || ringMinTopHz > 2000) throw new ArgumentOutOfRangeException(nameof(ringMinTopHz));
+            if (!(pluckRefineCents >= 0) || pluckRefineCents > 100) throw new ArgumentOutOfRangeException(nameof(pluckRefineCents));
+            if (!(pluckRefineStepCents > 0)) throw new ArgumentOutOfRangeException(nameof(pluckRefineStepCents));
             if (!(ringFloorDb >= 0)) throw new ArgumentOutOfRangeException(nameof(ringFloorDb));
             if (!(ringCutDb >= 0)) throw new ArgumentOutOfRangeException(nameof(ringCutDb));
             if (!(ringStepSec > 0)) throw new ArgumentOutOfRangeException(nameof(ringStepSec));
@@ -380,6 +399,7 @@ namespace UntitledGuitarApp.Core.Audio
             PluckMinPitchedFrames = pluckMinPitchedFrames; PluckMatchCents = pluckMatchCents;
             PluckOctaveSupportRatio = pluckOctaveSupportRatio; PluckPartials = pluckPartials; PluckRiseDb = pluckRiseDb;
             PluckAttackRiseDb = pluckAttackRiseDb; PluckMinSalience = pluckMinSalience; PluckSustainDb = pluckSustainDb;
+            PluckRefineCents = pluckRefineCents; PluckRefineStepCents = pluckRefineStepCents; RingMinTopHz = ringMinTopHz;
             RingOutSec = ringOutSec; RingPartials = ringPartials; RingDropDb = ringDropDb; RingFloorDb = ringFloorDb; RingCutDb = ringCutDb; RingStepSec = ringStepSec;
             OnsetFftSize = onsetFftSize; OnsetMaxHz = onsetMaxHz; OnsetLogGamma = onsetLogGamma; OnsetMaxFilterBins = onsetMaxFilterBins; OnsetDiffLagHops = onsetDiffLagHops; OnsetThresholdK = onsetThresholdK;
             OnsetMedianSec = onsetMedianSec; OnsetMinFlux = onsetMinFlux; OnsetMinGapSec = onsetMinGapSec;

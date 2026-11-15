@@ -49,6 +49,9 @@ namespace UntitledGuitarApp.Core.Audio
         double _lastPitchSec;
 
         public YinPitchTracker Tracker => _tracker;
+        /// <summary>Window to pass to <see cref="Process"/>, samples (<see cref="YinPitchTracker.FrameSize"/>: AudioConfig.FrameSize
+        /// at 44.1/48 kHz, larger at 88.2/96 kHz).</summary>
+        public int FrameSize => _tracker.FrameSize;
 
         public Tuner(AudioConfig config, int sampleRate)
         {

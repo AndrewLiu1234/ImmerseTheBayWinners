@@ -41,7 +41,8 @@ namespace UntitledGuitarApp.Core.Audio
         /// <summary>MIDI the string should produce (<see cref="ChordShape.Muted"/> = −1 when it should stay silent).</summary>
         public readonly int ExpectedMidi;
         /// <summary>Median f0 after the attack (octave-resolved toward the matched hypothesis), Hz; 0 without pitch. When the
-        /// note was found by the salience fallback (YIN locked onto an older ringing string) this is the hypothesis frequency.</summary>
+        /// note was found by the salience fallback (YIN locked onto an older ringing string, or too few confident frames) it is
+        /// measured from the matched note's partials within ±<see cref="AudioConfig.PluckRefineCents"/> of the hypothesis.</summary>
         public readonly double DetectedHz;
         /// <summary>Signed cents of <see cref="DetectedHz"/> from <see cref="ExpectedMidi"/>; 0 without pitch or expectation.</summary>
         public readonly double Cents;
@@ -142,6 +143,8 @@ namespace UntitledGuitarApp.Core.Audio
         readonly float[] _pre;            // Hann-windowed pre-onset frame
         readonly float[] _probe;          // Hann-windowed ring-out probe
         readonly float[] _hann;
+        readonly float[] _span;           // Hann-windowed analysis span (frequency refinement)
+        readonly float[] _spanHann;
         readonly int[] _hypMidi = new int[MaxHyp];
         readonly int[] _hypString = new int[MaxHyp];
         readonly PluckVerdict[] _hypVerdict = new PluckVerdict[MaxHyp];
@@ -158,7 +161,7 @@ namespace UntitledGuitarApp.Core.Audio
             _cfg = config ?? throw new ArgumentNullException(nameof(config));
             _yin = new YinPitchTracker(config, sampleRate);
             SampleRate = sampleRate;
-            _frame = config.FrameSize;
+            _frame = _yin.FrameSize;                 // = config.FrameSize at 44.1/48 kHz; scaled up at 88.2/96 kHz
             _hop = config.HopSize;
             _skip = (int)Math.Round(config.PluckAttackSkipSec * sampleRate);
             _analysis = Math.Max(_frame, (int)Math.Round(config.PluckAnalysisSec * sampleRate));
@@ -172,6 +175,9 @@ namespace UntitledGuitarApp.Core.Audio
             _probe = new float[_frame];
             _hann = new float[_frame];
             for (int i = 0; i < _frame; i++) _hann[i] = (float)(0.5 - 0.5 * Math.Cos(2.0 * Math.PI * i / (_frame - 1)));
+            _span = new float[_analysis];
+            _spanHann = new float[_analysis];
+            for (int i = 0; i < _analysis; i++) _spanHann[i] = (float)(0.5 - 0.5 * Math.Cos(2.0 * Math.PI * i / (_analysis - 1)));
             _silenceRms = Math.Pow(10.0, config.SilenceRmsDbfs / 20.0);
         }
 
@@ -203,8 +209,11 @@ namespace UntitledGuitarApp.Core.Audio
         {
             if (samples == null) throw new ArgumentNullException(nameof(samples));
             if (offset < 0 || count < 0 || offset > samples.Length - count) throw new ArgumentOutOfRangeException(nameof(count));
-            Tuning.CheckString(stringNumber);
-            if (expectedMidi != ChordShape.Muted && (expectedMidi < 0 || expectedMidi > 127)) throw new ArgumentOutOfRangeException(nameof(expectedMidi));
+            // No active string / no expected note (LearnChordSession's WholeChord and Mastered stages expose string 0 and MIDI −1,
+            // and Runtime swaps the expectation asynchronously): a stale frame must not throw on the audio thread.
+            if (stringNumber < 1 || stringNumber > Tuning.StringCount ||
+                (expectedMidi != ChordShape.Muted && (expectedMidi <= 0 || expectedMidi > 127)))
+                return Unclear(stringNumber, expectedMidi, false, 0f, 0, 0);
 
             int openMidi = Tuning.StandardMidi(stringNumber);
             bool fretted = expectedMidi > openMidi;
@@ -310,7 +319,7 @@ namespace UntitledGuitarApp.Core.Audio
                 return new PluckResult(stringNumber, expectedMidi, f, Midi.CentsBetween(Midi.ToHz(expectedMidi), f), PluckVerdict.Unclear,
                                        PluckTipKeys.PluckAgain, -1, 0, conf, rms, 0, false, pitched, frames);
             }
-            if (fromSalience) fUsed = Midi.ToHz(_hypMidi[h]);
+            if (fromSalience) fUsed = Refine(samples, first, Math.Min(_analysis, end - first), Midi.ToHz(_hypMidi[h]));
 
             var verdict = _hypVerdict[h];
             double cents = Midi.CentsBetween(Midi.ToHz(expectedMidi), fUsed);
@@ -440,6 +449,33 @@ namespace UntitledGuitarApp.Core.Audio
             return best;
         }
 
+        // Measured frequency of a note found by salience: the frequency within ±PluckRefineCents of the hypothesis whose partials
+        // hold the most power over the whole analysis span (the HUD shows cents; the nominal frequency would always say 0 c).
+        // The 200 ms span, not one 43 ms frame: its Hann main lobe (±10 Hz) is narrow enough to place a low partial within a
+        // few cents; one frame's (±47 Hz) is wider than the whole search on the bass strings.
+        double Refine(float[] x, int start, int n, double hz)
+        {
+            if (n < _frame) return hz;
+            double mean = 0;
+            for (int i = 0; i < n; i++) mean += x[start + i];
+            mean /= n;
+            bool full = n == _analysis;
+            for (int i = 0; i < n; i++)
+            {
+                double w = full ? _spanHann[i] : 0.5 - 0.5 * Math.Cos(2.0 * Math.PI * i / (n - 1));
+                _span[i] = (float)((x[start + i] - mean) * w);
+            }
+            double best = hz, bestP = -1, range = _cfg.PluckRefineCents, step = _cfg.PluckRefineStepCents, nyq = SampleRate * 0.5;
+            int steps = (int)Math.Floor(2 * range / step + 1e-9);
+            for (int j = 0; j <= steps; j++)
+            {
+                double f = hz * Math.Pow(2.0, (-range + j * step) / 1200.0), p = 0;
+                for (int k = 1; k <= _cfg.PluckPartials && k * f < nyq; k++) p += Goertzel(_span, n, k * f);
+                if (p > bestP * (1 + 1e-12)) { bestP = p; best = f; }
+            }
+            return best;
+        }
+
         // Sustain of hz from the onset, as a decay-rate estimate rather than a threshold crossing (a crossing near the noise
         // floor flips with every noise frame). Probes every RingStepSec from the first analysis frame to RingOutSec keep the
         // ones clearly above the floor (pre-onset level of the same partials, averaged over up to 3 frames, + RingFloorDb);
@@ -451,7 +487,7 @@ namespace UntitledGuitarApp.Core.Audio
             ringSec = 0;
             int half = _frame / 2;
             if (onset + _ringOut + half > end) return false;
-            int partials = _cfg.RingPartials;
+            int partials = Math.Min(8, Math.Max(_cfg.RingPartials, (int)Math.Floor(_cfg.RingMinTopHz / hz)));
             double pre = 0; int preFrames = 0;
             for (int k = 0; k < 3; k++)
             {

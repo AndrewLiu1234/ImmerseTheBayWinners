@@ -32,6 +32,8 @@ namespace UntitledGuitarApp.Core.Audio
         long _lastOnsetHop;
         double _fPrev2, _fPrev1;    // flux at hops c−1 and c (candidate), see Analyse
         bool _havePrev1, _havePrev2;
+        bool _startedSilent;        // the first hop was below the silence floor (zero start-up state is then the truth)
+        readonly int _warmupHops;   // hops until frame and lag-reference spectrum hold only real audio
 
         public int SampleRate { get; }
         /// <summary>Total onsets dropped because the caller did not drain the queue (capacity 64).</summary>
@@ -67,6 +69,7 @@ namespace UntitledGuitarApp.Core.Audio
             _history = new double[_historyLen];
             _scratch = new double[_historyLen];
             _minGapHops = (int)Math.Ceiling(config.OnsetMinGapSec * sampleRate / _hop - 1e-9);
+            _warmupHops = (_n + _hop - 1) / _hop - 1 + config.OnsetDiffLagHops;
             double silenceRms = Math.Pow(10.0, config.SilenceRmsDbfs / 20.0);
             _silenceMs = silenceRms * silenceRms;
             Reset();
@@ -80,7 +83,7 @@ namespace UntitledGuitarApp.Core.Audio
             _ringPos = 0;
             _histCount = _histPos = _pending = _qHead = _qCount = 0;
             _hops = 0; _lastOnsetHop = long.MinValue / 2;
-            _fPrev1 = _fPrev2 = 0; _havePrev1 = _havePrev2 = false;
+            _fPrev1 = _fPrev2 = 0; _havePrev1 = _havePrev2 = false; _startedSilent = true;
             SamplesProcessed = 0; DroppedOnsets = 0; LastOnsetSec = double.NaN; LastFlux = LastThreshold = 0;
         }
 
@@ -153,6 +156,18 @@ namespace UntitledGuitarApp.Core.Audio
             Array.Copy(_curLog, prev, prev.Length);
             _ringPos = (_ringPos + 1) % _logRing.Length;
             long hop = _hops++;
+            // A stream that starts mid-sound (a string still ringing, room noise above the silence floor) has no "before": its
+            // first frames are half zeros and are compared with the zero-initialised spectra, so their flux is a start-up
+            // artefact (dev recordings: onsets at 0.000 s, and that flux in the median hid the real pluck 0.2 s later). Until
+            // both the frame and the spectrum it is compared with hold only real audio, flux is not used. A stream that starts
+            // silent keeps the zero state (it is the truth), so a pluck right after the start still counts.
+            if (hop == 0) _startedSilent = ms * _n / _hop < _silenceMs;   // the newest hop's own mean square
+            if (!_startedSilent && hop < _warmupHops)
+            {
+                LastFlux = 0;
+                _havePrev1 = _havePrev2 = false;
+                return false;
+            }
             LastFlux = flux;
 
             // Candidate = previous hop (c = hop − 1): a local max over its neighbours, above the threshold from the hops before it.
