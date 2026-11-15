@@ -87,6 +87,7 @@ namespace UntitledGuitarApp.Runtime.CameraAnchor
 
         NeckAnchor _anchor;
         Transform _head;
+        Transform _poseCam;
         CameraAnchorFlags _f;
         WebCamTexture _tex;
         Texture2D _sendTex;
@@ -106,6 +107,13 @@ namespace UntitledGuitarApp.Runtime.CameraAnchor
         float _nextSendAt;
         float _nextSetAt;
         double _nowSec;
+
+        /// <summary>In webcamOverlay mode, the transform whose pose holds the camera frame (Bootstrap wires the spectator
+        /// camera); the marker pose is placed in this frame instead of the head's. May be null (then identity).</summary>
+        public Transform PoseCamera { get { return _poseCam; } set { _poseCam = value; } }
+
+        /// <summary>The live capture texture (null until the camera opens). The webcam backdrop samples this.</summary>
+        public WebCamTexture LiveTexture { get { return _tex; } }
 
         /// <summary>Creates the camera anchor on a new child (flags.cameraAnchor.enabled gates this).</summary>
         public static CameraAnchorSource Create(Transform parent, Transform head, NeckAnchor anchor)
@@ -242,8 +250,10 @@ namespace UntitledGuitarApp.Runtime.CameraAnchor
             if (!_filter.TryGetSmoothed(out CameraPose smoothed)) return;
             _nextSetAt = Time.unscaledTime + 0.033f;   // ~30 Hz into the anchor
             if (_anchor == null) return;
-            Vector3 headPos = _head != null ? _head.position : Vector3.zero;
-            Quaternion headRot = _head != null ? _head.rotation : Quaternion.identity;
+            // Webcam overlay mode: the pose camera (spectator camera) holds the camera frame; otherwise the head does.
+            Transform poseBase = _f.webcamOverlay ? _poseCam : _head;
+            Vector3 headPos = poseBase != null ? poseBase.position : Vector3.zero;
+            Quaternion headRot = poseBase != null ? poseBase.rotation : Quaternion.identity;
             _anchor.SetAlignment(MarkerToNeck.ToAlignedPose(smoothed, headPos, headRot, _f));
             if (!_wasAligned)
             {

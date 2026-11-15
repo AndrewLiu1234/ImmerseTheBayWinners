@@ -214,7 +214,15 @@ namespace UntitledGuitarApp.Runtime
             Anchor = NeckAnchor.Create(transform, Neck, Rig.Head, HeadPose);
             Aligner = NeckAligner.Create(transform, Rig.Head, Neck, HeadPose, Anchor);
             Aligner.Reticle = Reticle;
-            if (flags.cameraAnchor.enabled) CameraAnchor = CameraAnchorSource.Create(transform, Rig.Head, Anchor);
+            if (flags.cameraAnchor.enabled)
+            {
+                CameraAnchor = CameraAnchorSource.Create(transform, Rig.Head, Anchor);
+                if (flags.cameraAnchor.webcamOverlay)
+                {
+                    CameraAnchor.PoseCamera = Spectator.transform;
+                    WebcamBackdrop.Create(Spectator.Camera, CameraAnchor);
+                }
+            }
 
             // Left hand for a right-handed player; for a left-handed player the neck's mirrored socket mirrors the hand too.
             FrettingHand = CapsuleHand.Create(Neck.Socket, true);

@@ -81,6 +81,8 @@ namespace UntitledGuitarApp.Runtime.Flags
         public float markerToNeckDegX = 90f;   // printed marker frame -> neck frame, euler degrees (tuned on device)
         public float markerToNeckDegY = 0f;
         public float markerToNeckDegZ = 0f;
+        public bool webcamOverlay = false;     // webcam AR demo: the spectator shows the live webcam as its background and the ghost hands track the marker in the webcam's camera frame (PoseCamera's frame, not the head's)
+        public float webcamFovY = 0f;          // spectator vertical FOV in webcamOverlay mode, degrees (0 = keep the glasses FOV)
     }
 
     [Serializable] public sealed class FlagSet

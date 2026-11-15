@@ -143,5 +143,16 @@ namespace UntitledGuitarApp.Runtime.Spectator
                 || string.Equals(v, "disabled", StringComparison.OrdinalIgnoreCase)
                 || v == "0";
         }
+
+        /// <summary>
+        /// Vertical field of view (degrees) of a pinhole camera with focal length <paramref name="fx"/> pixels and image
+        /// height <paramref name="heightPx"/> pixels: fovY = 2 * atan((height / 2) / fx). Used by the webcam overlay so the
+        /// virtual spectator camera projects the way the vision bridge's solvePnP assumed. Returns 0 for unusable inputs.
+        /// </summary>
+        public static float VerticalFovFromFx(float fx, int heightPx)
+        {
+            if (!(fx > 0f) || heightPx <= 0) return 0f;
+            return 2f * Mathf.Atan((heightPx * 0.5f) / fx) * Mathf.Rad2Deg;
+        }
     }
 }

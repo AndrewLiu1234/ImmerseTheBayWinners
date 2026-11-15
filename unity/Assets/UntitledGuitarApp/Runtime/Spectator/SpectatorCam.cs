@@ -102,6 +102,8 @@ namespace UntitledGuitarApp.Runtime.Spectator
         float _nearM = 0.1f;
         float _farM = 20f;
         bool _stereo = true;
+        bool _webcamOverlay;
+        float _webcamFovY;
 
         // derived state
         bool _active;
@@ -218,7 +220,9 @@ namespace UntitledGuitarApp.Runtime.Spectator
         void LateUpdate()
         {
             Transform head = Head;
-            if (head != null) transform.SetPositionAndRotation(head.position, head.rotation);
+            // Webcam overlay mode: the spectator camera IS the camera frame (its pose defines where the marker pose
+            // lands in the world), so it stays put instead of following the head.
+            if (head != null && !_webcamOverlay) transform.SetPositionAndRotation(head.position, head.rotation);
             PollFlags(false);
             ApplyViewport(false);
         }
@@ -244,6 +248,12 @@ namespace UntitledGuitarApp.Runtime.Spectator
             if (render.nearM != _nearM || render.farM != _farM) { _nearM = render.nearM; _farM = render.farM; changed = true; }
             _stereo = render.stereo;
 
+            CameraAnchorFlags ca = flags.cameraAnchor;
+            bool webcam = ca != null && ca.webcamOverlay;
+            float fovY = ca != null ? ca.webcamFovY : 0f;
+            if (webcam != _webcamOverlay) { _webcamOverlay = webcam; changed = true; }
+            if (fovY != _webcamFovY) { _webcamFovY = fovY; changed = true; }
+
             if (changed) ApplyState();
         }
 
@@ -262,6 +272,9 @@ namespace UntitledGuitarApp.Runtime.Spectator
             _glassesAspect = _eyeH > 0 && _eyeW > 0 ? _eyeW / (float)_eyeH : SpectatorLayout.DefaultAspect;
             float fov = SpectatorLayout.VerticalFovFromDiagonal(_diagonalDeg, _glassesAspect);
             if (fov > 1f && fov < 170f) _cam.fieldOfView = fov;
+            // Webcam overlay mode: the spectator projects the way the vision bridge's solvePnP assumed (pinhole from the
+            // calibrated webcam focal length, flags.cameraAnchor.webcamFovY).
+            if (_webcamOverlay && _webcamFovY > 1f && _webcamFovY < 170f) _cam.fieldOfView = _webcamFovY;
             _viewportDirty = true;
 
             if (!_stateLogged || active != _lastLoggedActive)
