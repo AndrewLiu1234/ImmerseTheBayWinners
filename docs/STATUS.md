@@ -14,7 +14,8 @@
 - Person 2 → Person 1: wiring — Tuner.Process(…, targetString) → TunerState (capture 44.1/48 kHz; pass target string); StrumFeed from the audio worker → StrumRouting → PlayAlong/ChangeDrill/LearnChord, show Tips.ForStrum; HUD reads PlayAlongTarget; audio.strumMinMargin → AudioConfig.StrumMinMargin; onsets read +11…14 ms late → audio.latencyOffsetMs; coach HTTP only when flag coach ≠ "off" (model CoachPrompt.ModelId, 3 s timeout, key from env var, fallback RuleBasedCoach).
 - Person 2 → Person 1 (G1 caution): NeckSolver residual understates true nut error ~5× (depth) — check the nut against a physical marker; aim for dwell jitter ≤0.5°.
 - Person 2 → recorder: /record-fixtures — open strings DONE (quiet); still needed: pluck faults from MASTER_PLAN Appendix B2; clean + faulty strums of G C D Em Am; quiet + venue. Then ./scripts/audio-eval.sh; a human freezes the eval set and writes docs/AUDIO_BASELINE.md (SL1/SL2/SL3/SL11).
-- Open Q (Person 2): Q-TEAM-07, Q-SKILL-01 (tip wording + song credits resolved Sat 18:14).
+- Open Q (Person 2): tracks Q-AI-01/02 (DEMO.md `[TRACKS]`). Q-TEAM-07, Q-SKILL-01, Q-TEAM-02 resolved Sat 18:20 (DECISIONS).
+- Person 2 → Person 1 (URGENT): unity/…/Runtime has 0 .cs files on main at Sat 18:20 — push local Unity work, or agree a minimal demo tonight. Also needed for the DEMO.md fallbacks: StreamingAssets/fixtures-demo/learn-g.wav (copy a G clip) + the SIMULATED INPUT badge.
 ## Contract changes
 - Sat 15:05 · Person 2 · Contracts v1 (PR #1, Person 1 approved) + v1.1 doc fix (PR #2: StrumResult.Confidence = 0–1 hypothesis score). See docs/ARCHITECTURE.md Deltas.
 ## Spike results

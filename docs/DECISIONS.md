@@ -1,5 +1,8 @@
 # DECISIONS — newest first (append-only; union-merged in git)
 <!-- D-<QID> · answer · who (Person 1 | Person 2) · HH:MM PT · reversible: yes|no · affects: docs/slices -->
+- D-Q-TEAM-07 · Resolved: Person 2 works in their own clone on a Mac with the .NET SDK (core-tests on net8.0, 408 tests green); no further setup needed · Person 2 · Sat 18:20 PT · reversible: — · affects: PRD open questions
+- D-Q-SKILL-01 · Resolved by CLAUDE.md rule 16: superpowers skills may help with debugging/verification, but the repo's /build-slice workflow from docs/TODO.md wins; no separate brainstorm/plan flow · Person 2 · Sat 18:20 PT · reversible: yes · affects: HARNESS.md §6
+- D-Q-TEAM-02 · Resolved in practice: Person 1 records the fixtures (quiet dev set delivered Sat ~18:00); Person 2 owns labels and eval · Person 2 · Sat 18:20 PT · reversible: yes · affects: SL1, SL2, SL3, SL11
 - D-P2-WRONGSTRING · WrongString tip = "Pluck string {s}, not string {n}" (replaces B6 "Finger {f} goes on string {s}") · Person 2 · Sat 18:14 PT · reversible: yes · affects: Core/Practice/Tips, SL2
 - D-P2-CREDITS · Riptide credit names the writer James Keogh; Happy Birthday PD source cites Marya v. Warner/Chappell (C.D. Cal. 2015) · Person 2 · Sat 18:14 PT · reversible: yes · affects: songs/riptide-loop, docs/SONGS.md, docs/CREDITS.md
 - D-P2-RENAME · Core-side duplicates of Contracts names renamed (PatternClockSlot, PlayAlongTarget, TunerState); Contracts untouched · Person 2 · Sat 14:55 PT · reversible: yes · affects: Core/Practice, Core/Audio
