@@ -1,0 +1,5 @@
+{ "profile": "demo-wav", "anchorMode": "aligned", "audioSource": "wav", "wavReplayFile": "fixtures-demo/learn-g.wav",
+  "audio": { "device": "MacBook", "noiseGateDb": 15, "pluckCentsTol": 50, "strumMinMargin": 0.12, "latencyOffsetMs": 0 },
+  "ghost": { "color": "#4FC3F7", "fill": 0.2, "fingerColors": false, "fadeAfterSuccess": 0.4 },
+  "waitModeDefault": true, "tempoPresets": [0.5, 0.6, 0.75, 0.9, 1.0], "leftHanded": false,
+  "spectator": "hostScreen", "debugOverlay": false, "coach": "off" }
