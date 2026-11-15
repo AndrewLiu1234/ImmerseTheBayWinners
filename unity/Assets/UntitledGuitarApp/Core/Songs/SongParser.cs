@@ -20,6 +20,12 @@ namespace UntitledGuitarApp.Core.Songs
     {
         public static ParseResult Parse(string json)
         {
+            try { return ParseCore(json); }
+            catch (Exception e) { var r = new ParseResult(); r.Errors.Add("song could not be read: " + e.Message); return r; }
+        }
+
+        static ParseResult ParseCore(string json)
+        {
             var r = new ParseResult();
             JObject root;
             try
@@ -45,7 +51,10 @@ namespace UntitledGuitarApp.Core.Songs
             s.PickupBeats = Num(root, "pickupBeats", "", false, err);
 
             if (root["timeSignature"] is JArray ts && ts.Count == 2 && ts[0].Type == JTokenType.Integer && ts[1].Type == JTokenType.Integer)
-            { s.BeatsPerBar = (int)ts[0]; s.BeatUnit = (int)ts[1]; }
+            {
+                if (TryInt(ts[0], out int bpb) && TryInt(ts[1], out int bu)) { s.BeatsPerBar = bpb; s.BeatUnit = bu; }
+                else err.Add("timeSignature numbers are out of range");
+            }
             else err.Add("timeSignature must be [beatsPerBar, beatUnit], e.g. [3, 4]");
 
             s.Strum = Pattern(root, "strum", err);
@@ -120,12 +129,19 @@ namespace UntitledGuitarApp.Core.Songs
             return (double)t;
         }
 
+        static bool TryInt(JToken t, out int v)
+        {
+            v = 0;
+            try { v = checked((int)t); return true; } catch (Exception) { return false; }
+        }
+
         static int Int(JObject o, string k, string pre, bool req, List<string> err)
         {
             var t = o[k];
             if (t == null || t.Type == JTokenType.Null) { if (req) err.Add($"{pre}{k} is required"); return 0; }
             if (t.Type != JTokenType.Integer) { err.Add($"{pre}{k} must be an integer"); return 0; }
-            return (int)t;
+            if (!TryInt(t, out int v)) { err.Add($"{pre}{k} is out of range"); return 0; }
+            return v;
         }
     }
 }

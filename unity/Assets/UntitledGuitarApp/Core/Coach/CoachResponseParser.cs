@@ -30,12 +30,25 @@ namespace UntitledGuitarApp.Core.Coach
         {
             value = null;
             if (!o.TryGetValue(name, out var t) || t.Type != JTokenType.String) return false;
-            string s = ((string)t ?? "").Trim();
+            string s = Sanitize((string)t ?? "").Trim();
             int w = RuleBasedCoach.WordCount(s);
             if (w == 0 || w > maxWords) return false;
             value = RuleBasedCoach.Clip(s, maxWords);
             return true;
         }
+
+        // LLM text goes on the HUD: drop control characters (U+0000-U+001F) and bidi overrides/isolates (U+202A-202E, U+2066-2069).
+        static string Sanitize(string s)
+        {
+            bool dirty = false;
+            for (int i = 0; i < s.Length && !dirty; i++) dirty = Bad(s[i]);
+            if (!dirty) return s;
+            var sb = new System.Text.StringBuilder(s.Length);
+            foreach (char c in s) if (!Bad(c)) sb.Append(c);
+            return sb.ToString();
+        }
+
+        static bool Bad(char c) => c < ' ' || (c >= '‪' && c <= '‮') || (c >= '⁦' && c <= '⁩');
 
         /// <summary>First balanced {...} (string-aware), or null.</summary>
         static string ExtractObject(string s)

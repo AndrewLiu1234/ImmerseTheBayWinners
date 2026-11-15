@@ -172,7 +172,7 @@ public class TunerTests
     {
         var x = KarplusStrong.Pluck(40, 1000);
         var t = NewTuner();
-        for (int i = 0; i < 5; i++) t.Process(x, 512 * i, Frame, i * 0.01);
+        for (int i = 0; i < 8; i++) t.Process(x, 512 * i, Frame, i * 0.01, i % 2 == 0 ? 0 : 6);   // warm up both target paths that are measured
         long before = GC.GetAllocatedBytesForCurrentThread();
         for (int i = 0; i < 50; i++) t.Process(x, 4800 + 512 * i, Frame, 0.05 + i * 0.01, i % 2 == 0 ? 0 : 6);
         Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);

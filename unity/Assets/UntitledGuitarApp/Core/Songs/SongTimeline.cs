@@ -70,6 +70,9 @@ namespace UntitledGuitarApp.Core.Songs
         {
             if (double.IsNaN(tSeconds)) tSeconds = 0;
             double beat = tSeconds / SecondsPerBeat;
+            // Degenerate song (tempo 0/∞) or ±∞ time: clamp to a finite beat so Bar/BeatInBar never overflow to int.MinValue.
+            if (double.IsNaN(beat)) beat = 0;
+            beat = Math.Max(-1e9, Math.Min(1e9, beat));
             int n = Spans.Count;
             if (n == 0) return new TimelineQuery(-1, -1, 0, beat, 0, 1, true);
             if (beat < 0) return new TimelineQuery(-1, 0, -beat, beat, BarOf(beat, out int bb0), bb0, false);
@@ -83,7 +86,8 @@ namespace UntitledGuitarApp.Core.Songs
         // Pickup beats sit at the end of "bar 0": a 1-beat pickup in 3/4 starts on beat 3.
         int BarOf(double beat, out int beatInBar)
         {
-            double rel = beat - PickupBeats;
+            if (BeatsPerBar <= 0) { beatInBar = 1; return beat < PickupBeats ? 0 : 1; }
+            double rel = beat - (double.IsNaN(PickupBeats) ? 0 : PickupBeats);
             if (rel < 0) { beatInBar = Math.Max(1, BeatsPerBar + (int)Math.Floor(rel) + 1); return 0; }
             beatInBar = (int)Math.Floor(rel % BeatsPerBar) + 1;
             return (int)Math.Floor(rel / BeatsPerBar) + 1;

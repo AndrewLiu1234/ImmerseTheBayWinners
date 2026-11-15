@@ -30,6 +30,8 @@ namespace UntitledGuitarApp.Core.Practice
     /// </summary>
     public sealed class PatternClock
     {
+        /// <summary>Upper bound on slots (a 10-minute song at 16 slots per second is ~10k); beyond it the song is degenerate.</summary>
+        const int MaxSlots = 200000;
         readonly PatternClockSlot[] _slots;
         readonly double _slotSec, _firstSec;
 
@@ -48,6 +50,11 @@ namespace UntitledGuitarApp.Core.Practice
             double slotBeats = (double)song.BeatsPerBar / pat.Subdivision;
             _slotSec = slotBeats * timeline.SecondsPerBeat;
             _firstSec = song.PickupBeats * timeline.SecondsPerBeat;
+            // Degenerate tempo/signature (0, NaN, ∞) would loop forever or build millions of slots: no clock instead.
+            double total = timeline.TotalSeconds;
+            if (!(_slotSec > 0) || double.IsInfinity(_slotSec) || double.IsNaN(_firstSec) || double.IsInfinity(_firstSec)
+                || double.IsNaN(total) || double.IsInfinity(total) || (total - _firstSec) / _slotSec > MaxSlots)
+            { _slots = new PatternClockSlot[0]; _slotSec = 0; _firstSec = 0; return; }
             var list = new List<PatternClockSlot>();
             for (int i = 0; ; i++)
             {
