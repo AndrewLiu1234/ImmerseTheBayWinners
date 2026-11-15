@@ -115,8 +115,11 @@ namespace UntitledGuitarApp.Core.Audio
     /// Strum check (MASTER_PLAN §19): does the window after an onset sound like the EXPECTED chord? Hypothesis testing, not
     /// transcription.
     /// <list type="number">
-    /// <item>30–250 ms after the onset: Hann window, zero-padded FFT, amplitude at every semitone probe E2 … C6 (max within
-    /// ±<see cref="AudioConfig.StrumProbeCents"/>), minus the median-bin noise floor.</item>
+    /// <item><see cref="AudioConfig.StrumWindowStartSec"/> … <see cref="AudioConfig.StrumWindowEndSec"/> (80–300 ms) after the
+    /// onset: Hann window, zero-padded FFT, amplitude at every semitone probe E2 … C6 (max within
+    /// ±<see cref="AudioConfig.StrumProbeCents"/>), minus the median-bin noise floor. Probes in the guitar body's air-resonance
+    /// band (<see cref="AudioConfig.StrumBodyMinMidi"/> … <see cref="AudioConfig.StrumBodyMaxMidi"/>, F2–G#2) are left out of
+    /// the precision.</item>
     /// <item>Every hypothesis — the expected chord, each confuser chord, and the expected chord's one-string fault variants
     /// (a fretted string open or a fret off, a muted string, extra bass strings) whose pitch classes or bass note differ from
     /// it — is a set of exact notes. Its partials (all harmonics up to the top probe, through the exact Hann response and
@@ -127,6 +130,9 @@ namespace UntitledGuitarApp.Core.Audio
     /// G5 that no other note of the hypothesis explains, after removing the leakage a neighbouring semitone's peak can put
     /// there, upper median (a missing bass, a muted G string on C). A note with no own probes (E4 over E3, B3 over B2) cannot
     /// be judged and is skipped: that is the pluck check's job. Score = F = 2PR / (P + R), 0 … 1.</item>
+    /// <item>Rivals need clear evidence: a confuser's or fault variant's note whose pitch class the expected chord lacks is
+    /// judged against <see cref="AudioConfig.StrumDistinctPresenceRatio"/>, and a fault variant whose changed note is judged
+    /// absent (presence &lt; <see cref="AudioConfig.StrumFaultMinPresence"/>) cannot win.</item>
     /// <item>Clean = the expected chord beats every confuser by <see cref="AudioConfig.StrumMinMargin"/> and no fault variant
     /// beats it by <see cref="AudioConfig.StrumFaultMargin"/>. Otherwise the top issue: wrong chord, or the winning fault.</item>
     /// </list>
@@ -161,6 +167,8 @@ namespace UntitledGuitarApp.Core.Audio
         readonly StrumIssue[] _hIssue = new StrumIssue[MaxHyp];
         readonly int[] _hString = new int[MaxHyp], _hExpMidi = new int[MaxHyp], _hHeardMidi = new int[MaxHyp], _hExtra = new int[MaxHyp];
         readonly double[] _hScore = new double[MaxHyp], _hP = new double[MaxHyp], _hR = new double[MaxHyp];
+        readonly double[] _hHeardPres = new double[MaxHyp];   // presence of a fault variant's heard note (−1 = none / not judged)
+        int _expPcMask;                                         // pitch classes of the expected chord (bit pc)
         readonly int[] _dn = new int[S];                 // distinct in-range notes of the hypothesis being scored
         readonly double[] _pcPres = new double[12];
         readonly bool[] _pcSeen = new bool[12];
@@ -397,6 +405,7 @@ namespace UntitledGuitarApp.Core.Audio
             for (int j = 0; j < _probes; j++)
             {
                 _xw[j] = _x[j] > pfloor ? Math.Pow(_x[j], _cfg.StrumPrecisionGamma) : 0;
+                if (_probeMin + j >= _cfg.StrumBodyMinMidi && _probeMin + j <= _cfg.StrumBodyMaxMidi) _xw[j] = 0;   // body air resonance
                 _sumXw += _xw[j];
                 double leak = 0;
                 for (int oi = 0; oi < 4; oi++)
@@ -413,6 +422,8 @@ namespace UntitledGuitarApp.Core.Audio
             // 2. Hypotheses and scores.
             _hypCount = 0;
             AddChord(expected, 0);
+            _expPcMask = 0;
+            for (int i = 0; i < S; i++) { int m = _hNotes[i]; if (m >= 0) _expPcMask |= 1 << (m % 12); }
             if (confusers != null)
                 for (int i = 0; i < confusers.Count; i++)
                 {
@@ -428,7 +439,8 @@ namespace UntitledGuitarApp.Core.Audio
             for (int h = 1; h < _hypCount; h++)
             {
                 if (_hKind[h] == 1 && _hScore[h] > sC) { sC = _hScore[h]; bc = h; }
-                else if (_hKind[h] == 2 && _hScore[h] > sV) { sV = _hScore[h]; bv = h; }
+                else if (_hKind[h] == 2 && _hScore[h] > sV &&
+                         !(_hHeardPres[h] >= 0 && _hHeardPres[h] < _cfg.StrumFaultMinPresence)) { sV = _hScore[h]; bv = h; }
             }
             bool hasC = bc >= 0, hasV = bv >= 0;
             double margin = sE - (hasC ? sC : 0.0);
@@ -580,9 +592,13 @@ namespace UntitledGuitarApp.Core.Audio
             // Recall: each note judged on its own probes; a pitch class is present when any of its judged notes is.
             for (int pc = 0; pc < 12; pc++) { _pcPres[pc] = 0; _pcSeen[pc] = false; }
             double level = _cfg.StrumPresenceRatio * _maxX;
+            double levelD = Math.Max(_cfg.StrumDistinctPresenceRatio, _cfg.StrumPresenceRatio) * _maxX;   // rivals' foreign notes
+            _hHeardPres[h] = -1;
             for (int k = 0; k < nd; k++)
             {
-                double pres = NotePresence(k, nd, level, out int own);
+                bool distinct = _hKind[h] != 0 && (_expPcMask & (1 << (_dn[k] % 12))) == 0;
+                double pres = NotePresence(k, nd, distinct ? levelD : level, out int own);
+                if (_hKind[h] == 2 && _dn[k] == _hHeardMidi[h] && own > 0) _hHeardPres[h] = pres;
                 if (own == 0) continue;                       // cannot be judged inside a strum
                 int pc = _dn[k] % 12;
                 _pcSeen[pc] = true;
