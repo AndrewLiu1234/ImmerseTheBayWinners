@@ -155,17 +155,20 @@ namespace UntitledGuitarApp.Core.Audio
         /// reaches 0.3–0.8, a strum after silence ≈ 2.7 (synthetic, SuperFlux lag 2). 0.15 = 0.30 floor gave up-strum misses
         /// (strum F1 0.67 at 100 % tempo); 0.1 with lag 1 let the ring itself trigger.</summary>
         public double OnsetMinFlux { get; }
-        /// <summary>Minimum time between onsets, s (§19: 60 ms). A strum's 6 strings arrive within ~30–50 ms and must count once;
-        /// the fastest pattern (16ths at 100 bpm) is 150 ms apart.</summary>
+        /// <summary>Minimum time between onsets, s (refractory; §19 had 60 ms). A strum's strings must count once: a real beginner
+        /// strum spreads over up to ~130 ms (dev recordings: C and G strums re-triggered 106–128 ms after the first onset, when the
+        /// treble strings arrived), so 130 ms; the fastest strum pattern we ship (eighths at 100 bpm) is 300 ms apart and 16ths at
+        /// 100 bpm (150 ms) still fit.</summary>
         public double OnsetMinGapSec { get; }
 
 
         // ---- Strum check (SL3, §19 "Strum verdict" + "Clean / quality"; chord level only) ----
-        /// <summary>Analysis window start after the onset, s (§19: 30 ms). Skips the pick noise and the strum's spread
-        /// (strings arrive over 10–40 ms), so every string has sounded before the window opens on a normal strum.</summary>
+        /// <summary>Analysis window start after the onset, s (§19 had 30 ms). Skips the pick noise, the strum's spread (real
+        /// beginner strums: 30–100 ms; the onset fires on the first strings) and the loudest part of the body's air-resonance
+        /// thump (≈ 98 Hz, decays ≈ 15 dB in the first 250 ms). Dev set: 30 ms → 68 %, 80 ms → 76 % strum accuracy (alone).</summary>
         public double StrumWindowStartSec { get; }
-        /// <summary>Analysis window end after the onset, s (§19: 250 ms). Strum-to-verdict ≤ 350 ms leaves 100 ms for onset
-        /// confirmation (≈ 2 hops) and the analysis itself (&lt; 5 ms).</summary>
+        /// <summary>Analysis window end after the onset, s (§19 had 250 ms). 220 ms long like before (same resolution); strum-to-verdict
+        /// ≤ 350 ms still leaves 50 ms for onset confirmation (≈ 2 hops = 21 ms) and the analysis itself (&lt; 5 ms).</summary>
         public double StrumWindowEndSec { get; }
         /// <summary>FFT size = smallest power of two ≥ this × the window length. 1.5: 220 ms @ 48 kHz (10,560 samples) → 16,384
         /// points, 2.9 Hz bins — under the window's 4.5 Hz resolution, so the nearest bin is never more than a third of a
@@ -210,8 +213,9 @@ namespace UntitledGuitarApp.Core.Audio
         /// <summary>Precision weighs each probe by amplitude^this. 0.5 (square-root compression): a foreign string's few own
         /// partials are not drowned out by the strong low partials of the others (0.3 gave identical synthetic results).</summary>
         public double StrumPrecisionGamma { get; }
-        /// <summary>Probes weaker than this fraction of the loudest one are left out of the precision. 0.02 (−34 dB) guards against
-        /// Hann sidelobes (−31 dB) and noise residue counting as foreign; 0, 0.02 and 0.05 gave identical synthetic results.</summary>
+        /// <summary>Probes weaker than this fraction of the loudest one are left out of the precision. 0.05 (−26 dB) guards against
+        /// Hann sidelobes (−31 dB) and the low-level residue of real recordings (body modes, sympathetic strings) counting as
+        /// foreign; 0, 0.02 and 0.05 gave identical synthetic results, and 0.05 beat 0.02 on the dev recordings (Am, C, D).</summary>
         public double StrumPrecisionFloor { get; }
         /// <summary>Clean needs score(expected) − best other chord ≥ this (flag audio.strumMinMargin = 0.15, §19).</summary>
         public double StrumMinMargin { get; }
@@ -220,6 +224,27 @@ namespace UntitledGuitarApp.Core.Audio
         /// strums stay clean at 0.02); a foreign note with only two own partials (G with high E open → E4) opens just 0.02–0.04,
         /// so 0.04 let 7/108 such faults through as clean.</summary>
         public double StrumFaultMargin { get; }
+        /// <summary>Lowest probe left out of the precision, MIDI (F2, 87 Hz). Every attack on an acoustic guitar rings its air
+        /// resonance (A0, typically 90–110 Hz): on the dev recordings a 98.1 Hz peak follows every strum and every single pluck
+        /// (even high E), 6–16 dB below the loudest partial in the strum window, and is absent in silence. It is no chord note, so
+        /// it cut every hypothesis's precision and sat on G2, making clean D and Em read as G. E2 (40) stays: the low E is
+        /// a real bass string (and extra low E is a fault).</summary>
+        public int StrumBodyMinMidi { get; }
+        /// <summary>Highest probe left out of the precision, MIDI (G#2, 104 Hz): the top of the observed A0 peak and its leakage
+        /// (F#2–G#2). A2 (45, open A) stays, so "A string strummed" under D still costs precision. Recall is unaffected: G2 can still
+        /// prove G's bass note. Dev set: band 41–44 and 42–44 give the same accuracy (90.1 %); off (−1): D clean 1–4/5.</summary>
+        public int StrumBodyMaxMidi { get; }
+        /// <summary>A note of a rival hypothesis (confuser chord or fault variant) whose pitch class the expected chord lacks is fully
+        /// present only at this fraction of the loudest probe (−22 dB); the expected chord's own notes keep <see cref="StrumPresenceRatio"/>.
+        /// Rejecting the expected chord needs clear evidence: on real audio body resonances, the G3 body-mode sidebands and
+        /// sympathetic strings leave −30…−40 dB residue that made E's G#3, Dm's F4 and G's B2 look "present" (dev clean
+        /// accuracy: 0.03 → 87.3 %, 0.05 → 88.7 %, 0.08 → 90.1 %).</summary>
+        public double StrumDistinctPresenceRatio { get; }
+        /// <summary>A fault variant that plays a different note (open string, fret off, extra string) can only win when that note,
+        /// judged on its own probes, has at least this presence (0 … 1). Otherwise a variant could win just because removing the
+        /// expected note re-assigned shared probes to another note (Em with "s4 a fret low" while D#3 was absent). 0.5 = half the
+        /// presence level; a variant whose note cannot be judged (no own probes) is unaffected.</summary>
+        public double StrumFaultMinPresence { get; }
 
         public AudioConfig(
             int frameSize = 2048,
@@ -262,9 +287,9 @@ namespace UntitledGuitarApp.Core.Audio
             double onsetThresholdK = 1.5,
             double onsetMedianSec = 0.3,
             double onsetMinFlux = 0.15,
-            double onsetMinGapSec = 0.06,
-            double strumWindowStartSec = 0.030,
-            double strumWindowEndSec = 0.250,
+            double onsetMinGapSec = 0.13,
+            double strumWindowStartSec = 0.080,
+            double strumWindowEndSec = 0.300,
             double strumFftPadding = 1.5,
             int strumMinMidi = 40,
             int strumMaxMidi = 69,
@@ -277,9 +302,13 @@ namespace UntitledGuitarApp.Core.Audio
             int strumOwnMaxMidi = 79,
             double strumPresenceRatio = 0.01,
             double strumPrecisionGamma = 0.5,
-            double strumPrecisionFloor = 0.02,
+            double strumPrecisionFloor = 0.05,
             double strumMinMargin = 0.15,
-            double strumFaultMargin = 0.02)
+            double strumFaultMargin = 0.02,
+            int strumBodyMinMidi = 41,
+            int strumBodyMaxMidi = 44,
+            double strumDistinctPresenceRatio = 0.08,
+            double strumFaultMinPresence = 0.5)
         {
             if (frameSize < 256) throw new ArgumentOutOfRangeException(nameof(frameSize));
             if (hopSize < 1 || hopSize > frameSize) throw new ArgumentOutOfRangeException(nameof(hopSize));
@@ -338,6 +367,9 @@ namespace UntitledGuitarApp.Core.Audio
             if (!(strumPrecisionFloor >= 0) || strumPrecisionFloor >= 1) throw new ArgumentOutOfRangeException(nameof(strumPrecisionFloor));
             if (!(strumMinMargin >= 0) || strumMinMargin > 1) throw new ArgumentOutOfRangeException(nameof(strumMinMargin));
             if (!(strumFaultMargin >= 0) || strumFaultMargin > 1) throw new ArgumentOutOfRangeException(nameof(strumFaultMargin));
+            if (strumBodyMaxMidi > 120) throw new ArgumentOutOfRangeException(nameof(strumBodyMaxMidi), "≤ 120 (below StrumBodyMinMidi = off)");
+            if (!(strumDistinctPresenceRatio >= 0) || strumDistinctPresenceRatio > 1) throw new ArgumentOutOfRangeException(nameof(strumDistinctPresenceRatio));
+            if (!(strumFaultMinPresence >= 0) || strumFaultMinPresence > 1) throw new ArgumentOutOfRangeException(nameof(strumFaultMinPresence));
 
             FrameSize = frameSize; HopSize = hopSize; MinHz = minHz; MaxHz = maxHz;
             YinThreshold = yinThreshold; MaxAperiodicity = maxAperiodicity; SilenceRmsDbfs = silenceRmsDbfs;
@@ -355,6 +387,8 @@ namespace UntitledGuitarApp.Core.Audio
             StrumMinMidi = strumMinMidi; StrumMaxMidi = strumMaxMidi; StrumProbeMaxMidi = strumProbeMaxMidi; StrumProbeCents = strumProbeCents;
             StrumNoiseFloorK = strumNoiseFloorK; StrumMinPeakDb = strumMinPeakDb; StrumCoverMin = strumCoverMin; StrumOwnPartials = strumOwnPartials; StrumOwnMaxMidi = strumOwnMaxMidi;
             StrumPresenceRatio = strumPresenceRatio; StrumPrecisionGamma = strumPrecisionGamma; StrumPrecisionFloor = strumPrecisionFloor; StrumMinMargin = strumMinMargin; StrumFaultMargin = strumFaultMargin;
+            StrumBodyMinMidi = strumBodyMinMidi; StrumBodyMaxMidi = strumBodyMaxMidi;
+            StrumDistinctPresenceRatio = strumDistinctPresenceRatio; StrumFaultMinPresence = strumFaultMinPresence;
         }
 
         public static readonly AudioConfig Default = new AudioConfig();
