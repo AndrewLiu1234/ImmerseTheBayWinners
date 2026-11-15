@@ -50,6 +50,7 @@ public class PluckRecordedEvalTests
         var byChord = new Dictionary<string, (int n, int ok)>();
         var byString = new Dictionary<int, (int n, int ok)>();
         var verdicts = new Dictionary<string, int>();
+        var withOnset = new Dictionary<string, (int n, int ok)>();   // diagnostic: clips where the detector found an onset
         Log($"{"file",-34} {"chord",-5} {"str",3} {"midi",4} {"heardHz",8} {"cents",7} {"onset",6}  verdict");
         foreach (var row in rows)
         {
@@ -71,6 +72,7 @@ public class PluckRecordedEvalTests
 
             bool ok = r.Verdict == PluckVerdict.Correct;
             Add(byEnv, env, ok); Add(byChord, chord.Name, ok); Add(byString, row.StringNumber, ok);
+            if (onsetT >= 0) Add(withOnset, env, ok);
             string vk = r.Verdict.ToString();
             verdicts[vk] = (verdicts.TryGetValue(vk, out int k0) ? k0 : 0) + 1;
             string extra = r.HeardMidi >= 0 && r.HeardMidi != row.Midi ? $" (heard midi {r.HeardMidi} s{r.HeardString})" : "";
@@ -79,6 +81,11 @@ public class PluckRecordedEvalTests
         Log("per chord:  " + string.Join("  ", byChord.OrderBy(k => k.Key).Select(k => $"{k.Key} {k.Value.ok}/{k.Value.n}")));
         Log("per string: " + string.Join("  ", byString.OrderBy(k => k.Key).Select(k => $"s{k.Key} {k.Value.ok}/{k.Value.n}")));
         Log("verdicts:   " + string.Join("  ", verdicts.OrderByDescending(k => k.Value).Select(k => $"{k.Key}x{k.Value}")));
+
+        // Report-only: with no onset the clip is judged from sample 0 (no pre-roll), which the app never does — a clip with no
+        // detectable attack (a ring tail, or a pluck softer than the onset floor) is not a pluck-check verdict in the app.
+        foreach (var kv in withOnset)
+            Log($"(diagnostic) clips with an onset: {kv.Value.n}/{byEnv[kv.Key].n}, correct {kv.Value.ok}/{kv.Value.n} = {100.0 * kv.Value.ok / Math.Max(1, kv.Value.n):F1}% [{kv.Key}; not gated]");
 
         var baseline = FixtureLabels.LoadBaseline();
         bool gated = false;

@@ -73,6 +73,11 @@ namespace UntitledGuitarApp.Core.Audio
         public int SampleRate { get; }
         /// <summary>Shortest window that can be analysed: two periods of <see cref="AudioConfig.MinHz"/> (+ interpolation margin).</summary>
         public int MinWindow => 2 * _lagCount;
+        /// <summary>Analysis window, samples: <see cref="AudioConfig.FrameSize"/>, or — when that is shorter than
+        /// <see cref="MinWindow"/> at this sample rate (88.2/96 kHz need 2524/2748 for 70 Hz) — the next power of two above
+        /// <see cref="MinWindow"/>, so the same ≈ 2.3 periods of low E are integrated at any rate. Identical to FrameSize at 44.1/48 kHz.
+        /// Callers that cut windows for <see cref="Process"/> should pass this many samples.</summary>
+        public int FrameSize { get; }
 
         public YinPitchTracker(AudioConfig config, int sampleRate)
         {
@@ -82,11 +87,12 @@ namespace UntitledGuitarApp.Core.Audio
             _minTau = Math.Max(2, (int)Math.Floor(sampleRate / config.MaxHz));
             _maxTau = (int)Math.Ceiling(sampleRate / config.MinHz);
             _lagCount = _maxTau + 2;
-            if (config.FrameSize < 2 * _lagCount)
-                throw new ArgumentException($"FrameSize {config.FrameSize} is too short for {config.MinHz} Hz at {sampleRate} Hz (needs {2 * _lagCount})");
-            _x = new float[config.FrameSize];
-            _xw = new float[config.FrameSize];
-            _hann = new float[config.FrameSize];
+            int need = 2 * _lagCount, frame = config.FrameSize;
+            if (frame < need) { frame = 1; while (frame < need) frame <<= 1; }   // high sample rates: scale the window, don't throw
+            FrameSize = frame;
+            _x = new float[frame];
+            _xw = new float[frame];
+            _hann = new float[frame];
             for (int i = 0; i < _hann.Length; i++) _hann[i] = (float)(0.5 - 0.5 * Math.Cos(2.0 * Math.PI * i / (_hann.Length - 1)));
             _d = new double[_lagCount];
             _dp = new double[_lagCount];
@@ -95,7 +101,7 @@ namespace UntitledGuitarApp.Core.Audio
 
         /// <summary>
         /// Estimates the pitch of <c>samples[offset … offset+count)</c>. If <paramref name="count"/> exceeds
-        /// <see cref="AudioConfig.FrameSize"/>, only the LAST FrameSize samples (the newest audio) are analysed.
+        /// <see cref="FrameSize"/>, only the LAST FrameSize samples (the newest audio) are analysed.
         /// Throws only on programmer errors (null buffer, range outside the array); bad audio returns a status instead.
         /// </summary>
         public PitchResult Process(float[] samples, int offset, int count)
@@ -103,7 +109,7 @@ namespace UntitledGuitarApp.Core.Audio
             if (samples == null) throw new ArgumentNullException(nameof(samples));
             if (offset < 0 || count < 0 || offset > samples.Length - count) throw new ArgumentOutOfRangeException(nameof(count));
 
-            int n = Math.Min(count, _cfg.FrameSize);
+            int n = Math.Min(count, FrameSize);
             int start = offset + count - n;
             _n = n; _windowed = false;
 
